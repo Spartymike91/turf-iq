@@ -1,26 +1,78 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --gd: #1a3a2a;
+  --gm: #2d6a4f;
+  --gb: #52b788;
+  --gp: #d8f3dc;
+  --fw: #40916c;
+  --chalk: #f8f9f4;
+  --ink: #1a1f1c;
+  --mist: #6b7c74;
+  --rule: #dce8e1;
+  --amber: #f59e0b;
+  --red: #dc2626;
+  --blue: #3b82f6;
+  --labor: #3b5bdb;
+  --water: #0369a1;
+  --equip: #0891b2;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-green-dark: var(--gd);
+  --color-green-mid: var(--gm);
+  --color-green-bright: var(--gb);
+  --color-green-pale: var(--gp);
+  --color-green-forest: var(--fw);
+  --color-chalk: var(--chalk);
+  --color-ink: var(--ink);
+  --color-mist: var(--mist);
+  --color-rule: var(--rule);
+  --color-amber: var(--amber);
+  --color-red: var(--red);
+  --color-blue: var(--blue);
+  --color-labor: var(--labor);
+  --color-water: var(--water);
+  --color-equip: var(--equip);
+  --font-sans: 'Inter', sans-serif;
+  --font-serif: 'DM Serif Display', serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--chalk);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes typeBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
+.animate-pulse-dot {
+  animation: pulse 2s infinite;
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.2s ease;
+}
+
+.animate-slide-right {
+  animation: slideRight 0.3s ease;
 }
