@@ -619,3 +619,127 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================
+-- TEAM / MEMBER MANAGEMENT (appended here; was run directly against the
+-- live DB via the SQL editor and is being synced back into this file now)
+-- ============================================
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email TEXT;
+
+UPDATE profiles p
+SET email = u.email
+FROM auth.users u
+WHERE u.id = p.id AND (p.email IS NULL OR p.email <> u.email);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, full_name)
+  VALUES (new.id, new.email, new.raw_user_meta_data->>'full_name')
+  ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
+  RETURN new;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.handle_user_email_update()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE public.profiles SET email = new.email, updated_at = now() WHERE id = new.id;
+  RETURN new;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_email_updated ON auth.users;
+CREATE TRIGGER on_auth_user_email_updated
+  AFTER UPDATE OF email ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_user_email_update();
+
+CREATE OR REPLACE FUNCTION public.is_course_superintendent(target_course_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM course_members
+    WHERE course_id = target_course_id AND user_id = auth.uid() AND role = 'superintendent'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.shares_any_course_with(target_user_id UUID)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM course_members cm1
+    JOIN course_members cm2 ON cm1.course_id = cm2.course_id
+    WHERE cm1.user_id = auth.uid() AND cm2.user_id = target_user_id
+  );
+$$;
+
+CREATE POLICY "Users can view course-mate profiles"
+  ON profiles FOR SELECT USING (public.shares_any_course_with(id));
+
+DROP POLICY IF EXISTS "Owners can insert members" ON course_members;
+CREATE POLICY "course_members_insert_v2" ON course_members FOR INSERT WITH CHECK (
+  auth.uid() IS NOT NULL AND (
+    role = 'owner'
+    OR public.is_course_owner(course_id)
+    OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'crew'))
+  )
+);
+
+CREATE POLICY "course_members_update_v1" ON course_members FOR UPDATE
+  USING (
+    public.is_course_owner(course_id)
+    OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'crew'))
+  )
+  WITH CHECK (
+    public.is_course_owner(course_id)
+    OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'crew'))
+  );
+
+CREATE OR REPLACE FUNCTION public.prevent_last_owner_removal()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF (TG_OP = 'DELETE' AND OLD.role = 'owner')
+     OR (TG_OP = 'UPDATE' AND OLD.role = 'owner' AND NEW.role <> 'owner') THEN
+    IF (SELECT COUNT(*) FROM course_members
+        WHERE course_id = OLD.course_id AND role = 'owner' AND id <> OLD.id) = 0 THEN
+      RAISE EXCEPTION 'Cannot remove or demote the last remaining owner of this course';
+    END IF;
+  END IF;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS course_members_last_owner_guard ON course_members;
+CREATE TRIGGER course_members_last_owner_guard
+  BEFORE UPDATE OR DELETE ON course_members
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_last_owner_removal();
+
+-- ============================================
+-- PLATFORM ADMIN (cross-course access for named individuals only)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS platform_admins (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE platform_admins ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can check own platform admin status"
+  ON platform_admins FOR SELECT USING (auth.uid() = user_id);
+
+-- Deliberately no INSERT/UPDATE/DELETE policy: with RLS enabled and zero
+-- write policies, neither the anon nor authenticated Postgres role can ever
+-- write to this table through the app. Admins are granted only by running
+-- SQL directly (see the handover doc for the seed INSERT statements).

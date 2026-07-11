@@ -6,9 +6,11 @@ import AgronomistPanel from "@/components/agronomist/AgronomistPanel";
 
 export default function AppShell({
   courseName,
+  isPlatformAdmin,
   children,
 }: {
   courseName?: string;
+  isPlatformAdmin?: boolean;
   children: React.ReactNode;
 }) {
   const [agronomistOpen, setAgronomistOpen] = useState(false);
@@ -17,6 +19,7 @@ export default function AppShell({
     <div className="h-screen flex flex-col overflow-hidden">
       <AppHeader
         courseName={courseName}
+        isPlatformAdmin={isPlatformAdmin}
         onToggleAgronomist={() => setAgronomistOpen(!agronomistOpen)}
       />
       <div className="flex flex-1 overflow-hidden">

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getPlatformAdminSession } from "@/lib/supabase/platform-admin";
 import AppShell from "./AppShell";
 
 export default async function AppLayout({
@@ -17,15 +18,22 @@ export default async function AppLayout({
   }
 
   // Fetch the user's course
-  const { data: membership } = await supabase
-    .from("course_members")
-    .select("course_id, role, courses(name)")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
+  const [{ data: membership }, { isPlatformAdmin }] = await Promise.all([
+    supabase
+      .from("course_members")
+      .select("course_id, role, courses(name)")
+      .eq("user_id", user.id)
+      .limit(1)
+      .single(),
+    getPlatformAdminSession(),
+  ]);
 
   const courseName =
     (membership?.courses as unknown as { name: string } | null)?.name ?? undefined;
 
-  return <AppShell courseName={courseName}>{children}</AppShell>;
+  return (
+    <AppShell courseName={courseName} isPlatformAdmin={isPlatformAdmin}>
+      {children}
+    </AppShell>
+  );
 }

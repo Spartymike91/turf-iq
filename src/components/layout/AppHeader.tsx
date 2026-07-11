@@ -19,9 +19,11 @@ const tabs = [
 
 export default function AppHeader({
   courseName,
+  isPlatformAdmin,
   onToggleAgronomist,
 }: {
   courseName?: string;
+  isPlatformAdmin?: boolean;
   onToggleAgronomist?: () => void;
 }) {
   const pathname = usePathname();
@@ -82,6 +84,14 @@ export default function AppHeader({
             className="text-[11px] text-green-bright bg-green-bright/12 border border-green-bright/25 px-2.5 py-1 rounded-full font-medium whitespace-nowrap hover:bg-green-bright/20 transition-colors"
           >
             ⛳ {courseName}
+          </Link>
+        )}
+        {isPlatformAdmin && (
+          <Link
+            href="/admin"
+            className="text-[11px] text-white bg-white/10 border border-white/25 px-2.5 py-1 rounded-full font-medium whitespace-nowrap hover:bg-white/20 transition-colors"
+          >
+            ⚙ Admin
           </Link>
         )}
         <button
