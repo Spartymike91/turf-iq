@@ -17,6 +17,7 @@ const modules = [
 const tiers = [
   {
     name: "Agronomist",
+    slug: "agronomist",
     price: 399,
     tagline: "Science-backed decisions for solo superintendents.",
     features: [
@@ -30,6 +31,7 @@ const tiers = [
   },
   {
     name: "Superintendent",
+    slug: "superintendent",
     price: 499,
     tagline: "Full agronomy, plus the operations to back it up.",
     features: [
@@ -47,6 +49,7 @@ const tiers = [
   },
   {
     name: "Complete",
+    slug: "complete",
     price: 599,
     tagline: "Run the whole maintenance operation, crew included.",
     features: [
@@ -243,7 +246,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <Link
-                href="/signup"
+                href={`/signup?tier=${t.slug}`}
                 className={`text-center px-4 py-3 font-semibold text-sm rounded-lg transition-all ${
                   t.popular
                     ? "bg-green-mid text-white hover:bg-green-dark"

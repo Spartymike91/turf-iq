@@ -743,3 +743,40 @@ CREATE POLICY "Users can check own platform admin status"
 -- write policies, neither the anon nor authenticated Postgres role can ever
 -- write to this table through the app. Admins are granted only by running
 -- SQL directly (see the handover doc for the seed INSERT statements).
+
+-- ============================================
+-- BILLING (Stripe subscriptions + admin fee waivers)
+-- ============================================
+
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS plan_tier TEXT
+  CHECK (plan_tier IN ('agronomist', 'superintendent', 'complete'));
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS subscription_status TEXT
+  CHECK (subscription_status IN (
+    'trialing', 'active', 'past_due', 'canceled',
+    'unpaid', 'incomplete', 'incomplete_expired', 'paused'
+  ));
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS trial_end TIMESTAMPTZ;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;
+
+-- Admin fee waiver (audit trail: who waived it, when, until when)
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS billing_waived_until TIMESTAMPTZ;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS billing_waived_by UUID REFERENCES auth.users(id);
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS billing_waived_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS courses_stripe_customer_id_key
+  ON courses(stripe_customer_id) WHERE stripe_customer_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS courses_stripe_subscription_id_key
+  ON courses(stripe_subscription_id) WHERE stripe_subscription_id IS NOT NULL;
+
+-- Column-privilege hardening: RLS is row-level only, so "Owners can update
+-- courses" doesn't restrict WHICH columns an authorized UPDATE can touch.
+-- Lock billing/Stripe columns so only service_role (admin API routes, the
+-- Stripe webhook) can ever write them; authenticated keeps write access only
+-- to the fields the existing course-setup UI actually edits.
+REVOKE UPDATE ON courses FROM authenticated;
+GRANT UPDATE (
+  name, city, state, climate_zone, grass_type, num_holes,
+  maintained_acres, annual_rounds, latitude, longitude, updated_at
+) ON courses TO authenticated;

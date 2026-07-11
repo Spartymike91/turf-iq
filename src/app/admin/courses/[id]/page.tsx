@@ -16,6 +16,13 @@ interface Course {
   maintained_acres: number | null;
   annual_rounds: number | null;
   created_at: string;
+  plan_tier: string | null;
+  subscription_status: string | null;
+  trial_end: string | null;
+  current_period_end: string | null;
+  billing_waived_until: string | null;
+  billing_waived_at: string | null;
+  billing_waived_by_name: string | null;
 }
 
 interface RosterRow {
@@ -36,6 +43,23 @@ const ROLE_LABEL: Record<string, string> = {
   crew: "Crew",
 };
 
+const TIER_NAME: Record<string, string> = {
+  agronomist: "Agronomist",
+  superintendent: "Superintendent",
+  complete: "Complete",
+};
+
+const STATUS_TAG: Record<string, "ok" | "warn" | "amber" | "blue"> = {
+  trialing: "blue",
+  active: "ok",
+  past_due: "amber",
+  canceled: "warn",
+  unpaid: "warn",
+  incomplete: "amber",
+  incomplete_expired: "warn",
+  paused: "amber",
+};
+
 export default function AdminCourseDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -47,22 +71,54 @@ export default function AdminCourseDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      const res = await fetch(`/api/admin/courses/${id}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Failed to load course.");
-      } else {
-        setCourse(data.course);
-        setRoster(data.roster ?? []);
-        setEmployeeCount(data.employee_count ?? 0);
-        setTaskCount(data.task_count ?? 0);
-      }
-      setLoading(false);
+  const [waiveMonths, setWaiveMonths] = useState(1);
+  const [waiving, setWaiving] = useState(false);
+  const [billingNotice, setBillingNotice] = useState<string | null>(null);
+
+  async function load() {
+    const res = await fetch(`/api/admin/courses/${id}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "Failed to load course.");
+    } else {
+      setCourse(data.course);
+      setRoster(data.roster ?? []);
+      setEmployeeCount(data.employee_count ?? 0);
+      setTaskCount(data.task_count ?? 0);
     }
+    setLoading(false);
+  }
+
+  useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  async function handleWaive() {
+    setWaiving(true);
+    setBillingNotice(null);
+    const res = await fetch(`/api/admin/courses/${id}/waive-billing`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ months: waiveMonths }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setBillingNotice(`Fee waived until ${new Date(data.billing_waived_until).toLocaleDateString()}.`);
+      await load();
+    } else {
+      setBillingNotice(data.error ?? "Could not waive fee.");
+    }
+    setWaiving(false);
+  }
+
+  async function handleClearWaiver() {
+    setWaiving(true);
+    setBillingNotice(null);
+    await fetch(`/api/admin/courses/${id}/waive-billing`, { method: "DELETE" });
+    await load();
+    setWaiving(false);
+  }
 
   if (loading) {
     return (
@@ -79,6 +135,9 @@ export default function AdminCourseDetailPage() {
       </div>
     );
   }
+
+  const hasActiveWaiver = !!course.billing_waived_until && new Date(course.billing_waived_until) > new Date();
+  const isTrialing = course.subscription_status === "trialing" && !!course.trial_end;
 
   return (
     <>
@@ -98,6 +157,68 @@ export default function AdminCourseDetailPage() {
         <StatChip label="Maintained Acres" value={String(course.maintained_acres ?? "—")} />
         <StatChip label="Employees" value={String(employeeCount)} sub="Labor roster" />
         <StatChip label="Tasks Logged" value={String(taskCount)} sub="All-time assignments" />
+      </div>
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5">
+        <div className="font-serif text-lg text-green-dark mb-3">Billing</div>
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <StatChip label="Plan" value={course.plan_tier ? TIER_NAME[course.plan_tier] ?? course.plan_tier : "None"} />
+          <StatChip
+            label="Status"
+            value={course.subscription_status ?? "No subscription"}
+            tag={course.subscription_status ?? undefined}
+            tagColor={course.subscription_status ? STATUS_TAG[course.subscription_status] ?? "blue" : "warn"}
+          />
+          <StatChip
+            label={isTrialing ? "Trial Ends" : "Renews"}
+            value={
+              isTrialing
+                ? new Date(course.trial_end as string).toLocaleDateString()
+                : course.current_period_end
+                ? new Date(course.current_period_end).toLocaleDateString()
+                : "—"
+            }
+          />
+        </div>
+
+        {hasActiveWaiver ? (
+          <div className="bg-green-pale border-[1.5px] border-green-mid rounded-lg p-3 flex items-center justify-between">
+            <div className="text-sm">
+              Fee waived until <strong>{new Date(course.billing_waived_until as string).toLocaleDateString()}</strong>
+              {course.billing_waived_by_name && <> by {course.billing_waived_by_name}</>}
+              {course.billing_waived_at && <> on {new Date(course.billing_waived_at).toLocaleDateString()}</>}.
+            </div>
+            <button
+              onClick={handleClearWaiver}
+              disabled={waiving}
+              className="text-xs font-semibold text-red hover:underline disabled:opacity-50"
+            >
+              Clear Waiver
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <select
+              value={waiveMonths}
+              onChange={(e) => setWaiveMonths(Number(e.target.value))}
+              className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {m} {m === 1 ? "month" : "months"}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleWaive}
+              disabled={waiving}
+              className="px-4 py-2 bg-green-mid text-white font-semibold text-sm rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+            >
+              {waiving ? "Waiving..." : "Waive Fee"}
+            </button>
+          </div>
+        )}
+        {billingNotice && <div className="text-xs text-mist mt-2">{billingNotice}</div>}
       </div>
 
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5">

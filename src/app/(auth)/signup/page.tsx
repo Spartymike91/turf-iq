@@ -1,17 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const tier = searchParams.get("tier") ?? "";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +43,7 @@ export default function SignupPage() {
       return;
     }
 
-    router.push("/course");
+    router.push(tier ? `/course?tier=${tier}` : "/course");
     router.refresh();
   }
 

@@ -44,8 +44,12 @@ export async function GET(
     adminClient.from("task_assignments").select("id", { count: "exact", head: true }).eq("course_id", id),
   ]);
 
+  const { data: waivedByProfile } = course.billing_waived_by
+    ? await adminClient.from("profiles").select("full_name, email").eq("id", course.billing_waived_by).maybeSingle()
+    : { data: null };
+
   return NextResponse.json({
-    course,
+    course: { ...course, billing_waived_by_name: waivedByProfile?.full_name ?? waivedByProfile?.email ?? null },
     roster,
     employee_count: employeeCount ?? 0,
     task_count: taskCount ?? 0,

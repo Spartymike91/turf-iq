@@ -1,10 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PLAN_TIERS, PLAN_DISPLAY, isPlanTier, type PlanTier } from "@/lib/billing";
 
 export default function CoursePage() {
+  return (
+    <Suspense fallback={null}>
+      <CourseForm />
+    </Suspense>
+  );
+}
+
+function CourseForm() {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
@@ -24,7 +33,15 @@ export default function CoursePage() {
     maintained_acres: number;
   } | null>(null);
   const [checking, setChecking] = useState(true);
+  const [tier, setTier] = useState<PlanTier | "">("");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const t = searchParams.get("tier");
+    if (isPlanTier(t)) setTier(t);
+  }, [searchParams]);
 
   useEffect(() => {
     async function check() {
@@ -112,6 +129,23 @@ export default function CoursePage() {
           user_id: user.id,
           role: "owner",
         });
+
+        try {
+          const res = await fetch("/api/billing/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tier }),
+          });
+          const data = await res.json();
+          if (res.ok && data.url) {
+            window.location.href = data.url;
+            return;
+          }
+          console.error("Could not start checkout:", data.error);
+          setCheckoutError(data.error ?? "Could not start billing. You can set this up later.");
+        } catch (err) {
+          console.error("Checkout request failed:", err);
+        }
       }
     }
 
@@ -250,9 +284,39 @@ export default function CoursePage() {
           </select>
         </div>
 
+        {!existingCourse && (
+          <div className="flex flex-col gap-2">
+            <label className="text-[11px] font-semibold uppercase tracking-wide">
+              Choose Your Plan
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {PLAN_TIERS.map((t) => (
+                <button
+                  type="button"
+                  key={t}
+                  onClick={() => setTier(t)}
+                  className={`text-left px-3 py-3 border-[1.5px] rounded-lg text-sm transition-all ${
+                    tier === t ? "border-green-bright bg-green-pale" : "border-rule hover:border-green-mid"
+                  }`}
+                >
+                  <div className="font-semibold">{PLAN_DISPLAY[t].name}</div>
+                  <div className="text-mist text-xs">${PLAN_DISPLAY[t].price}/mo</div>
+                </button>
+              ))}
+            </div>
+            <span className="text-xs text-mist">14-day free trial, then billed monthly. Cancel anytime.</span>
+          </div>
+        )}
+
+        {checkoutError && (
+          <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-3 py-2 text-xs text-red">
+            {checkoutError}
+          </div>
+        )}
+
         <button
           type="submit"
-          disabled={loading || !name}
+          disabled={loading || !name || (!existingCourse && !tier)}
           className="mt-2 px-4 py-3 bg-green-mid text-white font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading
