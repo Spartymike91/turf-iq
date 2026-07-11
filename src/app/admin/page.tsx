@@ -17,36 +17,80 @@ interface AdminCourse {
   owner: { full_name: string | null; email: string | null } | null;
 }
 
+const emptyForm = {
+  name: "",
+  city: "",
+  state: "",
+  grass_type: "Bermudagrass",
+  climate_zone: "warm-humid",
+  num_holes: "18",
+  maintained_acres: "",
+  owner_full_name: "",
+  owner_email: "",
+};
+
 export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<AdminCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    const res = await fetch("/api/admin/courses");
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "Failed to load courses.");
+    } else {
+      setCourses(data.courses ?? []);
+    }
+    setLoading(false);
+  }
 
   useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/admin/courses");
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Failed to load courses.");
-      } else {
-        setCourses(data.courses ?? []);
-      }
-      setLoading(false);
-    }
     load();
   }, []);
+
+  async function handleAddCourse(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addForm.name || !addForm.owner_email) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const res = await fetch("/api/admin/courses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to create course.");
+      } else {
+        setNotice(
+          data.mode === "invited_new"
+            ? `${addForm.name} created — invite email sent to ${addForm.owner_email}.`
+            : `${addForm.name} created — ${addForm.owner_email} already had an account and was made owner directly.`
+        );
+        setAddForm(emptyForm);
+        setShowAddForm(false);
+        await load();
+      }
+    } catch {
+      setError("Something went wrong creating the course.");
+    }
+    setSaving(false);
+  }
 
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-mist">Loading...</div>
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-3 text-sm text-red">{error}</div>
     );
   }
 
@@ -69,10 +113,116 @@ export default function AdminCoursesPage() {
         <StatChip label="Total Holes" value={String(totalHoles)} sub="Combined footprint" />
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
-        <div className="px-5 py-4 border-b-[1.5px] border-rule font-serif text-lg text-green-dark">
-          Courses
+      {notice && (
+        <div className="bg-green-pale border-[1.5px] border-green-mid/30 rounded-lg px-4 py-2 text-xs text-green-dark">
+          {notice}
         </div>
+      )}
+      {error && (
+        <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-2 text-xs text-red">{error}</div>
+      )}
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
+          <div className="font-serif text-lg text-green-dark">Courses</div>
+          <button
+            onClick={() => setShowAddForm((v) => !v)}
+            className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
+          >
+            {showAddForm ? "Cancel" : "+ New Course"}
+          </button>
+        </div>
+
+        {showAddForm && (
+          <form
+            onSubmit={handleAddCourse}
+            className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk"
+          >
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Course Name</label>
+              <input
+                type="text"
+                required
+                value={addForm.name}
+                onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                placeholder="Pebble Creek Golf Club"
+                className="w-44 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">City</label>
+              <input
+                type="text"
+                value={addForm.city}
+                onChange={(e) => setAddForm({ ...addForm, city: e.target.value })}
+                placeholder="Atlanta"
+                className="w-28 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">State</label>
+              <input
+                type="text"
+                value={addForm.state}
+                onChange={(e) => setAddForm({ ...addForm, state: e.target.value })}
+                placeholder="GA"
+                className="w-16 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Holes</label>
+              <select
+                value={addForm.num_holes}
+                onChange={(e) => setAddForm({ ...addForm, num_holes: e.target.value })}
+                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              >
+                <option>9</option>
+                <option>18</option>
+                <option>27</option>
+                <option>36</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Acres</label>
+              <input
+                type="number"
+                value={addForm.maintained_acres}
+                onChange={(e) => setAddForm({ ...addForm, maintained_acres: e.target.value })}
+                placeholder="63"
+                className="w-20 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Owner Name</label>
+              <input
+                type="text"
+                value={addForm.owner_full_name}
+                onChange={(e) => setAddForm({ ...addForm, owner_full_name: e.target.value })}
+                placeholder="Jordan Reyes"
+                className="w-36 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Owner Email</label>
+              <input
+                type="email"
+                required
+                value={addForm.owner_email}
+                onChange={(e) => setAddForm({ ...addForm, owner_email: e.target.value })}
+                placeholder="owner@example.com"
+                className="w-48 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+            >
+              {saving ? "Creating..." : "Create Course"}
+            </button>
+          </form>
+        )}
+
         {courses.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No courses signed up yet.</div>
         ) : (
