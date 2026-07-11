@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS courses (
   num_holes INTEGER DEFAULT 18,
   maintained_acres NUMERIC(6,1),
   annual_rounds INTEGER,
+  latitude NUMERIC(9,6),
+  longitude NUMERIC(9,6),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -56,6 +58,194 @@ CREATE TABLE IF NOT EXISTS employees (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- Annual budget by category, per fiscal year
+CREATE TABLE IF NOT EXISTS budget_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  fiscal_year INTEGER NOT NULL,
+  annual_budget NUMERIC(10,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, name, fiscal_year)
+);
+
+-- Individual expense log entries, each tied to a budget category
+CREATE TABLE IF NOT EXISTS expenses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  category_id UUID REFERENCES budget_categories(id) ON DELETE CASCADE NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  description TEXT,
+  expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Annual nitrogen program target, per fiscal year
+CREATE TABLE IF NOT EXISTS fertility_programs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  fiscal_year INTEGER NOT NULL,
+  annual_n_target NUMERIC(5,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, fiscal_year)
+);
+
+-- Fertilizer application log
+CREATE TABLE IF NOT EXISTS fertilizer_applications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  zone TEXT NOT NULL,
+  product TEXT NOT NULL,
+  n_lbs_per_1000 NUMERIC(5,2) NOT NULL DEFAULT 0,
+  cost NUMERIC(10,2),
+  application_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Soil test results by zone
+CREATE TABLE IF NOT EXISTS soil_tests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  zone TEXT NOT NULL,
+  test_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  ph NUMERIC(3,1),
+  phosphorus_ppm NUMERIC(6,1),
+  potassium_ppm NUMERIC(6,1),
+  iron_ppm NUMERIC(6,1),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Daily GDD log, accumulated in real time as the weather integration runs
+CREATE TABLE IF NOT EXISTS gdd_daily_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  log_date DATE NOT NULL,
+  gdd NUMERIC(6,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, log_date)
+);
+
+-- Scheduled/assigned task instances (from the task_templates library, or ad-hoc)
+CREATE TABLE IF NOT EXISTS task_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  template_id UUID REFERENCES task_templates(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  assigned_to UUID REFERENCES employees(id) ON DELETE SET NULL,
+  scheduled_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high')),
+  status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'in_progress', 'complete')),
+  estimated_minutes INTEGER,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Time clock entries (kiosk-operated — employees aren't app users)
+CREATE TABLE IF NOT EXISTS time_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  employee_id UUID REFERENCES employees(id) ON DELETE CASCADE NOT NULL,
+  clock_in TIMESTAMPTZ NOT NULL DEFAULT now(),
+  clock_out TIMESTAMPTZ,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Equipment fleet
+CREATE TABLE IF NOT EXISTS equipment (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  make TEXT,
+  model TEXT,
+  serial_number TEXT,
+  current_hours NUMERIC(8,1) NOT NULL DEFAULT 0,
+  is_active BOOLEAN DEFAULT true,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Maintenance schedule items per piece of equipment (manual or AI-suggested draft)
+CREATE TABLE IF NOT EXISTS maintenance_schedule_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE NOT NULL,
+  task TEXT NOT NULL,
+  interval_hours NUMERIC(6,0),
+  interval_days NUMERIC(6,0),
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('ai_suggested', 'manual', 'ai_suggested_edited')),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Completed maintenance/service history
+CREATE TABLE IF NOT EXISTS maintenance_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  equipment_id UUID REFERENCES equipment(id) ON DELETE CASCADE NOT NULL,
+  task TEXT NOT NULL,
+  performed_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  hours_at_service NUMERIC(8,1),
+  cost NUMERIC(10,2),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Pesticide/herbicide application log with REI (restricted-entry interval) tracking
+CREATE TABLE IF NOT EXISTS pest_applications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  target TEXT NOT NULL,
+  product TEXT NOT NULL,
+  rei_hours INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Annual water budget target, per fiscal year
+CREATE TABLE IF NOT EXISTS irrigation_programs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  fiscal_year INTEGER NOT NULL,
+  annual_water_budget_gal NUMERIC(12,0) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, fiscal_year)
+);
+
+-- Irrigation cycle log
+CREATE TABLE IF NOT EXISTS irrigation_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  cycle_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  gallons NUMERIC(10,0) NOT NULL,
+  duration_minutes INTEGER,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Soil moisture readings by zone (manually logged — no sensor integration yet)
+CREATE TABLE IF NOT EXISTS soil_moisture_readings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  zone TEXT NOT NULL,
+  reading_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  vwc_pct NUMERIC(4,1) NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Short-lived cache of computed weather results, to avoid re-hitting NWS on
+-- every page load / chat message. Any course member can read or refresh it
+-- (it's a technical cache of public weather data, not a business record).
+CREATE TABLE IF NOT EXISTS weather_cache (
+  course_id UUID PRIMARY KEY REFERENCES courses(id) ON DELETE CASCADE,
+  data JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Task library (reusable task templates per course)
 CREATE TABLE IF NOT EXISTS task_templates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -75,10 +265,56 @@ CREATE TABLE IF NOT EXISTS task_templates (
 -- ROW LEVEL SECURITY
 -- ============================================
 
+-- SECURITY DEFINER helpers for course_members checks.
+-- These run as the function owner (which owns the tables and bypasses RLS),
+-- so they can be used inside course_members' own policies without the
+-- self-referencing subquery causing "infinite recursion detected in policy".
+CREATE OR REPLACE FUNCTION public.is_course_member(target_course_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM course_members
+    WHERE course_id = target_course_id AND user_id = auth.uid()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_course_owner(target_course_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM course_members
+    WHERE course_id = target_course_id AND user_id = auth.uid() AND role = 'owner'
+  );
+$$;
+
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE course_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budget_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fertility_programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fertilizer_applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE soil_tests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gdd_daily_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weather_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE irrigation_programs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE irrigation_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE soil_moisture_readings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pest_applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE equipment ENABLE ROW LEVEL SECURITY;
+ALTER TABLE maintenance_schedule_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE maintenance_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE time_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_templates ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: users can manage their own
@@ -103,20 +339,15 @@ CREATE POLICY "Owners can update courses"
 
 -- Course members: owners can manage; members can view fellow members
 CREATE POLICY "Members can view fellow members"
-  ON course_members FOR SELECT USING (
-    EXISTS (SELECT 1 FROM course_members cm WHERE cm.course_id = course_members.course_id AND cm.user_id = auth.uid())
-  );
+  ON course_members FOR SELECT USING (public.is_course_member(course_id));
 CREATE POLICY "Owners can insert members"
   ON course_members FOR INSERT WITH CHECK (
     auth.uid() IS NOT NULL AND (
-      role = 'owner' OR
-      EXISTS (SELECT 1 FROM course_members cm WHERE cm.course_id = course_members.course_id AND cm.user_id = auth.uid() AND cm.role = 'owner')
+      role = 'owner' OR public.is_course_owner(course_id)
     )
   );
 CREATE POLICY "Owners can delete members"
-  ON course_members FOR DELETE USING (
-    EXISTS (SELECT 1 FROM course_members cm WHERE cm.course_id = course_members.course_id AND cm.user_id = auth.uid() AND cm.role = 'owner')
-  );
+  ON course_members FOR DELETE USING (public.is_course_owner(course_id));
 
 -- Employees: members can view; owners/supers can manage
 CREATE POLICY "Members can view employees"
@@ -134,6 +365,222 @@ CREATE POLICY "Owners and supers can update employees"
 CREATE POLICY "Owners and supers can delete employees"
   ON employees FOR DELETE USING (
     EXISTS (SELECT 1 FROM course_members WHERE course_id = employees.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Budget categories: same pattern as employees
+CREATE POLICY "Members can view budget categories"
+  ON budget_categories FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert budget categories"
+  ON budget_categories FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = budget_categories.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update budget categories"
+  ON budget_categories FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = budget_categories.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete budget categories"
+  ON budget_categories FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = budget_categories.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Expenses: same pattern as employees
+CREATE POLICY "Members can view expenses"
+  ON expenses FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert expenses"
+  ON expenses FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = expenses.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update expenses"
+  ON expenses FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = expenses.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete expenses"
+  ON expenses FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = expenses.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Fertility programs: same pattern as employees
+CREATE POLICY "Members can view fertility programs"
+  ON fertility_programs FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert fertility programs"
+  ON fertility_programs FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = fertility_programs.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update fertility programs"
+  ON fertility_programs FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = fertility_programs.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Fertilizer applications: same pattern as employees
+CREATE POLICY "Members can view fertilizer applications"
+  ON fertilizer_applications FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert fertilizer applications"
+  ON fertilizer_applications FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = fertilizer_applications.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete fertilizer applications"
+  ON fertilizer_applications FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = fertilizer_applications.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Soil tests: same pattern as employees
+CREATE POLICY "Members can view soil tests"
+  ON soil_tests FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert soil tests"
+  ON soil_tests FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = soil_tests.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete soil tests"
+  ON soil_tests FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = soil_tests.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- GDD daily log: members can view; owners/supers can insert (upserted by the weather integration)
+CREATE POLICY "Members can view gdd log"
+  ON gdd_daily_log FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert gdd log"
+  ON gdd_daily_log FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = gdd_daily_log.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update gdd log"
+  ON gdd_daily_log FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = gdd_daily_log.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Weather cache: any member can read or write (technical cache, not a business record)
+CREATE POLICY "Members can view weather cache"
+  ON weather_cache FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Members can insert weather cache"
+  ON weather_cache FOR INSERT WITH CHECK (public.is_course_member(course_id));
+CREATE POLICY "Members can update weather cache"
+  ON weather_cache FOR UPDATE USING (public.is_course_member(course_id));
+
+-- Irrigation programs: same pattern as employees
+CREATE POLICY "Members can view irrigation programs"
+  ON irrigation_programs FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert irrigation programs"
+  ON irrigation_programs FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = irrigation_programs.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update irrigation programs"
+  ON irrigation_programs FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = irrigation_programs.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Irrigation logs: same pattern as employees
+CREATE POLICY "Members can view irrigation logs"
+  ON irrigation_logs FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert irrigation logs"
+  ON irrigation_logs FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = irrigation_logs.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete irrigation logs"
+  ON irrigation_logs FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = irrigation_logs.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Soil moisture readings: same pattern as employees
+CREATE POLICY "Members can view soil moisture readings"
+  ON soil_moisture_readings FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert soil moisture readings"
+  ON soil_moisture_readings FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = soil_moisture_readings.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete soil moisture readings"
+  ON soil_moisture_readings FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = soil_moisture_readings.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Pest applications: same pattern as employees
+CREATE POLICY "Members can view pest applications"
+  ON pest_applications FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert pest applications"
+  ON pest_applications FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = pest_applications.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete pest applications"
+  ON pest_applications FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = pest_applications.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Equipment: same pattern as employees
+CREATE POLICY "Members can view equipment"
+  ON equipment FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert equipment"
+  ON equipment FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = equipment.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update equipment"
+  ON equipment FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = equipment.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete equipment"
+  ON equipment FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = equipment.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Maintenance schedule items: join through equipment for course scoping
+CREATE POLICY "Members can view maintenance schedule items"
+  ON maintenance_schedule_items FOR SELECT USING (
+    EXISTS (SELECT 1 FROM equipment e WHERE e.id = maintenance_schedule_items.equipment_id AND public.is_course_member(e.course_id))
+  );
+CREATE POLICY "Owners and supers can insert maintenance schedule items"
+  ON maintenance_schedule_items FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_schedule_items.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update maintenance schedule items"
+  ON maintenance_schedule_items FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_schedule_items.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete maintenance schedule items"
+  ON maintenance_schedule_items FOR DELETE USING (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_schedule_items.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent'))
+  );
+
+-- Maintenance log: join through equipment for course scoping
+CREATE POLICY "Members can view maintenance log"
+  ON maintenance_log FOR SELECT USING (
+    EXISTS (SELECT 1 FROM equipment e WHERE e.id = maintenance_log.equipment_id AND public.is_course_member(e.course_id))
+  );
+CREATE POLICY "Owners and supers can insert maintenance log"
+  ON maintenance_log FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_log.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete maintenance log"
+  ON maintenance_log FOR DELETE USING (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_log.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent'))
+  );
+
+-- Task assignments: same pattern as employees
+CREATE POLICY "Members can view task assignments"
+  ON task_assignments FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert task assignments"
+  ON task_assignments FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update task assignments"
+  ON task_assignments FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete task assignments"
+  ON task_assignments FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Time entries: same pattern as employees
+CREATE POLICY "Members can view time entries"
+  ON time_entries FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert time entries"
+  ON time_entries FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = time_entries.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update time entries"
+  ON time_entries FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = time_entries.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete time entries"
+  ON time_entries FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = time_entries.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
   );
 
 -- Task templates: same pattern as employees

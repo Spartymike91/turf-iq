@@ -1,15 +1,95 @@
-import LiveDot from "@/components/ui/LiveDot";
-import AlertBanner from "@/components/ui/AlertBanner";
+"use client";
 
-const diseases = [
-  { name: "Dollar Spot", idx: "0.74", risk: "HIGH", color: "text-red" },
-  { name: "Brown Patch", idx: "0.48", risk: "MOD", color: "text-amber" },
-  { name: "Pythium", idx: "0.18", risk: "LOW", color: "text-green-mid" },
-  { name: "Anthracnose", idx: "0.12", risk: "LOW", color: "text-green-mid" },
-  { name: "Take-All Patch", idx: "0.09", risk: "WATCH", color: "text-blue" },
-];
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+import type { WeatherResult } from "@/lib/weather";
 
 export default function DiseasePage() {
+  const [courseName, setCourseName] = useState("");
+  const [grassType, setGrassType] = useState("");
+  const [weather, setWeather] = useState<WeatherResult | null>(null);
+  const [nAppliedYtd, setNAppliedYtd] = useState<number | null>(null);
+  const [nTarget, setNTarget] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: membership } = await supabase
+        .from("course_members")
+        .select("course_id, courses(name, grass_type)")
+        .eq("user_id", user.id)
+        .limit(1)
+        .single();
+
+      const course = membership?.courses as unknown as { name: string; grass_type: string } | null;
+      setCourseName(course?.name ?? "");
+      setGrassType(course?.grass_type ?? "");
+
+      if (membership?.course_id) {
+        const fiscalYear = new Date().getFullYear();
+        const [{ data: program }, { data: apps }] = await Promise.all([
+          supabase
+            .from("fertility_programs")
+            .select("annual_n_target")
+            .eq("course_id", membership.course_id)
+            .eq("fiscal_year", fiscalYear)
+            .maybeSingle(),
+          supabase
+            .from("fertilizer_applications")
+            .select("n_lbs_per_1000")
+            .eq("course_id", membership.course_id)
+            .gte("application_date", `${fiscalYear}-01-01`),
+        ]);
+        setNTarget(program ? Number(program.annual_n_target) : null);
+        setNAppliedYtd((apps ?? []).reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0));
+      }
+
+      try {
+        const res = await fetch("/api/weather");
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Unable to load weather data.");
+        } else {
+          setWeather(data);
+        }
+      } catch {
+        setError("Unable to load weather data.");
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-mist">Loading disease risk models...</div>
+      </div>
+    );
+  }
+
+  if (error || !weather) {
+    return (
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
+        <div className="font-serif text-xl text-green-dark mb-2">Disease risk unavailable</div>
+        <div className="text-sm text-mist max-w-md mx-auto">{error}</div>
+      </div>
+    );
+  }
+
+  const { dollarSpot, pythium, brownPatch } = weather.diseaseRisk;
+  const dsAboveThreshold = dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct;
+  const updated = new Date(weather.updatedAt);
+  const circumference = 2 * Math.PI * 36;
+  const dashOffset = circumference * (1 - Math.min(dollarSpot.probabilityPct, 100) / 100);
+
   return (
     <>
       <div className="flex items-start justify-between gap-4">
@@ -17,60 +97,100 @@ export default function DiseasePage() {
           <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
             Disease Risk Monitor
           </div>
-          <div className="font-serif text-2xl text-green-dark">
-            Turfgrass Disease Prediction
-          </div>
+          <div className="font-serif text-2xl text-green-dark">Turfgrass Disease Prediction</div>
           <div className="text-[13px] text-mist mt-1">
-            Thursday June 25 · Bermudagrass ·{" "}
+            {courseName} {grassType && `· ${grassType}`} ·{" "}
             <span className="inline-flex items-center gap-1">
-              <LiveDot /> Models updated 6:42 AM
+              <span className="w-1.5 h-1.5 bg-green-bright rounded-full animate-pulse-dot inline-block" />
+              Models updated{" "}
+              {updated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
           </div>
         </div>
       </div>
 
-      <AlertBanner
-        variant="red"
-        icon="🚨"
-        title="Dollar Spot — HIGH RISK · Apply preventive fungicide within 48 hours"
-        body="Smith-Kerns index 0.74 (threshold 0.5). 18 days since last application — protection window expired on Bermudagrass. Visible symptoms likely within 4–6 days without treatment."
-      />
+      {!dollarSpot.inValidRange && (
+        <div className="bg-blue/5 border-[1.5px] border-blue/40 rounded-[7px] px-4 py-3 text-[11px] text-mist">
+          5-day mean temperature ({dollarSpot.meanTempF}°F) is outside the Dollar Spot model&apos;s
+          validated 10–35°C (50–95°F) range — the probability below may not be meaningful right now.
+        </div>
+      )}
 
       {/* Disease Tiles */}
-      <div className="grid grid-cols-5 gap-2.5">
-        {diseases.map((d) => (
-          <div
-            key={d.name}
-            className={`bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md ${
-              d.name === "Dollar Spot"
-                ? "border-green-mid bg-green-pale"
-                : ""
-            }`}
-          >
-            <div className="text-[11px] font-semibold text-ink mb-1.5">
-              {d.name}
-            </div>
-            <div className={`font-mono text-xl font-semibold leading-none mb-1.5 ${d.color}`}>
-              {d.idx}
-            </div>
-            <span
-              className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
-                d.risk === "HIGH"
-                  ? "bg-red/10 text-red"
-                  : d.risk === "MOD"
-                  ? "bg-amber/10 text-[#92400e]"
-                  : d.risk === "WATCH"
-                  ? "bg-blue/10 text-blue"
-                  : "bg-green-pale text-green-mid"
-              }`}
-            >
-              {d.risk}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white border-[1.5px] border-green-mid bg-green-pale rounded-lg p-3.5 text-center">
+          <div className="flex items-center justify-center gap-1.5 mb-1.5">
+            <span className="text-[11px] font-semibold text-ink">Dollar Spot</span>
+            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-mid text-white font-mono">
+              MODEL
             </span>
           </div>
-        ))}
+          <div
+            className={`font-mono text-xl font-semibold leading-none mb-1.5 ${
+              dsAboveThreshold ? "text-red" : "text-green-mid"
+            }`}
+          >
+            {dollarSpot.probabilityPct.toFixed(1)}%
+          </div>
+          <span
+            className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+              dsAboveThreshold ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+            }`}
+          >
+            {dsAboveThreshold ? "ABOVE THRESHOLD" : "BELOW THRESHOLD"}
+          </span>
+        </div>
+
+        <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
+          <div className="flex items-center justify-center gap-1.5 mb-1.5">
+            <span className="text-[11px] font-semibold text-ink">Pythium Blight</span>
+            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber text-white font-mono">
+              HEURISTIC
+            </span>
+          </div>
+          <div
+            className={`font-mono text-xl font-semibold leading-none mb-1.5 ${
+              pythium.elevated ? "text-red" : "text-green-mid"
+            }`}
+          >
+            {pythium.hoursRhAbove90}
+            <span className="text-xs font-normal text-mist">hrs</span>
+          </div>
+          <span
+            className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+              pythium.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+            }`}
+          >
+            {pythium.elevated ? "CONDITIONS MET" : "NOT ELEVATED"}
+          </span>
+        </div>
+
+        <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
+          <div className="flex items-center justify-center gap-1.5 mb-1.5">
+            <span className="text-[11px] font-semibold text-ink">Brown Patch</span>
+            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber text-white font-mono">
+              HEURISTIC
+            </span>
+          </div>
+          <div
+            className={`font-mono text-xl font-semibold leading-none mb-1.5 ${
+              brownPatch.elevated ? "text-red" : "text-green-mid"
+            }`}
+          >
+            {brownPatch.hoursRhAbove95}
+            <span className="text-xs font-normal text-mist">hrs</span>
+          </div>
+          <span
+            className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+              brownPatch.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+            }`}
+          >
+            {brownPatch.elevated ? "CONDITIONS MET" : "NOT ELEVATED"}
+          </span>
+        </div>
       </div>
 
-      {/* Detail Card */}
+      {/* Dollar Spot Detail Card */}
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
         <div className="bg-green-dark p-5 grid grid-cols-[1fr_auto] gap-4 items-center">
           <div>
@@ -78,73 +198,52 @@ export default function DiseasePage() {
             <div className="text-[11px] text-white/50 italic mb-2.5">
               Clarireedia jacksonii · Clarireedia monteithiana
             </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {["Greens", "Tees", "Fairways"].map((z) => (
-                <span
-                  key={z}
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full font-mono bg-green-bright/20 text-green-bright border border-green-bright/30"
-                >
-                  {z}
-                </span>
-              ))}
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full font-mono bg-white/7 text-white/40 border border-white/10">
-                Rough
-              </span>
+            <div className="text-[10px] text-white/40 font-mono">
+              Smith, Kerns &amp; Koch (2018) logistic model · course-level weather station
             </div>
           </div>
           <div className="text-center">
             <div className="relative w-[90px] h-[90px]">
-              <svg
-                viewBox="0 0 90 90"
-                width="90"
-                height="90"
-                style={{ transform: "rotate(-90deg)" }}
-              >
+              <svg viewBox="0 0 90 90" width="90" height="90" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="45" cy="45" r="36" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="8" />
                 <circle
                   cx="45"
                   cy="45"
                   r="36"
                   fill="none"
-                  stroke="rgba(255,255,255,0.1)"
-                  strokeWidth="8"
-                />
-                <circle
-                  cx="45"
-                  cy="45"
-                  r="36"
-                  fill="none"
-                  stroke="#dc2626"
+                  stroke={dsAboveThreshold ? "#dc2626" : "#52b788"}
                   strokeWidth="8"
                   strokeLinecap="round"
-                  strokeDasharray="226.2"
-                  strokeDashoffset="59"
+                  strokeDasharray={circumference.toFixed(1)}
+                  strokeDashoffset={dashOffset.toFixed(1)}
                 />
               </svg>
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
                 <div className="font-mono text-xl font-bold text-white leading-none">
-                  0.74
+                  {dollarSpot.probabilityPct.toFixed(0)}%
                 </div>
-                <div className="text-[9px] text-white/45 uppercase tracking-wide mt-0.5">
-                  Index
-                </div>
+                <div className="text-[9px] text-white/45 uppercase tracking-wide mt-0.5">Probability</div>
               </div>
             </div>
-            <div className="text-[10px] font-bold text-red mt-1 font-mono">
-              ● HIGH RISK
+            <div className={`text-[10px] font-bold mt-1 font-mono ${dsAboveThreshold ? "text-red" : "text-green-bright"}`}>
+              ● {dsAboveThreshold ? "ABOVE" : "BELOW"} 20% THRESHOLD
             </div>
           </div>
         </div>
         <div className="p-5 grid grid-cols-2 gap-5">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
-              Contributing Conditions
+              Model Inputs (5-day trailing average)
             </div>
             {[
-              { name: "Leaf Wetness Duration", val: "9.2 hrs", flag: "TRIGGER", fc: "bg-red/10 text-red" },
-              { name: "Overnight Low Temp", val: "71°F", flag: "TRIGGER", fc: "bg-red/10 text-red" },
-              { name: "N Fertility", val: "Low", flag: "TRIGGER", fc: "bg-red/10 text-red" },
-              { name: "Days Since Last App", val: "18 days", flag: "EXPIRED", fc: "bg-red/10 text-red" },
-              { name: "Daytime High Temp", val: "90°F", flag: "OK", fc: "bg-green-pale text-green-mid" },
+              { name: "Mean Air Temp", val: `${dollarSpot.meanTempF}°F`, flag: dollarSpot.inValidRange ? "OK" : "OUT OF RANGE", ok: dollarSpot.inValidRange },
+              { name: "Mean Relative Humidity", val: `${dollarSpot.meanHumidity}%`, flag: "—", ok: true },
+              {
+                name: "N Applied YTD",
+                val: nAppliedYtd != null ? `${nAppliedYtd.toFixed(1)} lbs/M${nTarget ? ` / ${nTarget.toFixed(1)}` : ""}` : "Not tracked",
+                flag: nAppliedYtd != null && nTarget != null && nAppliedYtd < nTarget * 0.5 ? "BEHIND PACE" : "—",
+                ok: !(nAppliedYtd != null && nTarget != null && nAppliedYtd < nTarget * 0.5),
+              },
             ].map((f) => (
               <div
                 key={f.name}
@@ -152,42 +251,68 @@ export default function DiseasePage() {
               >
                 <span className="text-ink flex-1">{f.name}</span>
                 <span className="font-mono font-semibold text-green-mid">{f.val}</span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono whitespace-nowrap ${f.fc}`}>
-                  {f.flag}
-                </span>
+                {f.flag !== "—" && (
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono whitespace-nowrap ${
+                      f.ok ? "bg-green-pale text-green-mid" : "bg-red/10 text-red"
+                    }`}
+                  >
+                    {f.flag}
+                  </span>
+                )}
               </div>
             ))}
           </div>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
-              Recommendation
+              Guidance
             </div>
             <div className="border-[1.5px] border-rule rounded-[7px] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide bg-red/10 text-red">
-                🚨 URGENT — Apply within 48 hours
+              <div
+                className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${
+                  dsAboveThreshold ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                }`}
+              >
+                {dsAboveThreshold ? "⚠️ Above the 20% action threshold" : "✓ Below the 20% action threshold"}
               </div>
               <div className="p-3 text-xs text-ink leading-relaxed">
-                Protection window expired. Visible symptoms likely within 4–6 days.
-                <div className="flex items-start gap-1.5 px-2 py-1.5 bg-chalk rounded mt-1.5 text-[11px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-bright shrink-0 mt-1" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-ink">Velista (penthiopyrad)</span>
-                    <div className="text-[10px] text-mist">Systemic · 21-day window</div>
-                  </div>
-                  <span className="font-mono text-mist shrink-0">0.3 oz/M</span>
-                </div>
-                <div className="flex items-start gap-1.5 px-2 py-1.5 bg-chalk rounded mt-1.5 text-[11px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-bright shrink-0 mt-1" />
-                  <div className="flex-1">
-                    <span className="font-semibold text-ink">Daconil WeatherStik</span>
-                    <div className="text-[10px] text-mist">Contact · broad spectrum</div>
-                  </div>
-                  <span className="font-mono text-mist shrink-0">4 fl oz/M</span>
-                </div>
-                <div className="mt-2 px-2.5 py-2 bg-amber/10 rounded text-[11px] text-[#92400e] font-medium border-l-[3px] border-amber">
-                  ⏱ Apply Friday AM before 9 AM. Avoid evening application ahead of Saturday rain.
+                {dsAboveThreshold
+                  ? "Model output exceeds the literature-recommended 20% spray threshold. Consider a preventive fungicide application in the next 1–2 days if not already covered."
+                  : "Model output is below the 20% action threshold. No immediate fungicide action indicated — continue monitoring as conditions change."}
+                <div className="mt-2 text-[10px] text-mist">
+                  This tool doesn&apos;t track your spray history or recommend specific products —
+                  weigh this alongside your own fungicide rotation program.
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5 grid grid-cols-2 gap-5">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+            Pythium Blight — trailing 24h
+          </div>
+          <div className="text-xs text-mist leading-relaxed">
+            Max temp <strong className="text-ink">{pythium.maxTempF}°F</strong> · Min temp{" "}
+            <strong className="text-ink">{pythium.minTempF}°F</strong> · RH ≥90% for{" "}
+            <strong className="text-ink">{pythium.hoursRhAbove90} hrs</strong>
+            <div className="mt-1.5 text-[10px]">
+              Elevated when: max &gt;86°F, min &gt;68°F, and RH≥90% for 14+ hrs (Nutter-Shane threshold model).
+            </div>
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+            Brown Patch — trailing 24h
+          </div>
+          <div className="text-xs text-mist leading-relaxed">
+            Overnight low <strong className="text-ink">{brownPatch.overnightLowF}°F</strong> · RH ≥95%
+            for <strong className="text-ink">{brownPatch.hoursRhAbove95} hrs</strong>
+            <div className="mt-1.5 text-[10px]">
+              Elevated when: low &gt;68°F and RH≥95% for 6+ hrs (qualitative extension heuristic — no
+              formally validated model exists for Brown Patch).
             </div>
           </div>
         </div>

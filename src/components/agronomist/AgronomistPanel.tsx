@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import type { WeatherResult } from "@/lib/weather";
 
 interface Message {
   role: "user" | "assistant";
@@ -8,11 +9,17 @@ interface Message {
 }
 
 const SUGGESTIONS = [
-  "Should I spray for Dollar Spot before Saturday's rain?",
-  "What's causing the dry spots on holes 7 and 14?",
-  "Is my iron deficiency urgent?",
-  "Recommend a summer N program for greens",
+  "What should I focus on today?",
+  "Is my fertility program on track?",
+  "How does my budget look this year?",
+  "What's my current N applied vs. target?",
 ];
+
+function greeting() {
+  const hour = new Date().getHours();
+  const timeOfDay = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+  return `Good ${timeOfDay}. Ask me anything about your course today.`;
+}
 
 export default function AgronomistPanel({
   open,
@@ -22,20 +29,25 @@ export default function AgronomistPanel({
   onClose: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        'Good morning. Dollar Spot is at **HIGH risk** today — Smith-Kerns index 0.74. Your June 7 Velista application has expired. What would you like to work through?',
-    },
+    { role: "assistant", content: greeting() },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [weather, setWeather] = useState<WeatherResult | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!open || weather) return;
+    fetch("/api/weather")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data && setWeather(data))
+      .catch(() => {});
+  }, [open, weather]);
 
   async function sendMessage(text?: string) {
     const content = text || input.trim();
@@ -130,21 +142,24 @@ export default function AgronomistPanel({
 
         {/* Context chips */}
         <div className="bg-green-dark px-4 py-2 flex gap-1.5 overflow-x-auto shrink-0 border-b border-white/7 [&::-webkit-scrollbar]:hidden">
-          <span className="text-[10px] font-mono text-red/80 bg-red/15 border border-red/30 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-            DS 0.74 HIGH
-          </span>
-          <span className="text-[10px] font-mono text-amber/80 bg-amber/15 border border-amber/30 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-            BP 0.48 MOD
-          </span>
-          <span className="text-[10px] font-mono text-white/50 bg-white/7 border border-white/11 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-            84°F · 71% RH
-          </span>
-          <span className="text-[10px] font-mono text-white/50 bg-white/7 border border-white/11 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-            ET 0.21"
-          </span>
-          <span className="text-[10px] font-mono text-white/50 bg-white/7 border border-white/11 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
-            1,847 GDD
-          </span>
+          {weather ? (
+            <>
+              <span className="text-[10px] font-mono text-white/50 bg-white/7 border border-white/11 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
+                {weather.current.tempF}°F
+                {weather.current.humidity != null ? ` · ${weather.current.humidity}% RH` : ""}
+              </span>
+              <span className="text-[10px] font-mono text-white/50 bg-white/7 border border-white/11 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
+                ET {weather.agronomics.et0In.toFixed(2)}&quot;
+              </span>
+              <span className="text-[10px] font-mono text-white/50 bg-white/7 border border-white/11 px-2 py-0.5 rounded whitespace-nowrap shrink-0">
+                {weather.agronomics.gddSeasonToDate.toFixed(0)} GDD
+              </span>
+            </>
+          ) : (
+            <span className="text-[10px] font-mono text-white/40 px-2 py-0.5 whitespace-nowrap shrink-0">
+              Loading course context...
+            </span>
+          )}
         </div>
 
         {/* Messages */}

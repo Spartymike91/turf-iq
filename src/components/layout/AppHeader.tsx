@@ -14,6 +14,7 @@ const tabs = [
   { href: "/budget", icon: "📊", label: "Budget" },
   { href: "/labor", icon: "👷", label: "Labor" },
   { href: "/tasks", icon: "📋", label: "Tasks" },
+  { href: "/team", icon: "👥", label: "Team" },
 ];
 
 export default function AppHeader({

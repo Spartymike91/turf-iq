@@ -76,6 +76,7 @@ export default function CoursePage() {
     if (!user) return;
 
     if (existingCourse) {
+      const locationChanged = city !== existingCourse.city || state !== existingCourse.state;
       await supabase
         .from("courses")
         .update({
@@ -86,26 +87,28 @@ export default function CoursePage() {
           climate_zone: climateZone,
           num_holes: parseInt(numHoles),
           maintained_acres: parseFloat(acres) || null,
+          ...(locationChanged ? { latitude: null, longitude: null } : {}),
         })
         .eq("id", existingCourse.id);
     } else {
-      const { data: course } = await supabase
-        .from("courses")
-        .insert({
-          name,
-          city,
-          state,
-          grass_type: grassType,
-          climate_zone: climateZone,
-          num_holes: parseInt(numHoles),
-          maintained_acres: parseFloat(acres) || null,
-        })
-        .select()
-        .single();
+      // Pre-generate the id and skip .select() on this insert: RETURNING re-checks
+      // the courses SELECT policy, which requires a course_members row that doesn't
+      // exist until the insert below, so requesting the row back here always fails.
+      const courseId = crypto.randomUUID();
+      const { error: courseError } = await supabase.from("courses").insert({
+        id: courseId,
+        name,
+        city,
+        state,
+        grass_type: grassType,
+        climate_zone: climateZone,
+        num_holes: parseInt(numHoles),
+        maintained_acres: parseFloat(acres) || null,
+      });
 
-      if (course) {
+      if (!courseError) {
         await supabase.from("course_members").insert({
-          course_id: course.id,
+          course_id: courseId,
           user_id: user.id,
           role: "owner",
         });

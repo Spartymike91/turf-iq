@@ -1,7 +1,51 @@
-import AlertBanner from "@/components/ui/AlertBanner";
-import LiveDot from "@/components/ui/LiveDot";
+"use client";
+
+import { useState, useEffect } from "react";
+import type { WeatherResult } from "@/lib/weather";
 
 export default function WeatherPage() {
+  const [weather, setWeather] = useState<WeatherResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/weather");
+        const data = await res.json();
+        if (!res.ok) {
+          setError(data.error || "Unable to load weather data.");
+        } else {
+          setWeather(data);
+        }
+      } catch {
+        setError("Unable to load weather data.");
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-mist">Loading weather...</div>
+      </div>
+    );
+  }
+
+  if (error || !weather) {
+    return (
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
+        <div className="font-serif text-xl text-green-dark mb-2">Weather unavailable</div>
+        <div className="text-sm text-mist max-w-md mx-auto">{error}</div>
+      </div>
+    );
+  }
+
+  const today = new Date();
+  const updated = new Date(weather.updatedAt);
+
   return (
     <>
       {/* Page Header */}
@@ -11,30 +55,23 @@ export default function WeatherPage() {
             Weather Intelligence
           </div>
           <div className="font-serif text-2xl text-green-dark">
-            Thursday, June 25, 2026
+            {today.toLocaleDateString("en-US", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
           </div>
           <div className="text-[13px] text-mist mt-1">
-            Atlanta, GA · Warm-Season Humid ·{" "}
+            {weather.location.city}, {weather.location.state} ·{" "}
             <span className="inline-flex items-center gap-1">
-              <LiveDot /> Updated 6:42 AM
+              <span className="w-1.5 h-1.5 bg-green-bright rounded-full animate-pulse-dot inline-block" />
+              Updated{" "}
+              {updated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
             </span>
           </div>
         </div>
       </div>
-
-      {/* Alerts */}
-      <AlertBanner
-        variant="amber"
-        icon="⚠️"
-        title="Dollar Spot Risk HIGH — Smith-Kerns 0.74 · Apply fungicide within 48 hours"
-        body="9.2 hrs leaf wetness + low N + temps 68–82°F. Bermudagrass greens and tees most susceptible. Protection window expired."
-      />
-      <AlertBanner
-        variant="blue"
-        icon="🌧️"
-        title="1.2&quot; Rainfall Expected Saturday (60%) — Auto-suspend irrigation is ON"
-        body="Radar tracking system ETA Saturday ~2 PM. No immediate threat today. Review Friday spray timing."
-      />
 
       {/* Current + Agro Metrics */}
       <div className="grid grid-cols-2 gap-4">
@@ -45,21 +82,27 @@ export default function WeatherPage() {
             Current Conditions
           </div>
           <div className="font-serif text-[52px] leading-none mb-1">
-            84<sup className="text-[22px]">°F</sup>
+            {weather.current.tempF}
+            <sup className="text-[22px]">°F</sup>
           </div>
-          <div className="text-[15px] text-green-bright mb-3.5">☀️ Mostly Sunny</div>
+          <div className="text-[15px] text-green-bright mb-3.5">{weather.current.description}</div>
           <div className="flex gap-3.5 flex-wrap">
+            {weather.current.humidity != null && (
+              <span className="text-[11px] text-white/60">
+                💧 <strong className="text-white">{weather.current.humidity}%</strong> RH
+              </span>
+            )}
+            {weather.current.windSpeed != null && (
+              <span className="text-[11px] text-white/60">
+                💨 <strong className="text-white">{weather.current.windSpeed} mph</strong>{" "}
+                {weather.current.windDirection}
+              </span>
+            )}
             <span className="text-[11px] text-white/60">
-              💧 <strong className="text-white">71%</strong> RH
+              🌡 High <strong className="text-white">{weather.current.highF}°F</strong>
             </span>
             <span className="text-[11px] text-white/60">
-              💨 <strong className="text-white">8 mph</strong> SW
-            </span>
-            <span className="text-[11px] text-white/60">
-              🌡 High <strong className="text-white">90°F</strong>
-            </span>
-            <span className="text-[11px] text-white/60">
-              Low <strong className="text-white">72°F</strong>
+              Low <strong className="text-white">{weather.current.lowF}°F</strong>
             </span>
           </div>
         </div>
@@ -68,52 +111,54 @@ export default function WeatherPage() {
         <div className="grid grid-cols-2 gap-3">
           <AgroCard
             label="Today's ET"
-            value="0.21"
+            value={weather.agronomics.et0In.toFixed(2)}
             unit=" in"
-            desc='Above 30-day avg of 0.17"'
-            fill={65}
+            desc="Estimated (Hargreaves) — reference evapotranspiration"
+            fill={Math.min(100, (weather.agronomics.et0In / 0.35) * 100)}
             color="var(--amber)"
           />
           <AgroCard
             label="Growing Degree Days"
-            value="1,847"
+            value={weather.agronomics.gddSeasonToDate.toLocaleString()}
             unit=" GDD"
-            desc="Base 50°F · season to date · grub hatch active"
-            fill={72}
+            desc={`Base 50°F · +${weather.agronomics.gddToday.toFixed(1)} today · tracked since app setup`}
+            fill={Math.min(100, (weather.agronomics.gddSeasonToDate / 2500) * 100)}
             color="var(--gm)"
           />
           <AgroCard
-            label="Leaf Wetness"
-            value="9.2"
+            label="Leaf Wetness (est.)"
+            value={String(weather.agronomics.leafWetnessHours)}
             unit=" hrs"
-            desc="Overnight. Dollar Spot threshold: 8+ hrs"
-            fill={78}
+            desc="Estimated from dewpoint spread · Dollar Spot threshold: 8+ hrs"
+            fill={Math.min(100, (weather.agronomics.leafWetnessHours / 16) * 100)}
             color="var(--red)"
           />
           <AgroCard
-            label="Soil Temp (4&quot;)"
-            value="78"
-            unit="°F"
-            desc="Bermuda root zone · Pythium active >70°F"
-            fill={60}
-            color="var(--gm)"
+            label="7-Day Rainfall"
+            value={weather.agronomics.weekRainfallIn.toFixed(2)}
+            unit=" in"
+            desc="Forecasted total, next 7 days"
+            fill={Math.min(100, (weather.agronomics.weekRainfallIn / 2) * 100)}
+            color="var(--water)"
           />
         </div>
       </div>
 
       {/* 7-Day Forecast */}
       <div>
-        <div className="font-serif text-[17px] text-green-dark mb-3">
-          7-Day Forecast
-        </div>
+        <div className="font-serif text-[17px] text-green-dark mb-3">7-Day Forecast</div>
         <div className="grid grid-cols-7 gap-2">
-          <ForecastDay dow="Thu" icon="☀️" hi="90°" lo="72°" rain="20%" today />
-          <ForecastDay dow="Fri" icon="⛅" hi="88°" lo="71°" rain="30%" badge="DISEASE" />
-          <ForecastDay dow="Sat" icon="🌧️" hi="82°" lo="69°" rain="60% · 1.2&quot;" />
-          <ForecastDay dow="Sun" icon="⛅" hi="84°" lo="70°" rain="25%" />
-          <ForecastDay dow="Mon" icon="☀️" hi="91°" lo="73°" rain="10%" />
-          <ForecastDay dow="Tue" icon="☀️" hi="93°" lo="74°" rain="5%" badge="HEAT" />
-          <ForecastDay dow="Wed" icon="⛅" hi="89°" lo="72°" rain="20%" />
+          {weather.forecast.map((day, i) => (
+            <ForecastDay
+              key={i}
+              dow={day.dow}
+              icon={day.icon}
+              hi={`${day.hiF}°`}
+              lo={`${day.loF}°`}
+              rain={day.precipChance != null ? `${day.precipChance}%` : "—"}
+              today={day.isToday}
+            />
+          ))}
         </div>
       </div>
     </>
@@ -162,7 +207,6 @@ function ForecastDay({
   lo,
   rain,
   today,
-  badge,
 }: {
   dow: string;
   icon: string;
@@ -170,7 +214,6 @@ function ForecastDay({
   lo: string;
   rain: string;
   today?: boolean;
-  badge?: string;
 }) {
   return (
     <div
@@ -188,14 +231,8 @@ function ForecastDay({
         {dow}
       </div>
       <div className="text-xl mb-1.5">{icon}</div>
-      <div
-        className={`text-sm font-bold ${today ? "text-white" : "text-ink"}`}
-      >
-        {hi}
-      </div>
-      <div className={`text-[11px] ${today ? "text-white/50" : "text-mist"}`}>
-        {lo}
-      </div>
+      <div className={`text-sm font-bold ${today ? "text-white" : "text-ink"}`}>{hi}</div>
+      <div className={`text-[11px] ${today ? "text-white/50" : "text-mist"}`}>{lo}</div>
       <div
         className={`text-[10px] font-mono font-semibold mt-1 ${
           today ? "text-blue/60" : "text-blue"
@@ -203,11 +240,6 @@ function ForecastDay({
       >
         {rain}
       </div>
-      {badge && (
-        <span className="text-[9px] font-bold bg-red/10 text-red rounded px-1 py-0.5 mt-1 inline-block">
-          {badge}
-        </span>
-      )}
     </div>
   );
 }
