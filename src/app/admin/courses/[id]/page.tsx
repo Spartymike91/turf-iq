@@ -203,9 +203,9 @@ export default function AdminCourseDetailPage() {
               onChange={(e) => setWaiveMonths(Number(e.target.value))}
               className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
             >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              {Array.from({ length: 13 }, (_, i) => i).map((m) => (
                 <option key={m} value={m}>
-                  {m} {m === 1 ? "month" : "months"}
+                  {m === 0 ? "0 months (none)" : `${m} ${m === 1 ? "month" : "months"}`}
                 </option>
               ))}
             </select>

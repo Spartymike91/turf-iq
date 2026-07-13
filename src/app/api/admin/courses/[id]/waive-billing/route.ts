@@ -9,8 +9,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { id } = await params;
   const { months } = (await request.json()) as { months?: number };
-  if (!months || !Number.isInteger(months) || months < 1 || months > 12) {
-    return NextResponse.json({ error: "months must be an integer between 1 and 12." }, { status: 400 });
+  if (months == null || !Number.isInteger(months) || months < 0 || months > 12) {
+    return NextResponse.json({ error: "months must be an integer between 0 and 12." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
