@@ -31,10 +31,18 @@ function CourseForm() {
     climate_zone: string;
     num_holes: number;
     maintained_acres: number;
+    plan_tier: PlanTier | null;
+    subscription_status: string | null;
+    stripe_customer_id: string | null;
+    billing_waived_until: string | null;
   } | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
   const [checking, setChecking] = useState(true);
   const [tier, setTier] = useState<PlanTier | "">("");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [resubscribeTier, setResubscribeTier] = useState<PlanTier | "">("");
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -53,10 +61,12 @@ function CourseForm() {
 
       const { data: membership } = await supabase
         .from("course_members")
-        .select("course_id, courses(*)")
+        .select("course_id, role, courses(*)")
         .eq("user_id", user.id)
         .limit(1)
         .single();
+
+      setIsOwner(membership?.role === "owner");
 
       if (membership?.courses) {
         const c = membership.courses as unknown as Record<string, unknown>;
@@ -69,6 +79,10 @@ function CourseForm() {
           climate_zone: (c.climate_zone as string) || "",
           num_holes: (c.num_holes as number) || 18,
           maintained_acres: (c.maintained_acres as number) || 0,
+          plan_tier: (c.plan_tier as PlanTier) || null,
+          subscription_status: (c.subscription_status as string) || null,
+          stripe_customer_id: (c.stripe_customer_id as string) || null,
+          billing_waived_until: (c.billing_waived_until as string) || null,
         });
         setName(c.name as string);
         setCity((c.city as string) || "");
@@ -153,6 +167,45 @@ function CourseForm() {
     router.refresh();
   }
 
+  async function handleManageBilling() {
+    setBillingLoading(true);
+    setBillingError(null);
+    try {
+      const res = await fetch("/api/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setBillingError(data.error ?? "Could not open billing portal.");
+    } catch {
+      setBillingError("Could not open billing portal.");
+    }
+    setBillingLoading(false);
+  }
+
+  async function handleResubscribe() {
+    if (!resubscribeTier) return;
+    setBillingLoading(true);
+    setBillingError(null);
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier: resubscribeTier }),
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setBillingError(data.error ?? "Could not start checkout.");
+    } catch {
+      setBillingError("Could not start checkout.");
+    }
+    setBillingLoading(false);
+  }
+
   if (checking) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -174,6 +227,67 @@ function CourseForm() {
           ? "Update your course details below."
           : "Tell us about your golf course to get started."}
       </div>
+
+      {existingCourse && isOwner && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 mb-4">
+          <div className="font-serif text-lg text-green-dark mb-3">Billing</div>
+
+          {existingCourse.stripe_customer_id ? (
+            <div className="flex items-center justify-between">
+              <div className="text-sm">
+                <span className="font-semibold">
+                  {existingCourse.plan_tier ? PLAN_DISPLAY[existingCourse.plan_tier].name : "Plan"}
+                </span>{" "}
+                <span className="text-mist">
+                  · {existingCourse.subscription_status ?? "unknown status"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleManageBilling}
+                disabled={billingLoading}
+                className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+              >
+                {billingLoading ? "Loading..." : "Manage / Upgrade Plan"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {existingCourse.billing_waived_until &&
+                new Date(existingCourse.billing_waived_until) > new Date() && (
+                  <div className="text-xs text-mist mb-1">
+                    Fee waived until {new Date(existingCourse.billing_waived_until).toLocaleDateString()} — no
+                    subscription needed right now, but you're welcome to subscribe anytime.
+                  </div>
+                )}
+              <div className="text-sm text-mist mb-1">No active subscription.</div>
+              <div className="flex items-center gap-3">
+                <select
+                  value={resubscribeTier}
+                  onChange={(e) => setResubscribeTier(e.target.value as PlanTier)}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                >
+                  <option value="">Choose a plan...</option>
+                  {PLAN_TIERS.map((t) => (
+                    <option key={t} value={t}>
+                      {PLAN_DISPLAY[t].name} — ${PLAN_DISPLAY[t].price}/mo
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleResubscribe}
+                  disabled={billingLoading || !resubscribeTier}
+                  className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+                >
+                  {billingLoading ? "Loading..." : "Subscribe"}
+                </button>
+              </div>
+            </div>
+          )}
+          {billingError && <div className="text-xs text-red mt-2">{billingError}</div>}
+        </div>
+      )}
 
       <form
         onSubmit={handleSubmit}
