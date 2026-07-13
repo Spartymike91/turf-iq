@@ -780,3 +780,210 @@ GRANT UPDATE (
   name, city, state, climate_zone, grass_type, num_holes,
   maintained_acres, annual_rounds, latitude, longitude, updated_at
 ) ON courses TO authenticated;
+
+-- ============================================
+-- PLATFORM ADMIN: view any customer's course; edit requires a
+-- personal PIN-unlocked session; delete is never permitted for
+-- admins, at the RLS layer, regardless of unlock state.
+-- (mikeconley7@gmail.com, cabgvl@gmail.com)
+-- ============================================
+
+CREATE OR REPLACE FUNCTION public.is_platform_admin()
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT EXISTS (SELECT 1 FROM platform_admins WHERE user_id = auth.uid());
+$$;
+
+CREATE POLICY "Platform admins can view all profiles"
+  ON profiles FOR SELECT USING (public.is_platform_admin());
+
+CREATE POLICY "Platform admins can view courses"
+  ON courses FOR SELECT USING (public.is_platform_admin());
+
+-- Personal PIN + time-limited elevation, so admin write access is a
+-- deliberate, temporary unlock rather than always-on.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS edit_pin_hash TEXT;
+
+CREATE TABLE IF NOT EXISTS admin_edit_sessions (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE admin_edit_sessions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admins can view own edit session"
+  ON admin_edit_sessions FOR SELECT USING (auth.uid() = user_id);
+
+-- Deliberately no INSERT/UPDATE/DELETE policy on admin_edit_sessions:
+-- only the service-role-backed /api/admin/elevate route can write it,
+-- after verifying the caller's PIN server-side via verify_admin_pin().
+
+CREATE OR REPLACE FUNCTION public.is_admin_edit_elevated()
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM admin_edit_sessions
+    WHERE user_id = auth.uid() AND expires_at > now()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.verify_admin_pin(input_pin TEXT)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public, extensions STABLE AS $$
+  SELECT edit_pin_hash IS NOT NULL AND edit_pin_hash = extensions.crypt(input_pin, edit_pin_hash)
+  FROM platform_admins WHERE user_id = auth.uid();
+$$;
+
+CREATE POLICY "Platform admins can update courses when edit-unlocked"
+  ON courses FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- course_members: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view course_members"
+  ON course_members FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert course_members when edit-unlocked"
+  ON course_members FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update course_members when edit-unlocked"
+  ON course_members FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- employees: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view employees"
+  ON employees FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert employees when edit-unlocked"
+  ON employees FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update employees when edit-unlocked"
+  ON employees FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- budget_categories: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view budget_categories"
+  ON budget_categories FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert budget_categories when edit-unlocked"
+  ON budget_categories FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update budget_categories when edit-unlocked"
+  ON budget_categories FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- expenses: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view expenses"
+  ON expenses FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert expenses when edit-unlocked"
+  ON expenses FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update expenses when edit-unlocked"
+  ON expenses FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- fertility_programs: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view fertility_programs"
+  ON fertility_programs FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert fertility_programs when edit-unlocked"
+  ON fertility_programs FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update fertility_programs when edit-unlocked"
+  ON fertility_programs FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- fertilizer_applications: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view fertilizer_applications"
+  ON fertilizer_applications FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert fertilizer_applications when edit-unlocked"
+  ON fertilizer_applications FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update fertilizer_applications when edit-unlocked"
+  ON fertilizer_applications FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- soil_tests: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view soil_tests"
+  ON soil_tests FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert soil_tests when edit-unlocked"
+  ON soil_tests FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update soil_tests when edit-unlocked"
+  ON soil_tests FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- gdd_daily_log: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view gdd_daily_log"
+  ON gdd_daily_log FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert gdd_daily_log when edit-unlocked"
+  ON gdd_daily_log FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update gdd_daily_log when edit-unlocked"
+  ON gdd_daily_log FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- task_assignments: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view task_assignments"
+  ON task_assignments FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert task_assignments when edit-unlocked"
+  ON task_assignments FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update task_assignments when edit-unlocked"
+  ON task_assignments FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- time_entries: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view time_entries"
+  ON time_entries FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert time_entries when edit-unlocked"
+  ON time_entries FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update time_entries when edit-unlocked"
+  ON time_entries FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- equipment: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view equipment"
+  ON equipment FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert equipment when edit-unlocked"
+  ON equipment FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update equipment when edit-unlocked"
+  ON equipment FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- maintenance_schedule_items: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view maintenance_schedule_items"
+  ON maintenance_schedule_items FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert maintenance_schedule_items when edit-unlocked"
+  ON maintenance_schedule_items FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update maintenance_schedule_items when edit-unlocked"
+  ON maintenance_schedule_items FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- maintenance_log: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view maintenance_log"
+  ON maintenance_log FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert maintenance_log when edit-unlocked"
+  ON maintenance_log FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update maintenance_log when edit-unlocked"
+  ON maintenance_log FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- pest_applications: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view pest_applications"
+  ON pest_applications FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert pest_applications when edit-unlocked"
+  ON pest_applications FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update pest_applications when edit-unlocked"
+  ON pest_applications FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- irrigation_programs: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view irrigation_programs"
+  ON irrigation_programs FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert irrigation_programs when edit-unlocked"
+  ON irrigation_programs FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update irrigation_programs when edit-unlocked"
+  ON irrigation_programs FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- irrigation_logs: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view irrigation_logs"
+  ON irrigation_logs FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert irrigation_logs when edit-unlocked"
+  ON irrigation_logs FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update irrigation_logs when edit-unlocked"
+  ON irrigation_logs FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- soil_moisture_readings: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view soil_moisture_readings"
+  ON soil_moisture_readings FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert soil_moisture_readings when edit-unlocked"
+  ON soil_moisture_readings FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update soil_moisture_readings when edit-unlocked"
+  ON soil_moisture_readings FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- weather_cache: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view weather_cache"
+  ON weather_cache FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert weather_cache when edit-unlocked"
+  ON weather_cache FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update weather_cache when edit-unlocked"
+  ON weather_cache FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- task_templates: admins can always view; insert/update only while edit-unlocked; never delete
+CREATE POLICY "Platform admins can view task_templates"
+  ON task_templates FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert task_templates when edit-unlocked"
+  ON task_templates FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update task_templates when edit-unlocked"
+  ON task_templates FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+

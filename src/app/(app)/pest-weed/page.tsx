@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
 
@@ -44,25 +45,19 @@ export default function PestWeedPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id, courses(name, grass_type)")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
 
-      setCourseId(membership.course_id);
-      const course = membership.courses as unknown as { name: string; grass_type: string } | null;
+      setCourseId(context.courseId);
+      const { data: course } = await supabase
+        .from("courses")
+        .select("name, grass_type")
+        .eq("id", context.courseId)
+        .single();
       setCourseName(course?.name ?? "");
       setGrassType(course?.grass_type ?? "");
 
@@ -71,12 +66,12 @@ export default function PestWeedPage() {
         supabase
           .from("gdd_daily_log")
           .select("id", { count: "exact", head: true })
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .gte("log_date", `${fiscalYear}-01-01`),
         supabase
           .from("pest_applications")
           .select("*")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .order("applied_at", { ascending: false }),
       ]);
       setDaysTracked(count ?? 0);

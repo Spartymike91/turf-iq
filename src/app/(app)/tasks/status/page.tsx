@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 
 interface Employee {
   id: string;
@@ -37,27 +38,17 @@ export default function TaskStatusPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
-      setCourseId(membership.course_id);
+      setCourseId(context.courseId);
 
       const [{ data: emp }, { data: assign }] = await Promise.all([
-        supabase.from("employees").select("id, name").eq("course_id", membership.course_id),
-        supabase.from("task_assignments").select("*").eq("course_id", membership.course_id).eq("scheduled_date", todayStr()),
+        supabase.from("employees").select("id, name").eq("course_id", context.courseId),
+        supabase.from("task_assignments").select("*").eq("course_id", context.courseId).eq("scheduled_date", todayStr()),
       ]);
       setEmployees(emp ?? []);
       setTasks(assign ?? []);

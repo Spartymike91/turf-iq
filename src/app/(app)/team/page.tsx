@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 
 type Role = "owner" | "superintendent" | "assistant" | "crew_lead" | "crew";
@@ -30,6 +31,7 @@ export default function TeamPage() {
   const [courseName, setCourseName] = useState("");
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<Role | null>(null);
+  const [isAdminView, setIsAdminView] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -49,26 +51,36 @@ export default function TeamPage() {
     if (!user) return;
     setMyUserId(user.id);
 
-    const { data: membership } = await supabase
-      .from("course_members")
-      .select("course_id, role, courses(name)")
-      .eq("user_id", user.id)
-      .limit(1)
-      .single();
-
-    if (!membership?.course_id) {
+    const context = await resolveCourseIdClient(supabase);
+    if (!context) {
       setChecking(false);
       return;
     }
 
-    setCourseId(membership.course_id);
-    setMyRole(membership.role as Role);
-    setCourseName((membership.courses as unknown as { name: string } | null)?.name ?? "");
+    setCourseId(context.courseId);
+    setIsAdminView(context.isAdminView);
+
+    const { data: course } = await supabase
+      .from("courses")
+      .select("name")
+      .eq("id", context.courseId)
+      .single();
+    setCourseName(course?.name ?? "");
+
+    if (!context.isAdminView) {
+      const { data: membership } = await supabase
+        .from("course_members")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("course_id", context.courseId)
+        .single();
+      setMyRole((membership?.role as Role) ?? null);
+    }
 
     const { data: memberRows } = await supabase
       .from("course_members")
       .select("id, user_id, role")
-      .eq("course_id", membership.course_id);
+      .eq("course_id", context.courseId);
 
     const userIds = (memberRows ?? []).map((m) => m.user_id);
     const { data: profileRows } = userIds.length
@@ -93,11 +105,11 @@ export default function TeamPage() {
     load();
   }, []);
 
-  const canManage = myRole === "owner" || myRole === "superintendent";
-  const assignableRoles = myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES;
+  const canManage = isAdminView || myRole === "owner" || myRole === "superintendent";
+  const assignableRoles = isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES;
 
   function canManageRow(m: Member) {
-    if (myRole === "owner") return true;
+    if (isAdminView || myRole === "owner") return true;
     if (myRole === "superintendent") return JUNIOR_ROLES.includes(m.role);
     return false;
   }
@@ -312,7 +324,7 @@ export default function TeamPage() {
                           onChange={(e) => handleRoleChange(m, e.target.value as Role)}
                           className="px-2 py-1 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                         >
-                          {(myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES).map((r) => (
+                          {(isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES).map((r) => (
                             <option key={r} value={r}>
                               {ROLE_LABEL[r]}
                             </option>

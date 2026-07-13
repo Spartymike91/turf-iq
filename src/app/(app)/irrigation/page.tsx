@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import type { WeatherResult } from "@/lib/weather";
@@ -58,25 +59,19 @@ export default function IrrigationPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id, courses(name, maintained_acres)")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
 
-      setCourseId(membership.course_id);
-      const course = membership.courses as unknown as { name: string; maintained_acres: number | null } | null;
+      setCourseId(context.courseId);
+      const { data: course } = await supabase
+        .from("courses")
+        .select("name, maintained_acres")
+        .eq("id", context.courseId)
+        .single();
       setCourseName(course?.name ?? "");
       setAcres(course?.maintained_acres ?? null);
 
@@ -84,20 +79,20 @@ export default function IrrigationPage() {
         supabase
           .from("irrigation_programs")
           .select("*")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .eq("fiscal_year", fiscalYear)
           .maybeSingle(),
         supabase
           .from("irrigation_logs")
           .select("*")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .gte("cycle_date", `${fiscalYear}-01-01`)
           .lte("cycle_date", `${fiscalYear}-12-31`)
           .order("cycle_date", { ascending: false }),
         supabase
           .from("soil_moisture_readings")
           .select("*")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .order("reading_date", { ascending: false }),
       ]);
 

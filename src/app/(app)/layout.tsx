@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPlatformAdminSession } from "@/lib/supabase/platform-admin";
+import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import AppShell from "./AppShell";
 
 export default async function AppLayout({
@@ -17,22 +18,32 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  // Fetch the user's course
-  const [{ data: membership }, { isPlatformAdmin }] = await Promise.all([
-    supabase
-      .from("course_members")
-      .select("course_id, role, courses(name)")
-      .eq("user_id", user.id)
-      .limit(1)
-      .single(),
-    getPlatformAdminSession(),
-  ]);
+  const { isPlatformAdmin, isEditElevated } = await getPlatformAdminSession();
+  const context = await resolveCourseIdServer(supabase);
 
-  const courseName =
-    (membership?.courses as unknown as { name: string } | null)?.name ?? undefined;
+  // isAdminView is only trusted for display once isPlatformAdmin is also
+  // server-verified — the cookie alone isn't proof of anything (RLS is the
+  // real gate on the data itself), but it shouldn't drive the UI for a
+  // non-admin who happened to have it set.
+  const isAdminView = !!context?.isAdminView && isPlatformAdmin;
+
+  let courseName: string | undefined;
+  if (context?.courseId) {
+    const { data: course } = await supabase
+      .from("courses")
+      .select("name")
+      .eq("id", context.courseId)
+      .single();
+    courseName = course?.name ?? undefined;
+  }
 
   return (
-    <AppShell courseName={courseName} isPlatformAdmin={isPlatformAdmin}>
+    <AppShell
+      courseName={courseName}
+      isPlatformAdmin={isPlatformAdmin}
+      isAdminView={isAdminView}
+      isEditElevated={isAdminView && isEditElevated}
+    >
       {children}
     </AppShell>
   );

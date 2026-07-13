@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 
 interface Employee {
   id: string;
@@ -42,30 +43,20 @@ export default function TimeClockPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
-      setCourseId(membership.course_id);
+      setCourseId(context.courseId);
 
       const [{ data: emp }, { data: timeRows }] = await Promise.all([
-        supabase.from("employees").select("id, name, initials, color, is_active").eq("course_id", membership.course_id).eq("is_active", true).order("name"),
+        supabase.from("employees").select("id, name, initials, color, is_active").eq("course_id", context.courseId).eq("is_active", true).order("name"),
         supabase
           .from("time_entries")
           .select("*")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .gte("clock_in", `${todayStr()}T00:00:00.000Z`)
           .order("clock_in", { ascending: false }),
       ]);

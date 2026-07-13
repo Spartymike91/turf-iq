@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { getWeatherForCourse } from "@/lib/weather";
 
 export async function GET() {
@@ -12,23 +13,25 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: membership } = await supabase
-    .from("course_members")
-    .select("course_id, courses(id, city, state, latitude, longitude)")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
+  const context = await resolveCourseIdServer(supabase);
+  if (!context) {
+    return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
+  }
 
-  const course = membership?.courses as unknown as {
-    id: string;
-    city: string | null;
-    state: string | null;
-    latitude: number | null;
-    longitude: number | null;
-  } | null;
+  const { data: course } = await supabase
+    .from("courses")
+    .select("id, city, state, latitude, longitude")
+    .eq("id", context.courseId)
+    .single<{
+      id: string;
+      city: string | null;
+      state: string | null;
+      latitude: number | null;
+      longitude: number | null;
+    }>();
 
   if (!course) {
-    return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
+    return NextResponse.json({ error: "Course not found." }, { status: 404 });
   }
 
   try {

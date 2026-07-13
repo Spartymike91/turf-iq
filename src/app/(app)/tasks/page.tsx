@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import { computeWeeklyPayroll, hoursToday, getWeekStart } from "@/lib/payroll";
 
@@ -44,35 +45,25 @@ export default function TasksDashboardPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
-      setCourseId(membership.course_id);
+      setCourseId(context.courseId);
 
       const [{ data: emp }, { data: timeRows }, { data: tasks }] = await Promise.all([
-        supabase.from("employees").select("id, name, hourly_rate, is_active").eq("course_id", membership.course_id),
+        supabase.from("employees").select("id, name, hourly_rate, is_active").eq("course_id", context.courseId),
         supabase
           .from("time_entries")
           .select("employee_id, clock_in, clock_out")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .gte("clock_in", weekStart.toISOString()),
         supabase
           .from("task_assignments")
           .select("id, priority, status")
-          .eq("course_id", membership.course_id)
+          .eq("course_id", context.courseId)
           .eq("scheduled_date", todayStr()),
       ]);
       setEmployees(emp ?? []);

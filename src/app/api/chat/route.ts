@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { getWeatherForCourse } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
 import { getDueStatus } from "@/lib/equipmentModels";
@@ -334,14 +335,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { data: membership } = await supabase
-    .from("course_members")
-    .select("course_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
+  const context = await resolveCourseIdServer(supabase);
 
-  if (!membership?.course_id) {
+  if (!context) {
     return NextResponse.json(
       { content: "Set up your course profile first so I can give you course-specific advice." },
       { status: 200 }
@@ -349,7 +345,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const systemPrompt = await buildSystemPrompt(supabase, membership.course_id);
+    const systemPrompt = await buildSystemPrompt(supabase, context.courseId);
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

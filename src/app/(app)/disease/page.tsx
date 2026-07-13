@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 
 export default function DiseasePage() {
@@ -16,40 +17,34 @@ export default function DiseasePage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
+      if (!context) return;
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id, courses(name, grass_type)")
-        .eq("user_id", user.id)
-        .limit(1)
+      const { data: course } = await supabase
+        .from("courses")
+        .select("name, grass_type")
+        .eq("id", context.courseId)
         .single();
 
-      const course = membership?.courses as unknown as { name: string; grass_type: string } | null;
       setCourseName(course?.name ?? "");
       setGrassType(course?.grass_type ?? "");
 
-      if (membership?.course_id) {
-        const fiscalYear = new Date().getFullYear();
-        const [{ data: program }, { data: apps }] = await Promise.all([
-          supabase
-            .from("fertility_programs")
-            .select("annual_n_target")
-            .eq("course_id", membership.course_id)
-            .eq("fiscal_year", fiscalYear)
-            .maybeSingle(),
-          supabase
-            .from("fertilizer_applications")
-            .select("n_lbs_per_1000")
-            .eq("course_id", membership.course_id)
-            .gte("application_date", `${fiscalYear}-01-01`),
-        ]);
-        setNTarget(program ? Number(program.annual_n_target) : null);
-        setNAppliedYtd((apps ?? []).reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0));
-      }
+      const fiscalYear = new Date().getFullYear();
+      const [{ data: program }, { data: apps }] = await Promise.all([
+        supabase
+          .from("fertility_programs")
+          .select("annual_n_target")
+          .eq("course_id", context.courseId)
+          .eq("fiscal_year", fiscalYear)
+          .maybeSingle(),
+        supabase
+          .from("fertilizer_applications")
+          .select("n_lbs_per_1000")
+          .eq("course_id", context.courseId)
+          .gte("application_date", `${fiscalYear}-01-01`),
+      ]);
+      setNTarget(program ? Number(program.annual_n_target) : null);
+      setNAppliedYtd((apps ?? []).reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0));
 
       try {
         const res = await fetch("/api/weather");

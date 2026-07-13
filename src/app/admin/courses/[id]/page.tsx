@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import StatChip from "@/components/ui/StatChip";
 
@@ -62,6 +62,7 @@ const STATUS_TAG: Record<string, "ok" | "warn" | "amber" | "blue"> = {
 
 export default function AdminCourseDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
 
   const [course, setCourse] = useState<Course | null>(null);
@@ -74,6 +75,23 @@ export default function AdminCourseDetailPage() {
   const [waiveMonths, setWaiveMonths] = useState(1);
   const [waiving, setWaiving] = useState(false);
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
+
+  const [enteringView, setEnteringView] = useState(false);
+
+  async function handleViewCourseData() {
+    setEnteringView(true);
+    const res = await fetch("/api/admin/view-course", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course_id: id }),
+    });
+    if (res.ok) {
+      router.push("/dashboard");
+      router.refresh();
+    } else {
+      setEnteringView(false);
+    }
+  }
 
   async function load() {
     const res = await fetch(`/api/admin/courses/${id}`);
@@ -141,15 +159,24 @@ export default function AdminCourseDetailPage() {
 
   return (
     <>
-      <div>
-        <Link href="/admin" className="text-xs text-green-mid font-semibold hover:text-green-dark">
-          ← All Customers
-        </Link>
-        <div className="font-serif text-2xl text-green-dark mt-2">{course.name}</div>
-        <div className="text-[13px] text-mist mt-1">
-          {course.city && course.state ? `${course.city}, ${course.state}` : "Location not set"} · Signed up{" "}
-          {new Date(course.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Link href="/admin" className="text-xs text-green-mid font-semibold hover:text-green-dark">
+            ← All Customers
+          </Link>
+          <div className="font-serif text-2xl text-green-dark mt-2">{course.name}</div>
+          <div className="text-[13px] text-mist mt-1">
+            {course.city && course.state ? `${course.city}, ${course.state}` : "Location not set"} · Signed up{" "}
+            {new Date(course.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </div>
         </div>
+        <button
+          onClick={handleViewCourseData}
+          disabled={enteringView}
+          className="shrink-0 px-4 py-2 bg-green-dark text-white font-semibold text-sm rounded-lg hover:bg-green-mid transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {enteringView ? "Entering…" : "View Course Data →"}
+        </button>
       </div>
 
       <div className="grid grid-cols-4 gap-3">

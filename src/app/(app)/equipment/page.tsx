@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import AlertBanner from "@/components/ui/AlertBanner";
 import { getDueStatus } from "@/lib/equipmentModels";
 
@@ -99,28 +100,22 @@ export default function EquipmentPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id, courses(name)")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
 
-      setCourseId(membership.course_id);
-      const course = membership.courses as unknown as { name: string } | null;
+      setCourseId(context.courseId);
+      const { data: course } = await supabase
+        .from("courses")
+        .select("name")
+        .eq("id", context.courseId)
+        .single();
       setCourseName(course?.name ?? "");
 
-      await loadFleetData(membership.course_id);
+      await loadFleetData(context.courseId);
       setChecking(false);
     }
     load();

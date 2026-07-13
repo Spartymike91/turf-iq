@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 
 type Role = "owner" | "superintendent" | "assistant" | "crew_lead" | "crew";
 const JUNIOR_ROLES: Role[] = ["assistant", "crew_lead", "crew"];
@@ -20,19 +21,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Email and role are required." }, { status: 400 });
   }
 
-  const { data: membership } = await supabase
-    .from("course_members")
-    .select("course_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) {
+  const context = await resolveCourseIdServer(supabase);
+  if (!context) {
     return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
   }
+  const courseId = context.courseId;
 
-  const callerRole = membership.role as Role;
-  const courseId = membership.course_id as string;
+  // Admin-view acts as owner-equivalent — full invite permissions, since the
+  // admin isn't a course_members row and has no role of their own to check.
+  let callerRole: Role;
+  if (context.isAdminView) {
+    callerRole = "owner";
+  } else {
+    const { data: membership } = await supabase
+      .from("course_members")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("course_id", courseId)
+      .single();
+    if (!membership) {
+      return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
+    }
+    callerRole = membership.role as Role;
+  }
 
   if (callerRole === "owner") {
     // any role allowed

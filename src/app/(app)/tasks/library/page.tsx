@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 
 interface TaskTemplate {
   id: string;
@@ -42,29 +43,24 @@ export default function TaskLibraryPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return;
+      const context = await resolveCourseIdClient(supabase);
 
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("course_id, courses(name)")
-        .eq("user_id", user.id)
-        .limit(1)
-        .single();
-
-      if (!membership?.course_id) {
+      if (!context) {
         setChecking(false);
         return;
       }
-      setCourseId(membership.course_id);
-      setCourseName((membership.courses as unknown as { name: string } | null)?.name ?? "");
+      setCourseId(context.courseId);
+      const { data: course } = await supabase
+        .from("courses")
+        .select("name")
+        .eq("id", context.courseId)
+        .single();
+      setCourseName(course?.name ?? "");
 
       const { data } = await supabase
         .from("task_templates")
         .select("*")
-        .eq("course_id", membership.course_id)
+        .eq("course_id", context.courseId)
         .order("category")
         .order("name");
       setTemplates(data ?? []);
