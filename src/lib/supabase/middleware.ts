@@ -37,7 +37,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
     pathname.startsWith("/accept-invite") ||
-    pathname.startsWith("/api/webhooks");
+    pathname.startsWith("/api/webhooks") ||
+    pathname.startsWith("/walkthrough.html");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();

@@ -1,0 +1,642 @@
+<meta charset="utf-8">
+<title>Turf IQ — Product Walkthrough</title>
+<style>
+  :root{
+    --gd:#1a3a2a; --gm:#2d6a4f; --gb:#52b788; --gp:#d8f3dc; --fw:#40916c;
+    --chalk:#f8f9f4; --ink:#1a1f1c; --mist:#6b7c74; --rule:#dce8e1;
+    --red:#b3441e; --redbg:#f7e6df;
+    --stage-bg:#eef1ec; --frame-shell:#0f2419; --frame-chrome:#e7ece7;
+    --card-bg:#ffffff;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --stage-bg:#0d1712; --card-bg:#16241c; --frame-chrome:#122019;
+      --chalk:#12211a; --ink:#eef3ee; --mist:#93a89c; --rule:#28402f;
+      --gp:#1c3527;
+    }
+  }
+  :root[data-theme="dark"]{
+    --stage-bg:#0d1712; --card-bg:#16241c; --frame-chrome:#122019;
+    --chalk:#12211a; --ink:#eef3ee; --mist:#93a89c; --rule:#28402f;
+    --gp:#1c3527;
+  }
+  :root[data-theme="light"]{
+    --stage-bg:#eef1ec; --card-bg:#ffffff; --frame-chrome:#e7ece7;
+    --chalk:#f8f9f4; --ink:#1a1f1c; --mist:#6b7c74; --rule:#dce8e1;
+    --gp:#d8f3dc;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--stage-bg); color:var(--ink);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .serif{ font-family:'DM Serif Display',Georgia,'Times New Roman',serif; }
+  .mono{ font-family:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,monospace; }
+
+  .app{
+    max-width:920px; margin:0 auto; padding:28px 20px 40px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:8px; }
+  .brand .wordmark{ font-size:20px; font-weight:700; letter-spacing:-0.01em; }
+  .brand .wordmark .iq{ color:var(--gb); }
+  .brand .tag{ font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--mist); }
+  .playbtn{
+    display:flex; align-items:center; gap:7px; background:none; cursor:pointer;
+    border:1.5px solid var(--rule); color:var(--ink); border-radius:999px;
+    padding:7px 14px 7px 12px; font-size:12.5px; font-weight:600;
+    font-family:inherit;
+  }
+  .playbtn:hover{ border-color:var(--gb); }
+  .playbtn:focus-visible{ outline:2px solid var(--gb); outline-offset:2px; }
+
+  /* ---------- progress rail ---------- */
+  .rail{ display:flex; gap:5px; }
+  .seg{
+    flex:1; height:4px; border-radius:2px; background:var(--rule);
+    position:relative; overflow:hidden; cursor:pointer;
+  }
+  .seg::after{
+    content:""; position:absolute; inset:0; width:0%; background:var(--gb);
+    border-radius:2px;
+  }
+  .seg.done::after{ width:100%; }
+  .seg.active::after{ width:var(--fill,0%); }
+  @media (prefers-reduced-motion:no-preference){
+    .seg.active::after{ transition:width 80ms linear; }
+  }
+
+  /* ---------- scene / caption ---------- */
+  .scene{ display:none; flex-direction:column; gap:20px; }
+  .scene.on{ display:flex; }
+  @media (prefers-reduced-motion:no-preference){
+    .scene.on{ animation:rise 420ms ease both; }
+  }
+  @keyframes rise{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:none;} }
+
+  .cap-eyebrow{ font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--fw); font-weight:600; }
+  .cap-head{ font-size:27px; line-height:1.15; margin:4px 0 2px; text-wrap:balance; }
+  .cap-sub{ font-size:14.5px; color:var(--mist); max-width:60ch; line-height:1.5; }
+
+  /* ---------- device frame ---------- */
+  .frame{
+    border-radius:14px; overflow:hidden; background:var(--frame-shell);
+    box-shadow:0 24px 60px -20px rgba(10,25,18,0.45), 0 2px 10px rgba(10,25,18,0.15);
+    border:1px solid rgba(0,0,0,0.15);
+  }
+  .frame-chrome{
+    display:flex; align-items:center; gap:10px; padding:10px 14px;
+    background:var(--frame-chrome);
+  }
+  .dots{ display:flex; gap:6px; flex-shrink:0; }
+  .dots span{ width:9px; height:9px; border-radius:50%; background:rgba(120,130,120,0.35); display:block; }
+  .urlpill{
+    flex:1; background:rgba(120,130,120,0.14); border-radius:7px; padding:5px 12px;
+    font-size:11.5px; color:var(--mist); font-family:'JetBrains Mono',ui-monospace,monospace;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .frame-body{ background:var(--chalk); }
+
+  /* ---------- recreated app header (matches real product chrome) ---------- */
+  .appnav{
+    background:var(--gd); color:#fff; display:flex; align-items:center;
+    gap:10px; padding:11px 16px; font-size:12.5px;
+  }
+  .appnav .logo{ font-weight:700; font-size:14px; margin-right:auto; }
+  .appnav .logo .iq{ color:var(--gb); }
+  .appnav .pill{
+    background:rgba(255,255,255,0.1); border-radius:999px; padding:5px 11px;
+    display:flex; align-items:center; gap:5px; white-space:nowrap; font-size:11.5px;
+  }
+  .appnav .pill.ai{ background:rgba(82,183,136,0.22); font-weight:600; }
+  .appnav .signout{ color:rgba(255,255,255,0.6); font-size:11.5px; }
+  @media (max-width:640px){ .appnav .pill:not(.ai){ display:none; } }
+
+  .marketnav{
+    background:var(--gd); color:#fff; display:flex; align-items:center;
+    gap:18px; padding:13px 18px; font-size:12.5px;
+  }
+  .marketnav .logo{ font-weight:700; font-size:15px; margin-right:auto; }
+  .marketnav .logo .iq{ color:var(--gb); }
+  .marketnav a{ color:rgba(255,255,255,0.75); }
+  .marketnav .cta{
+    background:var(--gb); color:var(--gd); font-weight:700; padding:6px 13px; border-radius:7px;
+  }
+  @media (max-width:640px){ .marketnav .navlink{ display:none; } }
+
+  .scr{ padding:20px 22px 26px; }
+  .scr .eyebrow{ font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--fw); font-family:'JetBrains Mono',monospace; font-weight:600; }
+  .scr h1.title{ font-size:24px; margin:5px 0 4px; }
+  .scr .meta{ font-size:12px; color:var(--mist); margin-bottom:16px; }
+  .scr .meta .live{ display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--gb); margin:0 5px 0 8px; }
+
+  .stat-row{ display:grid; gap:10px; margin-bottom:14px; }
+  .stat{
+    background:var(--card-bg); border:1.5px solid var(--rule); border-radius:10px;
+    padding:12px 13px;
+  }
+  .stat .label{ font-size:9.5px; letter-spacing:0.09em; text-transform:uppercase; color:var(--mist); font-family:'JetBrains Mono',monospace; margin-bottom:6px; }
+  .stat .value{ font-size:22px; font-weight:700; font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+  .stat .value.accent{ color:var(--gm); }
+  .stat .sub{ font-size:11px; color:var(--mist); margin-top:3px; }
+  .stat .tag{ display:inline-block; margin-top:6px; font-size:9.5px; font-weight:700; letter-spacing:0.05em; padding:2px 8px; border-radius:5px; background:var(--gp); color:var(--fw); }
+  .stat .tag.warn{ background:var(--redbg); color:var(--red); }
+
+  .card{ background:var(--card-bg); border:1.5px solid var(--rule); border-radius:10px; padding:15px 16px; margin-bottom:12px; }
+  .card h2{ font-size:16px; margin:0 0 10px; font-family:'DM Serif Display',Georgia,serif; color:var(--gm); }
+  :root[data-theme="dark"] .card h2, :root:not([data-theme="light"]) .card h2{ color:var(--gb); }
+  @media (prefers-color-scheme:light){ .card h2{ color:var(--gm); } }
+  :root[data-theme="light"] .card h2{ color:var(--gm); }
+
+  table.mini{ width:100%; border-collapse:collapse; font-size:12px; }
+  table.mini th{ text-align:left; font-size:9.5px; letter-spacing:0.07em; text-transform:uppercase; color:var(--mist); font-family:'JetBrains Mono',monospace; font-weight:600; padding:0 0 8px; border-bottom:1px solid var(--rule); }
+  table.mini td{ padding:9px 0; border-bottom:1px solid var(--rule); font-variant-numeric:tabular-nums; }
+  table.mini tr:last-child td{ border-bottom:none; }
+
+  .badge{ font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:5px; letter-spacing:0.03em; }
+  .badge.high{ background:var(--redbg); color:var(--red); }
+  .badge.normal{ background:var(--gp); color:var(--fw); }
+  .badge.on{ background:var(--gp); color:var(--fw); }
+  .badge.clocked{ background:var(--gp); color:var(--fw); }
+
+  .kanban{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .kcol{ background:var(--card-bg); border:1.5px solid var(--rule); border-radius:10px; padding:11px; min-height:90px; }
+  .kcol h3{ font-size:12.5px; margin:0 0 8px; }
+  .ktask{ border:1px solid var(--rule); border-radius:8px; padding:8px 9px; font-size:11.5px; }
+  .ktask .who{ color:var(--mist); font-size:10.5px; margin-top:3px; }
+  .ktask .action{ color:var(--gm); font-size:10.5px; font-weight:700; margin-top:6px; }
+
+  .forecast{ display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-top:14px; }
+  .fday{ background:var(--card-bg); border:1.5px solid var(--rule); border-radius:9px; padding:8px 4px; text-align:center; font-size:10px; }
+  .fday.today{ background:var(--gd); color:#fff; border-color:var(--gd); }
+  .fday .dow{ font-size:9px; letter-spacing:0.05em; opacity:0.75; }
+  .fday .temp{ font-weight:700; margin-top:4px; font-size:12px; font-family:'JetBrains Mono',monospace; }
+
+  .hero-wrap{ text-align:center; padding:44px 22px 34px; }
+  .hero-wrap .word{ font-size:34px; font-weight:800; }
+  .hero-wrap .word .iq{ color:var(--gb); }
+  .hero-wrap .kicker{ font-size:12px; letter-spacing:0.09em; text-transform:uppercase; color:var(--gp); font-weight:700; margin-top:14px; }
+  .hero-wrap .line{ font-size:13.5px; color:rgba(255,255,255,0.88); margin-top:4px; }
+  .hero-band{ background:var(--gd); color:#fff; }
+
+  .modgrid{ display:grid; grid-template-columns:1fr 1fr; gap:0 20px; padding:18px 22px 24px; }
+  .modgrid .mod{ padding:9px 0; border-bottom:1px solid var(--rule); }
+  .modgrid .mod:nth-last-child(-n+2){ border-bottom:none; }
+  .modgrid .mod .n{ font-weight:700; font-size:12.5px; }
+  .modgrid .mod .d{ font-size:10.5px; color:var(--mist); margin-top:2px; }
+
+  .chatline{ display:flex; gap:8px; margin-bottom:12px; align-items:flex-start; }
+  .chatline.me{ justify-content:flex-end; }
+  .bubble{ background:var(--card-bg); border:1px solid var(--rule); border-radius:12px; padding:10px 13px; font-size:12px; max-width:80%; line-height:1.5; }
+  .bubble.me{ background:var(--gd); color:#fff; border:none; }
+  .avatar{ width:26px; height:26px; border-radius:50%; background:var(--gp); color:var(--fw); display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+  .bubble table{ width:100%; border-collapse:collapse; margin:8px 0; font-size:11px; }
+  .bubble td, .bubble th{ padding:3px 6px; border-bottom:1px solid var(--rule); }
+
+  .pricegrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:18px 20px 22px; }
+  .ptier{ background:var(--card-bg); border:1.5px solid var(--rule); border-radius:11px; padding:15px 13px; text-align:center; position:relative; }
+  .ptier.pop{ border-color:var(--gb); border-width:2px; }
+  .ptier .flag{ position:absolute; top:-9px; left:50%; transform:translateX(-50%); background:var(--gb); color:var(--gd); font-size:8.5px; font-weight:800; letter-spacing:0.04em; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .ptier .tname{ font-family:'DM Serif Display',Georgia,serif; font-size:15px; color:var(--gd); }
+  :root[data-theme="dark"] .ptier .tname, :root:not([data-theme="light"]) .ptier .tname{ color:var(--gb); }
+  :root[data-theme="light"] .ptier .tname{ color:var(--gd); }
+  .ptier .price{ font-size:19px; font-weight:800; margin:8px 0 10px; font-family:'JetBrains Mono',monospace; }
+  .ptier ul{ list-style:none; padding:0; margin:0; text-align:left; font-size:10px; color:var(--mist); display:flex; flex-direction:column; gap:5px; }
+  .ptier li::before{ content:"— "; color:var(--gm); }
+
+  .closing{ text-align:center; padding:46px 24px 40px; }
+  .closing .h{ font-size:26px; }
+  .closing .url{ font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--gb); margin-top:10px; }
+  .closing .trial{ font-size:12px; color:rgba(255,255,255,0.75); margin-top:16px; }
+
+  /* ---------- bottom controls ---------- */
+  .controls{ display:flex; align-items:center; justify-content:center; gap:16px; }
+  .navbtn{
+    width:34px; height:34px; border-radius:50%; border:1.5px solid var(--rule); background:var(--card-bg);
+    color:var(--ink); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .navbtn:hover{ border-color:var(--gb); }
+  .navbtn:focus-visible{ outline:2px solid var(--gb); outline-offset:2px; }
+  .dotset{ display:flex; gap:7px; }
+  .dotset button{ width:7px; height:7px; padding:0; border-radius:50%; border:none; background:var(--rule); cursor:pointer; }
+  .dotset button.on{ background:var(--gb); width:18px; border-radius:4px; }
+  .stepno{ font-size:11px; color:var(--mist); font-family:'JetBrains Mono',monospace; min-width:38px; text-align:center; }
+
+  @media (max-width:600px){
+    .stat-row{ grid-template-columns:1fr 1fr; }
+    .kanban{ grid-template-columns:1fr; }
+    .pricegrid{ grid-template-columns:1fr; }
+    .modgrid{ grid-template-columns:1fr; }
+    .forecast{ grid-template-columns:repeat(4,1fr); }
+  }
+</style>
+
+<div class="app" id="app" role="region" aria-roledescription="carousel" aria-label="Turf IQ product walkthrough">
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="wordmark">Turf<span class="iq">IQ</span></span>
+      <span class="tag">· Product Walkthrough</span>
+    </div>
+    <button class="playbtn" id="playBtn" aria-pressed="true">
+      <span id="playIcon">&#10073;&#10073;</span><span id="playLabel">Pause</span>
+    </button>
+  </div>
+
+  <div class="rail" id="rail"></div>
+
+  <div id="scenes">
+
+    <!-- 0: HERO -->
+    <section class="scene" data-idx="0">
+      <div>
+        <div class="cap-eyebrow">The pitch</div>
+        <h2 class="cap-head serif">Everything a superintendent tracks by hand, in one place.</h2>
+        <p class="cap-sub">Turf IQ opens on a clean landing page built for the person who actually runs the course — not a generic SaaS template.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app</div></div>
+        <div class="frame-body">
+          <div class="marketnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="navlink">Modules</span><span class="navlink">Pricing</span><span class="cta">Start Free Trial</span></div>
+          <div class="hero-band hero-wrap">
+            <div class="kicker">Weather · Agronomy · Budget · Labor · AI, unified</div>
+            <div class="word serif">The Operating System for<br>Golf Course Superintendents</div>
+            <div class="line">Replace the spreadsheets, whiteboards, and gut-feel guesswork —<br>with one real-time system built for turf, not adapted from farm software.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1: MODULES -->
+    <section class="scene" data-idx="1">
+      <div>
+        <div class="cap-eyebrow">Ten modules, one login</div>
+        <h2 class="cap-head serif">Every job on the course, covered.</h2>
+        <p class="cap-sub">From ET-based irrigation to payroll, each module talks to the same course data — so nothing gets re-entered twice.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/#modules</div></div>
+        <div class="frame-body">
+          <div class="modgrid">
+            <div class="mod"><div class="n">Weather Intelligence</div><div class="d">Real-time conditions, 7-day forecast, ET and GDD tracking</div></div>
+            <div class="mod"><div class="n">Irrigation Management</div><div class="d">ET-based scheduling, soil moisture, dry-spot alerts</div></div>
+            <div class="mod"><div class="n">Disease Risk Prediction</div><div class="d">Smith-Kerns model, live spray-timing guidance</div></div>
+            <div class="mod"><div class="n">Equipment Management</div><div class="d">Service tracking, repair costs, replacement planning</div></div>
+            <div class="mod"><div class="n">Fertility Management</div><div class="d">Soil tests, N/P/K programs, application history</div></div>
+            <div class="mod"><div class="n">Budget &amp; Reporting</div><div class="d">Budget vs. actual, cost per acre and per round</div></div>
+            <div class="mod"><div class="n">Pest &amp; Weed Control</div><div class="d">GDD pest timing, full compliance spray log</div></div>
+            <div class="mod"><div class="n">Labor &amp; Staffing</div><div class="d">Crew scheduling, time clock, overtime alerts</div></div>
+            <div class="mod"><div class="n">Task Management</div><div class="d">Scheduling, kiosk clock-in, automatic payroll</div></div>
+            <div class="mod"><div class="n">Team &amp; Roles</div><div class="d">Invite your crew with role-based permissions</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2: WEATHER -->
+    <section class="scene" data-idx="2">
+      <div>
+        <div class="cap-eyebrow">Live at Scottsdale Ridge Golf Club</div>
+        <h2 class="cap-head serif">Today's weather, agronomically.</h2>
+        <p class="cap-sub">Not just a forecast — ET, growing degree days, and estimated leaf wetness, calculated for this exact course.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/weather</div></div>
+        <div class="frame-body">
+          <div class="appnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="pill ai">&#127807; Ask the Agronomist</span><span class="pill">&#9971; Scottsdale Ridge Golf Club</span><span class="signout">Sign out</span></div>
+          <div class="scr">
+            <div class="eyebrow">Weather Intelligence</div>
+            <h1 class="title serif">Monday, July 13, 2026</h1>
+            <div class="meta">Scottsdale, AZ <span class="live"></span> Updated 12:41 PM</div>
+            <div class="stat-row" style="grid-template-columns:repeat(4,1fr);">
+              <div class="stat"><div class="label">Current</div><div class="value">91°F</div><div class="sub">Clear · 38% RH · 6mph SW</div></div>
+              <div class="stat"><div class="label">Today's ET</div><div class="value accent">0.29"</div><div class="sub">Hargreaves reference</div></div>
+              <div class="stat"><div class="label">Growing Degree Days</div><div class="value accent">43.5</div><div class="sub">Base 50°F, since setup</div></div>
+              <div class="stat"><div class="label">7-Day Rainfall</div><div class="value accent">0.95"</div><div class="sub">Forecast total</div></div>
+            </div>
+            <div class="forecast">
+              <div class="fday today"><div class="dow">MON</div><div class="temp">106°</div></div>
+              <div class="fday"><div class="dow">TUE</div><div class="temp">108°</div></div>
+              <div class="fday"><div class="dow">WED</div><div class="temp">107°</div></div>
+              <div class="fday"><div class="dow">THU</div><div class="temp">102°</div></div>
+              <div class="fday"><div class="dow">FRI</div><div class="temp">97°</div></div>
+              <div class="fday"><div class="dow">SAT</div><div class="temp">99°</div></div>
+              <div class="fday"><div class="dow">SUN</div><div class="temp">101°</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3: DISEASE RISK -->
+    <section class="scene" data-idx="3">
+      <div>
+        <div class="cap-eyebrow">Peer-reviewed, not guessed</div>
+        <h2 class="cap-head serif">Disease pressure, before it shows on the turf.</h2>
+        <p class="cap-sub">Dollar Spot risk runs on the published Smith-Kerns &amp; Koch (2018) logistic model — labeled clearly against heuristic estimates for diseases with no validated model.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/disease</div></div>
+        <div class="frame-body">
+          <div class="appnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="pill ai">&#127807; Ask the Agronomist</span><span class="pill">&#9971; Scottsdale Ridge Golf Club</span><span class="signout">Sign out</span></div>
+          <div class="scr">
+            <div class="eyebrow">Disease Risk Monitor</div>
+            <h1 class="title serif">Turfgrass Disease Prediction</h1>
+            <div class="meta">Scottsdale Ridge Golf Club · Bermudagrass <span class="live"></span> Models updated 12:41 PM</div>
+            <div class="stat-row" style="grid-template-columns:repeat(3,1fr);">
+              <div class="stat"><div class="label">Dollar Spot</div><div class="value">18.4%</div><div class="tag">Below Threshold</div></div>
+              <div class="stat"><div class="label">Pythium Blight</div><div class="value">0 hrs</div><div class="tag">Not Elevated</div></div>
+              <div class="stat"><div class="label">Brown Patch</div><div class="value">0 hrs</div><div class="tag">Not Elevated</div></div>
+            </div>
+            <div class="card" style="background:var(--gd); color:#fff; border:none;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;">
+                <div>
+                  <div style="font-family:'DM Serif Display',Georgia,serif; font-size:17px;">Dollar Spot</div>
+                  <div style="font-size:11px; opacity:0.75; font-style:italic; margin-top:2px;">Clarireedia jacksonii · C. monteithiana</div>
+                  <div style="font-size:11px; opacity:0.85; margin-top:8px;">Smith, Kerns &amp; Koch (2018) logistic model · course-level weather station</div>
+                </div>
+                <div style="text-align:center;">
+                  <div style="font-size:24px; font-weight:800; font-family:'JetBrains Mono',monospace;">18%</div>
+                  <div style="font-size:9px; opacity:0.7; letter-spacing:0.06em;">PROBABILITY</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4: AI AGRONOMIST -->
+    <section class="scene" data-idx="4">
+      <div>
+        <div class="cap-eyebrow">Built in, not bolted on</div>
+        <h2 class="cap-head serif">Ask it anything. It already knows your course.</h2>
+        <p class="cap-sub">The AI Agronomist reads live weather, budget, and labor data for the course asking — every answer below is a real response, not a script.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/weather</div></div>
+        <div class="frame-body">
+          <div class="appnav" style="background:var(--gd);"><span class="logo">Ask the Agronomist</span><span class="pill">91°F · 38% RH</span><span class="pill">ET 0.29"</span><span class="pill">44 GDD</span></div>
+          <div class="scr">
+            <div class="chatline">
+              <div class="avatar">&#127807;</div>
+              <div class="bubble">Good afternoon. Ask me anything about your course today.</div>
+            </div>
+            <div class="chatline me">
+              <div class="bubble me">How does my budget look this year?</div>
+            </div>
+            <div class="chatline">
+              <div class="avatar">&#127807;</div>
+              <div class="bubble">
+                <strong>Budget Status — FY 2026.</strong> At a glance: you're in solid shape.
+                <table><tr><td>Annual Budget</td><td>$270,000</td></tr><tr><td>YTD Spent</td><td>$18,400</td></tr><tr><td>Remaining</td><td>$251,600</td></tr><tr><td>% Used</td><td>7%</td></tr></table>
+                You're 7% through budget at the calendar midpoint — running well behind pace. Two things worth watching: seasonal spend accelerates in Scottsdale's peak summer heat, and no pesticide/herbicide applications are logged yet, so factor the pre-emergent crabgrass window in.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5: LIVE OPS / TASK BOARD -->
+    <section class="scene" data-idx="5">
+      <div>
+        <div class="cap-eyebrow">The crew's day, at a glance</div>
+        <h2 class="cap-head serif">Assign it in the morning, watch it move by noon.</h2>
+        <p class="cap-sub">Tasks move across a live board as the crew works — no end-of-day paperwork to reconcile.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/tasks/status</div></div>
+        <div class="frame-body">
+          <div class="appnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="pill ai">&#127807; Ask the Agronomist</span><span class="pill">&#9971; Scottsdale Ridge Golf Club</span><span class="signout">Sign out</span></div>
+          <div class="scr">
+            <div class="eyebrow">Live Status</div>
+            <h1 class="title serif">Today's Task Board</h1>
+            <div class="meta">0 of 2 complete</div>
+            <div class="kanban">
+              <div class="kcol"><h3>Not Started (1)</h3>
+                <div class="ktask"><strong>Rake bunkers – back nine</strong> <span class="badge normal">NORMAL</span><div class="who">Casey Morgan</div><div class="action">Start →</div></div>
+              </div>
+              <div class="kcol"><h3>In Progress (1)</h3>
+                <div class="ktask"><strong>Mow greens – front nine</strong> <span class="badge high">HIGH</span><div class="who">Jordan Reyes</div><div class="action">Complete →</div></div>
+              </div>
+              <div class="kcol"><h3>Complete (0)</h3></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6: TIME CLOCK -->
+    <section class="scene" data-idx="6">
+      <div>
+        <div class="cap-eyebrow">Payroll writes itself</div>
+        <h2 class="cap-head serif">Clock in on a kiosk. Payroll does the rest.</h2>
+        <p class="cap-sub">Crew clock in and out from a shared kiosk — hours flow straight into payroll with no timesheets to key in by hand.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/tasks/time-clock</div></div>
+        <div class="frame-body">
+          <div class="appnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="pill ai">&#127807; Ask the Agronomist</span><span class="pill">&#9971; Scottsdale Ridge Golf Club</span><span class="signout">Sign out</span></div>
+          <div class="scr">
+            <div class="eyebrow">Time Clock</div>
+            <h1 class="title serif">Crew Clock In / Out</h1>
+            <div class="meta">2 of 2 clocked in</div>
+            <div class="card">
+              <table class="mini">
+                <tr><th>Employee</th><th>Status</th><th>Since</th><th>Duration</th></tr>
+                <tr><td>Casey Morgan</td><td><span class="badge clocked">CLOCKED IN</span></td><td>12:45 PM</td><td>0h 11m</td></tr>
+                <tr><td>Jordan Reyes</td><td><span class="badge clocked">CLOCKED IN</span></td><td>12:45 PM</td><td>0h 11m</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7: BUDGET -->
+    <section class="scene" data-idx="7">
+      <div>
+        <div class="cap-eyebrow">Cited, real-world category splits</div>
+        <h2 class="cap-head serif">Budget vs. actual, by category, always current.</h2>
+        <p class="cap-sub">Log an expense once and the category, the remaining balance, and the annual total all update together.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/budget</div></div>
+        <div class="frame-body">
+          <div class="appnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="pill ai">&#127807; Ask the Agronomist</span><span class="pill">&#9971; Scottsdale Ridge Golf Club</span><span class="signout">Sign out</span></div>
+          <div class="scr">
+            <div class="eyebrow">Budget &amp; Reporting</div>
+            <h1 class="title serif">Financial Overview</h1>
+            <div class="meta">Scottsdale Ridge Golf Club · FY 2026</div>
+            <div class="stat-row" style="grid-template-columns:repeat(3,1fr);">
+              <div class="stat"><div class="label">Annual Budget</div><div class="value">$270,000</div></div>
+              <div class="stat"><div class="label">YTD Spent</div><div class="value accent">$18,400</div><div class="sub">7% of annual</div></div>
+              <div class="stat"><div class="label">Remaining</div><div class="value accent">$251,600</div><div class="tag">On track</div></div>
+            </div>
+            <div class="card">
+              <h2>Budget by Category</h2>
+              <table class="mini">
+                <tr><th>Category</th><th>Budget</th><th>Spent</th><th>Remaining</th></tr>
+                <tr><td>Labor</td><td>$210,000</td><td>$18,400</td><td>$191,600</td></tr>
+                <tr><td>Fertilizer</td><td>$32,000</td><td>$0</td><td>$32,000</td></tr>
+                <tr><td>Equipment Lease</td><td>$28,000</td><td>$0</td><td>$28,000</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8: PRICING + CTA -->
+    <section class="scene" data-idx="8">
+      <div>
+        <div class="cap-eyebrow">Three tiers, one 14-day trial</div>
+        <h2 class="cap-head serif">Start where you are. Grow into the rest.</h2>
+        <p class="cap-sub">Every plan gets a 14-day free trial — upgrade anytime from inside the app.</p>
+      </div>
+      <div class="frame">
+        <div class="frame-chrome"><div class="dots"><span></span><span></span><span></span></div><div class="urlpill">turf-iq-omega.vercel.app/#pricing</div></div>
+        <div class="frame-body">
+          <div class="marketnav"><span class="logo">Turf<span class="iq">IQ</span></span><span class="navlink">Modules</span><span class="navlink">Pricing</span><span class="cta">Start Free Trial</span></div>
+          <div class="pricegrid">
+            <div class="ptier">
+              <div class="tname serif">Agronomist</div><div class="price">$399<span style="font-size:10px; color:var(--mist); font-weight:500;">/mo</span></div>
+              <ul><li>Weather Intelligence</li><li>Disease Risk Prediction</li><li>Fertility Management</li><li>AI Agronomist</li><li>1 team member</li></ul>
+            </div>
+            <div class="ptier pop">
+              <div class="flag">MOST POPULAR</div>
+              <div class="tname serif">Superintendent</div><div class="price">$499<span style="font-size:10px; color:var(--mist); font-weight:500;">/mo</span></div>
+              <ul><li>Everything in Agronomist</li><li>Irrigation Management</li><li>Budget &amp; Reporting</li><li>Up to 3 team members</li></ul>
+            </div>
+            <div class="ptier">
+              <div class="tname serif">Complete</div><div class="price">$599<span style="font-size:10px; color:var(--mist); font-weight:500;">/mo</span></div>
+              <ul><li>Everything in Superintendent</li><li>Labor &amp; Staffing</li><li>Task Management &amp; Payroll</li><li>Unlimited team members</li></ul>
+            </div>
+          </div>
+          <div class="hero-band closing">
+            <div class="h serif">Run your course on real numbers.</div>
+            <div class="url">turf-iq-omega.vercel.app</div>
+            <div class="trial">Start your 14-day free trial — no card charged until day 15.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="controls">
+    <button class="navbtn" id="prevBtn" aria-label="Previous slide">&#8249;</button>
+    <div class="dotset" id="dotset"></div>
+    <span class="stepno" id="stepno">1 / 9</span>
+    <button class="navbtn" id="nextBtn" aria-label="Next slide">&#8250;</button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var TOTAL = 9;
+  var DURATION = 7000;
+  var idx = 0;
+  var playing = true;
+  var startTime = null;
+  var elapsed = 0;
+  var raf = null;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var rail = document.getElementById('rail');
+  var dotset = document.getElementById('dotset');
+  var scenes = document.querySelectorAll('.scene');
+  var stepno = document.getElementById('stepno');
+  var playBtn = document.getElementById('playBtn');
+  var playLabel = document.getElementById('playLabel');
+  var playIcon = document.getElementById('playIcon');
+
+  for (var i=0;i<TOTAL;i++){
+    var seg = document.createElement('div');
+    seg.className = 'seg'; seg.dataset.i = i;
+    seg.addEventListener('click', function(){ goTo(parseInt(this.dataset.i,10)); });
+    rail.appendChild(seg);
+
+    var d = document.createElement('button');
+    d.setAttribute('aria-label','Go to slide '+(i+1));
+    d.dataset.i = i;
+    d.addEventListener('click', function(){ goTo(parseInt(this.dataset.i,10)); });
+    dotset.appendChild(d);
+  }
+
+  function render(){
+    scenes.forEach(function(s){ s.classList.toggle('on', parseInt(s.dataset.idx,10) === idx); });
+    var segs = rail.querySelectorAll('.seg');
+    segs.forEach(function(s,i){
+      s.classList.toggle('done', i < idx);
+      s.classList.toggle('active', i === idx);
+      if (i === idx) s.style.setProperty('--fill','0%');
+      if (i > idx) s.style.setProperty('--fill','0%');
+    });
+    var dots = dotset.querySelectorAll('button');
+    dots.forEach(function(d,i){ d.classList.toggle('on', i===idx); });
+    stepno.textContent = (idx+1) + ' / ' + TOTAL;
+  }
+
+  function goTo(n, resetPlay){
+    idx = ((n % TOTAL) + TOTAL) % TOTAL;
+    elapsed = 0; startTime = null;
+    render();
+  }
+
+  function tick(ts){
+    if (!playing) { raf = null; return; }
+    if (startTime === null) startTime = ts - elapsed;
+    elapsed = ts - startTime;
+    var seg = rail.querySelectorAll('.seg')[idx];
+    var pct = Math.min(100, (elapsed/DURATION)*100);
+    seg.style.setProperty('--fill', pct + '%');
+    if (elapsed >= DURATION){
+      goTo(idx+1);
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function play(){
+    playing = true;
+    playLabel.textContent = 'Pause'; playIcon.innerHTML = '&#10073;&#10073;';
+    playBtn.setAttribute('aria-pressed','true');
+    if (!reduced && raf === null) raf = requestAnimationFrame(tick);
+  }
+  function pause(){
+    playing = false;
+    playLabel.textContent = 'Play'; playIcon.innerHTML = '&#9654;';
+    playBtn.setAttribute('aria-pressed','false');
+  }
+
+  playBtn.addEventListener('click', function(){ playing ? pause() : play(); });
+  document.getElementById('prevBtn').addEventListener('click', function(){ pause(); goTo(idx-1); });
+  document.getElementById('nextBtn').addEventListener('click', function(){ pause(); goTo(idx+1); });
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight'){ pause(); goTo(idx+1); }
+    if (e.key === 'ArrowLeft'){ pause(); goTo(idx-1); }
+    if (e.key === ' '){ e.preventDefault(); playing ? pause() : play(); }
+  });
+
+  var app = document.getElementById('app');
+  app.addEventListener('mouseenter', function(){ if(playing) pause_soft(); });
+  app.addEventListener('mouseleave', function(){ if(soft) resume_soft(); });
+  var soft = false;
+  function pause_soft(){ soft = true; playing = false; if(raf){ cancelAnimationFrame(raf); raf=null; } }
+  function resume_soft(){ soft = false; playing = true; raf = requestAnimationFrame(tick); }
+
+  render();
+  if (!reduced) raf = requestAnimationFrame(tick);
+  else { playing = false; playLabel.textContent = 'Play'; playIcon.innerHTML = '&#9654;'; }
+})();
+</script>
