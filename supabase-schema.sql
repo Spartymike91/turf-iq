@@ -987,3 +987,76 @@ CREATE POLICY "Platform admins can insert task_templates when edit-unlocked"
 CREATE POLICY "Platform admins can update task_templates when edit-unlocked"
   ON task_templates FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
 
+-- ============================================
+-- MONTHLY RECAP REPORT (disease-risk history log + generated reports)
+-- ============================================
+
+-- Daily disease-risk snapshot, accumulated in real time as the weather
+-- integration runs — same opportunistic upsert pattern as gdd_daily_log.
+-- Before this table existed, disease risk was only ever computed live, so
+-- there is no way to reconstruct pressure for a period before this table
+-- started being written to.
+CREATE TABLE IF NOT EXISTS disease_risk_daily_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  log_date DATE NOT NULL,
+  dollar_spot_pct NUMERIC(5,2) NOT NULL,
+  dollar_spot_above_threshold BOOLEAN NOT NULL,
+  pythium_elevated BOOLEAN NOT NULL,
+  brown_patch_elevated BOOLEAN NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, log_date)
+);
+
+-- Generated monthly/custom-range recap reports (persisted history, not
+-- just an ephemeral view) — one row per generation, auto (cron) or manual.
+CREATE TABLE IF NOT EXISTS monthly_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  generated_at TIMESTAMPTZ DEFAULT now(),
+  generated_by TEXT NOT NULL CHECK (generated_by IN ('auto', 'manual')),
+  generated_by_user UUID REFERENCES auth.users(id),
+  data JSONB NOT NULL,
+  ai_narrative TEXT
+);
+
+ALTER TABLE disease_risk_daily_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE monthly_reports ENABLE ROW LEVEL SECURITY;
+
+-- Disease risk daily log: same pattern as gdd_daily_log
+CREATE POLICY "Members can view disease risk log"
+  ON disease_risk_daily_log FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert disease risk log"
+  ON disease_risk_daily_log FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = disease_risk_daily_log.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update disease risk log"
+  ON disease_risk_daily_log FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = disease_risk_daily_log.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Monthly reports: members can view; owners/supers can generate (insert only — a
+-- generated report is a historical record and is never edited after the fact)
+CREATE POLICY "Members can view monthly reports"
+  ON monthly_reports FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert monthly reports"
+  ON monthly_reports FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = monthly_reports.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Platform admins: same view-always / insert-when-edit-unlocked / never-delete
+-- pattern as every other table.
+CREATE POLICY "Platform admins can view disease_risk_daily_log"
+  ON disease_risk_daily_log FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert disease_risk_daily_log when edit-unlocked"
+  ON disease_risk_daily_log FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update disease_risk_daily_log when edit-unlocked"
+  ON disease_risk_daily_log FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+CREATE POLICY "Platform admins can view monthly_reports"
+  ON monthly_reports FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert monthly_reports when edit-unlocked"
+  ON monthly_reports FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+

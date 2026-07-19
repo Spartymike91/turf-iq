@@ -416,6 +416,20 @@ async function fetchFreshWeather(
       { onConflict: "course_id,log_date", ignoreDuplicates: true }
     );
 
+  await supabase
+    .from("disease_risk_daily_log")
+    .upsert(
+      {
+        course_id: course.id,
+        log_date: todayStr,
+        dollar_spot_pct: dollarSpot.probabilityPct,
+        dollar_spot_above_threshold: dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct,
+        pythium_elevated: pythium.elevated,
+        brown_patch_elevated: brownPatch.elevated,
+      },
+      { onConflict: "course_id,log_date", ignoreDuplicates: true }
+    );
+
   const yearStart = `${now.getFullYear()}-01-01`;
   const { data: gddRows } = await supabase
     .from("gdd_daily_log")

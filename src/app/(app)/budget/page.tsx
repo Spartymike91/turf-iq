@@ -4,6 +4,26 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
+import type { ReportData } from "@/lib/monthlyReport";
+
+interface MonthlyReport {
+  id: string;
+  period_start: string;
+  period_end: string;
+  generated_at: string;
+  generated_by: "auto" | "manual";
+  data: ReportData;
+  ai_narrative: string | null;
+}
+
+function lastMonthRange() {
+  const now = new Date();
+  const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthEnd = new Date(firstOfThisMonth.getTime() - 86400000);
+  const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
+  const toStr = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: toStr(lastMonthStart), end: toStr(lastMonthEnd) };
+}
 
 interface BudgetCategory {
   id: string;
@@ -52,6 +72,12 @@ export default function BudgetPage() {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [addExpenseForm, setAddExpenseForm] = useState(emptyExpenseForm);
 
+  const [reports, setReports] = useState<MonthlyReport[]>([]);
+  const [reportRange, setReportRange] = useState(lastMonthRange());
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
+
   useEffect(() => {
     async function load() {
       const supabase = createClient();
@@ -85,8 +111,15 @@ export default function BudgetPage() {
         .lte("expense_date", `${fiscalYear}-12-31`)
         .order("expense_date", { ascending: false });
 
+      const { data: reportRows } = await supabase
+        .from("monthly_reports")
+        .select("*")
+        .eq("course_id", context.courseId)
+        .order("generated_at", { ascending: false });
+
       setCategories(cats ?? []);
       setExpenses(exp ?? []);
+      setReports(reportRows ?? []);
       setChecking(false);
     }
     load();
@@ -213,6 +246,28 @@ export default function BudgetPage() {
     if (!deleteError) {
       setExpenses((prev) => prev.filter((e) => e.id !== id));
     }
+  }
+
+  async function handleGenerateReport() {
+    setGeneratingReport(true);
+    setReportError(null);
+    try {
+      const res = await fetch("/api/reports/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start_date: reportRange.start, end_date: reportRange.end }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReportError(data.error ?? "Could not generate report.");
+      } else {
+        setReports((prev) => [data.report, ...prev]);
+        setExpandedReportId(data.report.id);
+      }
+    } catch {
+      setReportError("Could not generate report.");
+    }
+    setGeneratingReport(false);
   }
 
   if (checking) {
@@ -577,6 +632,179 @@ export default function BudgetPage() {
               </table>
             )}
           </>
+        )}
+      </div>
+
+      <style>{`
+        @media print {
+          header, .no-print { display: none !important; }
+        }
+      `}</style>
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule no-print">
+          <div>
+            <div className="font-serif text-lg text-green-dark">Monthly Reports</div>
+            <div className="text-[11px] text-mist mt-0.5">
+              Auto-generates on the 1st of every month · or generate one now for any date range
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-semibold uppercase tracking-wide">From</label>
+            <input
+              type="date"
+              value={reportRange.start}
+              onChange={(e) => setReportRange({ ...reportRange, start: e.target.value })}
+              className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-semibold uppercase tracking-wide">To</label>
+            <input
+              type="date"
+              value={reportRange.end}
+              onChange={(e) => setReportRange({ ...reportRange, end: e.target.value })}
+              className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+            />
+          </div>
+          <button
+            onClick={handleGenerateReport}
+            disabled={generatingReport}
+            className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+          >
+            {generatingReport ? "Generating..." : "Generate Report"}
+          </button>
+        </div>
+
+        {reportError && <div className="px-5 py-2 text-xs text-red bg-red/5 no-print">{reportError}</div>}
+
+        {reports.length === 0 ? (
+          <div className="p-10 text-center">
+            <div className="text-4xl mb-3">📄</div>
+            <div className="text-sm text-mist">No reports generated yet. Generate your first one above.</div>
+          </div>
+        ) : (
+          <div>
+            {reports.map((r) => {
+              const expanded = expandedReportId === r.id;
+              return (
+                <div key={r.id} className="border-b border-rule last:border-0">
+                  <button
+                    onClick={() => setExpandedReportId(expanded ? null : r.id)}
+                    className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-chalk no-print"
+                  >
+                    <span className="text-sm font-medium">
+                      {r.period_start} to {r.period_end}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] font-mono uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                          r.generated_by === "auto" ? "bg-blue/10 text-blue" : "bg-green-pale text-green-mid"
+                        }`}
+                      >
+                        {r.generated_by}
+                      </span>
+                      <span className="text-xs text-mist">{expanded ? "Hide ↑" : "View →"}</span>
+                    </span>
+                  </button>
+
+                  {expanded && (
+                    <div className="px-5 pb-5">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-serif text-base text-green-dark">
+                          Recap: {r.period_start} to {r.period_end}
+                        </div>
+                        <button
+                          onClick={() => window.print()}
+                          className="no-print px-3 py-1.5 border-[1.5px] border-rule rounded-lg text-xs font-semibold hover:border-green-mid transition-colors"
+                        >
+                          🖨 Print
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 mb-4">
+                        <StatChip
+                          label="Budget vs. Actual"
+                          value={fmtMoney(r.data.expenses.totalSpent)}
+                          sub={`Pro-rated budget: ${fmtMoney(r.data.expenses.totalBudgetProRated)}`}
+                          valueColor={r.data.expenses.totalSpent > r.data.expenses.totalBudgetProRated ? "#dc2626" : "#2d6a4f"}
+                        />
+                        <StatChip
+                          label="Dollar Spot"
+                          value={r.data.disease.noHistoricalData ? "No data" : `${r.data.disease.daysAboveDollarSpotThreshold}d`}
+                          sub={
+                            r.data.disease.noHistoricalData
+                              ? "Historical logging hadn't started yet for this period"
+                              : `days above threshold of ${r.data.disease.daysLogged} logged`
+                          }
+                          tagColor={r.data.disease.daysAboveDollarSpotThreshold > 0 ? "warn" : "ok"}
+                        />
+                        <StatChip
+                          label="Equipment"
+                          value={String(r.data.equipment.completedMaintenance.length)}
+                          sub={`services completed · ${r.data.equipment.currentIssues.length} currently need attention`}
+                          tagColor={r.data.equipment.currentIssues.length > 0 ? "amber" : "ok"}
+                        />
+                      </div>
+
+                      {r.ai_narrative && (
+                        <div className="bg-chalk border-[1.5px] border-rule rounded-lg p-4 mb-4">
+                          <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-2">
+                            AI Agronomist Recap
+                          </div>
+                          <div className="text-sm text-ink leading-relaxed">{r.ai_narrative}</div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                          <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1.5">
+                            By Category
+                          </div>
+                          {r.data.expenses.byCategory.length === 0 ? (
+                            <div className="text-mist">No categories set</div>
+                          ) : (
+                            r.data.expenses.byCategory.map((c) => (
+                              <div key={c.name} className="flex justify-between py-1 border-b border-rule">
+                                <span>{c.name}</span>
+                                <span className="font-mono">
+                                  {fmtMoney(c.spent)} / {fmtMoney(c.budgetProRated)}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1.5">
+                            Applications Logged
+                          </div>
+                          {r.data.pestApplications.length === 0 && r.data.fertilizerApplications.length === 0 ? (
+                            <div className="text-mist">None logged this period</div>
+                          ) : (
+                            <>
+                              {r.data.pestApplications.map((a, i) => (
+                                <div key={`p${i}`} className="py-1 border-b border-rule">
+                                  {a.target} ({a.product}) — {new Date(a.applied_at).toLocaleDateString()}
+                                </div>
+                              ))}
+                              {r.data.fertilizerApplications.map((a, i) => (
+                                <div key={`f${i}`} className="py-1 border-b border-rule">
+                                  {a.product} — {new Date(a.application_date).toLocaleDateString()}
+                                </div>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </>

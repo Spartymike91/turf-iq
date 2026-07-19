@@ -38,6 +38,7 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/signup") ||
     pathname.startsWith("/accept-invite") ||
     pathname.startsWith("/api/webhooks") ||
+    pathname.startsWith("/api/cron") ||
     pathname.startsWith("/walkthrough.html");
 
   if (!user && !isPublic) {
