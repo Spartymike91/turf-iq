@@ -1,18 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 
+interface SprayApplication {
+  id: string;
+  course_id: string;
+  applied_at: string;
+  target: string;
+  product: string;
+  rei_hours: number;
+  notes: string | null;
+}
+
+const DISEASE_TARGET_KEYWORDS = ["dollar spot", "pythium", "brown patch", "large patch"];
+function isDiseaseTarget(target: string) {
+  const t = target.toLowerCase();
+  return DISEASE_TARGET_KEYWORDS.some((d) => t.includes(d));
+}
+
+const emptySprayForm = { target: "", product: "", applied_at: "", rei_hours: "", notes: "" };
+
 export default function DiseasePage() {
+  const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [grassType, setGrassType] = useState("");
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [nAppliedYtd, setNAppliedYtd] = useState<number | null>(null);
   const [nTarget, setNTarget] = useState<number | null>(null);
+  const [sprays, setSprays] = useState<SprayApplication[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [sprayError, setSprayError] = useState<string | null>(null);
+  const [showAddSpray, setShowAddSpray] = useState(false);
+  const [addSprayForm, setAddSprayForm] = useState(emptySprayForm);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -20,6 +50,7 @@ export default function DiseasePage() {
       const context = await resolveCourseIdClient(supabase);
       if (!context) return;
 
+      setCourseId(context.courseId);
       const { data: course } = await supabase
         .from("courses")
         .select("name, grass_type")
@@ -30,7 +61,7 @@ export default function DiseasePage() {
       setGrassType(course?.grass_type ?? "");
 
       const fiscalYear = new Date().getFullYear();
-      const [{ data: program }, { data: apps }] = await Promise.all([
+      const [{ data: program }, { data: apps }, { data: sprayRows }] = await Promise.all([
         supabase
           .from("fertility_programs")
           .select("annual_n_target")
@@ -42,9 +73,15 @@ export default function DiseasePage() {
           .select("n_lbs_per_1000")
           .eq("course_id", context.courseId)
           .gte("application_date", `${fiscalYear}-01-01`),
+        supabase
+          .from("pest_applications")
+          .select("*")
+          .eq("course_id", context.courseId)
+          .order("applied_at", { ascending: false }),
       ]);
       setNTarget(program ? Number(program.annual_n_target) : null);
       setNAppliedYtd((apps ?? []).reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0));
+      setSprays((sprayRows ?? []).filter((s) => isDiseaseTarget(s.target)));
 
       try {
         const res = await fetch("/api/weather");
@@ -61,6 +98,48 @@ export default function DiseasePage() {
     }
     load();
   }, []);
+
+  const daysSinceLastSpray = useMemo(() => {
+    if (sprays.length === 0) return null;
+    const lastMs = new Date(sprays[0].applied_at).getTime();
+    return Math.floor((now - lastMs) / 86400000);
+  }, [sprays, now]);
+
+  async function handleAddSpray(e: React.FormEvent) {
+    e.preventDefault();
+    if (!courseId || !addSprayForm.target || !addSprayForm.product) return;
+    setSaving(true);
+    setSprayError(null);
+    const supabase = createClient();
+    const { data, error: insertError } = await supabase
+      .from("pest_applications")
+      .insert({
+        course_id: courseId,
+        applied_at: addSprayForm.applied_at ? new Date(addSprayForm.applied_at).toISOString() : new Date().toISOString(),
+        target: addSprayForm.target,
+        product: addSprayForm.product,
+        rei_hours: addSprayForm.rei_hours ? parseInt(addSprayForm.rei_hours) : 0,
+        notes: addSprayForm.notes || null,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      setSprayError(insertError.message);
+    } else if (data) {
+      setSprays((prev) => [...prev, data].sort((a, b) => b.applied_at.localeCompare(a.applied_at)));
+      setAddSprayForm(emptySprayForm);
+      setShowAddSpray(false);
+      setNow(Date.now());
+    }
+    setSaving(false);
+  }
+
+  async function handleDeleteSpray(id: string) {
+    const supabase = createClient();
+    const { error: deleteError } = await supabase.from("pest_applications").delete().eq("id", id);
+    if (!deleteError) setSprays((prev) => prev.filter((s) => s.id !== id));
+  }
 
   if (loading) {
     return (
@@ -239,6 +318,12 @@ export default function DiseasePage() {
                 flag: nAppliedYtd != null && nTarget != null && nAppliedYtd < nTarget * 0.5 ? "BEHIND PACE" : "—",
                 ok: !(nAppliedYtd != null && nTarget != null && nAppliedYtd < nTarget * 0.5),
               },
+              {
+                name: "Days Since Last Fungicide",
+                val: daysSinceLastSpray != null ? `${daysSinceLastSpray} days` : "None logged",
+                flag: daysSinceLastSpray != null && daysSinceLastSpray > 21 ? "OVERDUE FOR ROTATION" : "—",
+                ok: !(daysSinceLastSpray != null && daysSinceLastSpray > 21),
+              },
             ].map((f) => (
               <div
                 key={f.name}
@@ -275,8 +360,8 @@ export default function DiseasePage() {
                   ? "Model output exceeds the literature-recommended 20% spray threshold. Consider a preventive fungicide application in the next 1–2 days if not already covered."
                   : "Model output is below the 20% action threshold. No immediate fungicide action indicated — continue monitoring as conditions change."}
                 <div className="mt-2 text-[10px] text-mist">
-                  This tool doesn&apos;t track your spray history or recommend specific products —
-                  weigh this alongside your own fungicide rotation program.
+                  This tool tracks your logged spray history below but doesn&apos;t recommend specific
+                  products — weigh this alongside your own fungicide rotation program.
                 </div>
               </div>
             </div>
@@ -311,6 +396,133 @@ export default function DiseasePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
+          <div className="font-serif text-lg text-green-dark">Fungicide Application Log</div>
+          <button
+            onClick={() => setShowAddSpray((v) => !v)}
+            className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
+          >
+            {showAddSpray ? "Cancel" : "+ Log Application"}
+          </button>
+        </div>
+
+        {showAddSpray && (
+          <form onSubmit={handleAddSpray} className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
+              <input
+                type="text"
+                required
+                list="disease-target-suggestions"
+                value={addSprayForm.target}
+                onChange={(e) => setAddSprayForm({ ...addSprayForm, target: e.target.value })}
+                placeholder="Dollar Spot"
+                className="w-40 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+              />
+              <datalist id="disease-target-suggestions">
+                <option value="Dollar Spot" />
+                <option value="Pythium Blight" />
+                <option value="Brown Patch" />
+                <option value="Large Patch" />
+              </datalist>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Product</label>
+              <input
+                type="text"
+                required
+                value={addSprayForm.product}
+                onChange={(e) => setAddSprayForm({ ...addSprayForm, product: e.target.value })}
+                placeholder="Daconil Ultrex"
+                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
+              <input
+                type="datetime-local"
+                value={addSprayForm.applied_at}
+                onChange={(e) => setAddSprayForm({ ...addSprayForm, applied_at: e.target.value })}
+                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">REI (hrs)</label>
+              <input
+                type="number"
+                value={addSprayForm.rei_hours}
+                onChange={(e) => setAddSprayForm({ ...addSprayForm, rei_hours: e.target.value })}
+                placeholder="12"
+                className="w-20 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
+              <input
+                type="text"
+                value={addSprayForm.notes}
+                onChange={(e) => setAddSprayForm({ ...addSprayForm, notes: e.target.value })}
+                placeholder="Full course, preventive rotation"
+                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+              />
+            </div>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50">
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </form>
+        )}
+
+        {sprayError && <div className="px-5 py-2 text-xs text-red bg-red/5">{sprayError}</div>}
+
+        {sprays.length === 0 ? (
+          <div className="p-10 text-center">
+            <div className="text-4xl mb-3">🧪</div>
+            <div className="text-sm text-mist">No fungicide applications logged yet. Add your first one above.</div>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
+                <th className="text-left px-5 py-2.5 font-medium">Applied At</th>
+                <th className="text-left px-3 py-2.5 font-medium">Target</th>
+                <th className="text-left px-3 py-2.5 font-medium">Product</th>
+                <th className="text-left px-3 py-2.5 font-medium">REI</th>
+                <th className="text-left px-3 py-2.5 font-medium">Status</th>
+                <th className="text-left px-3 py-2.5 font-medium">Notes</th>
+                <th className="text-right px-5 py-2.5 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sprays.map((s) => {
+                const appliedMs = new Date(s.applied_at).getTime();
+                const clearAt = appliedMs + s.rei_hours * 60 * 60 * 1000;
+                const restricted = now < clearAt;
+                return (
+                  <tr key={s.id} className="border-b border-rule last:border-0">
+                    <td className="px-5 py-2.5 text-mist">{new Date(s.applied_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td>
+                    <td className="px-3 py-2.5 font-medium">{s.target}</td>
+                    <td className="px-3 py-2.5">{s.product}</td>
+                    <td className="px-3 py-2.5 font-mono">{s.rei_hours}h</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
+                        {restricted ? "RESTRICTED" : "CLEAR"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-mist">{s.notes || "—"}</td>
+                    <td className="px-5 py-2.5 text-right">
+                      <button onClick={() => handleDeleteSpray(s.id)} className="text-mist text-xs font-semibold hover:text-red">
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </>
   );
