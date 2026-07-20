@@ -186,7 +186,7 @@ export default function DiseasePage() {
       </div>
 
       {/* Dollar Spot Detail Card */}
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="bg-green-dark p-5 grid grid-cols-[1fr_auto] gap-4 items-center">
           <div>
             <div className="font-serif text-xl text-white mb-1">Dollar Spot</div>

@@ -133,7 +133,7 @@ export default function TimeClockPage() {
         <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-2 text-xs text-red">{error}</div>
       )}
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="px-5 py-4 border-b-[1.5px] border-rule font-serif text-lg text-green-dark">Crew</div>
         {employees.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No active employees. Add staff in Labor first.</div>
@@ -198,7 +198,7 @@ export default function TimeClockPage() {
         )}
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="px-5 py-4 border-b-[1.5px] border-rule font-serif text-lg text-green-dark">Today&apos;s Log</div>
         {entries.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No time entries logged yet today.</div>

@@ -266,7 +266,7 @@ export default function AdminCourseDetailPage() {
         </div>
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="px-5 py-4 border-b-[1.5px] border-rule font-serif text-lg text-green-dark">
           Team Roster ({roster.length})
         </div>

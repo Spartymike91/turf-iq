@@ -330,7 +330,7 @@ export default function BudgetPage() {
         />
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Budget by Category</div>
           <button
@@ -506,7 +506,7 @@ export default function BudgetPage() {
         )}
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Expense Log</div>
           <button
@@ -641,7 +641,7 @@ export default function BudgetPage() {
         }
       `}</style>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule no-print">
           <div>
             <div className="font-serif text-lg text-green-dark">Monthly Reports</div>

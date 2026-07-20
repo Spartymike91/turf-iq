@@ -109,7 +109,7 @@ export default function TaskStatusPage() {
       ) : (
         <div className="grid grid-cols-3 gap-3">
           {columns.map((col) => (
-            <div key={col} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+            <div key={col} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
               <div className="px-4 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">
                 {STATUS_LABEL[col]} ({tasks.filter((t) => t.status === col).length})
               </div>

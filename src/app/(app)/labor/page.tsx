@@ -227,7 +227,7 @@ export default function LaborPage() {
         <StatChip label="Avg. Hourly Rate" value={`$${stats.avgRate.toFixed(2)}`} sub="Across active staff" />
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Staff Roster</div>
           <button

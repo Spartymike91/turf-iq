@@ -406,7 +406,7 @@ export default function EquipmentPage() {
         <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-2 text-xs text-red">{error}</div>
       )}
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Fleet</div>
           <button
@@ -549,7 +549,7 @@ export default function EquipmentPage() {
       </div>
 
       {selectedEquipment && (
-        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
           <div className="bg-green-dark p-5 flex items-center justify-between flex-wrap gap-3">
             <div>
               <div className="font-serif text-xl text-white mb-1">{selectedEquipment.name}</div>
