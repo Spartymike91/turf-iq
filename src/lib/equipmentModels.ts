@@ -53,3 +53,33 @@ export function getDueStatus(
 
   return { status, hoursRemaining, daysRemaining, lastLog };
 }
+
+export interface ReplacementPlanEquipment {
+  purchase_date: string | null;
+}
+
+export interface ReplacementStatus {
+  status: "OVERDUE" | "DUE SOON" | "ON TRACK" | "NOT TRACKED";
+  ageYears: number | null;
+  replaceByDate: string | null;
+}
+
+const REPLACEMENT_CYCLE_YEARS = 5;
+
+// Straightforward fleet capital-planning heuristic: every unit gets replaced
+// on a flat 5-year cycle from its purchase date, regardless of type. Real
+// programs vary by equipment class, but this gives a usable default plan
+// without requiring per-category configuration.
+export function getReplacementStatus(equipment: ReplacementPlanEquipment): ReplacementStatus {
+  if (!equipment.purchase_date) {
+    return { status: "NOT TRACKED", ageYears: null, replaceByDate: null };
+  }
+  const purchased = new Date(`${equipment.purchase_date}T00:00:00`);
+  const ageYears = (Date.now() - purchased.getTime()) / (365.25 * 86400000);
+  const replaceBy = new Date(purchased);
+  replaceBy.setFullYear(replaceBy.getFullYear() + REPLACEMENT_CYCLE_YEARS);
+  const yearsUntil = REPLACEMENT_CYCLE_YEARS - ageYears;
+  const status: ReplacementStatus["status"] =
+    yearsUntil <= 0 ? "OVERDUE" : yearsUntil <= 1 ? "DUE SOON" : "ON TRACK";
+  return { status, ageYears, replaceByDate: replaceBy.toISOString().slice(0, 10) };
+}

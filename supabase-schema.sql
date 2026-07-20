@@ -1060,3 +1060,12 @@ CREATE POLICY "Platform admins can view monthly_reports"
 CREATE POLICY "Platform admins can insert monthly_reports when edit-unlocked"
   ON monthly_reports FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
 
+-- ============================================
+-- EQUIPMENT REPLACEMENT PLANNING
+-- ============================================
+
+-- Purchase date, used to compute fleet age and a 5-year replacement plan on
+-- the Equipment page. Nullable — equipment added before this field existed
+-- just shows as "not tracked" until a purchase date is filled in.
+ALTER TABLE equipment ADD COLUMN IF NOT EXISTS purchase_date DATE;
+

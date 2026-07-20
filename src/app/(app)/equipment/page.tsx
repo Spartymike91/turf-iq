@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import AlertBanner from "@/components/ui/AlertBanner";
-import { getDueStatus } from "@/lib/equipmentModels";
+import { getDueStatus, getReplacementStatus } from "@/lib/equipmentModels";
 
 interface Equipment {
   id: string;
@@ -14,6 +14,7 @@ interface Equipment {
   model: string | null;
   serial_number: string | null;
   current_hours: number;
+  purchase_date: string | null;
   is_active: boolean;
   notes: string | null;
 }
@@ -45,7 +46,7 @@ interface DraftItem {
   notes: string;
 }
 
-const emptyEquipmentForm = { name: "", make: "", model: "", serial_number: "", current_hours: "" };
+const emptyEquipmentForm = { name: "", make: "", model: "", serial_number: "", current_hours: "", purchase_date: "" };
 const emptyItemForm = { task: "", interval_hours: "", interval_days: "", notes: "" };
 const emptyLogForm = { task: "", performed_at: "", hours_at_service: "", cost: "", notes: "" };
 
@@ -140,6 +141,18 @@ export default function EquipmentPage() {
     return worst;
   }, [scheduleItems, equipmentList, logs]);
 
+  const replacementPlan = useMemo(() => {
+    return equipmentList
+      .filter((e) => e.is_active)
+      .map((e) => ({ equipment: e, status: getReplacementStatus(e) }))
+      .sort((a, b) => {
+        if (!a.status.replaceByDate && !b.status.replaceByDate) return 0;
+        if (!a.status.replaceByDate) return 1;
+        if (!b.status.replaceByDate) return -1;
+        return a.status.replaceByDate.localeCompare(b.status.replaceByDate);
+      });
+  }, [equipmentList]);
+
   const selectedEquipment = equipmentList.find((e) => e.id === selectedId) ?? null;
   const selectedItems = scheduleItems.filter((i) => i.equipment_id === selectedId);
   const selectedLogs = logs.filter((l) => l.equipment_id === selectedId);
@@ -159,6 +172,7 @@ export default function EquipmentPage() {
         model: addEquipmentForm.model || null,
         serial_number: addEquipmentForm.serial_number || null,
         current_hours: addEquipmentForm.current_hours ? parseFloat(addEquipmentForm.current_hours) : 0,
+        purchase_date: addEquipmentForm.purchase_date || null,
       })
       .select()
       .single();
@@ -471,6 +485,15 @@ export default function EquipmentPage() {
                 className="w-24 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
               />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Purchase Date</label>
+              <input
+                type="date"
+                value={addEquipmentForm.purchase_date}
+                onChange={(e) => setAddEquipmentForm({ ...addEquipmentForm, purchase_date: e.target.value })}
+                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
             <button type="submit" disabled={saving} className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50">
               {saving ? "Saving..." : "Save"}
             </button>
@@ -543,6 +566,58 @@ export default function EquipmentPage() {
                   </tr>
                 );
               })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+        <div className="px-5 py-4 border-b-[1.5px] border-rule">
+          <div className="font-serif text-lg text-green-dark">Fleet Replacement Plan</div>
+          <div className="text-[11px] text-mist mt-0.5">5-year replacement cycle, by purchase date</div>
+        </div>
+
+        {replacementPlan.length === 0 ? (
+          <div className="p-10 text-center">
+            <div className="text-sm text-mist">No active equipment to plan around yet.</div>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
+                <th className="text-left px-5 py-2.5 font-medium">Equipment</th>
+                <th className="text-left px-3 py-2.5 font-medium">Purchased</th>
+                <th className="text-left px-3 py-2.5 font-medium">Age</th>
+                <th className="text-left px-3 py-2.5 font-medium">Replace By</th>
+                <th className="text-left px-5 py-2.5 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {replacementPlan.map(({ equipment, status }) => (
+                <tr key={equipment.id} className="border-b border-rule last:border-0">
+                  <td className="px-5 py-2.5 font-medium">{equipment.name}</td>
+                  <td className="px-3 py-2.5 text-mist font-mono">{equipment.purchase_date ?? "—"}</td>
+                  <td className="px-3 py-2.5 font-mono">
+                    {status.ageYears != null ? `${status.ageYears.toFixed(1)} yrs` : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-mist font-mono">{status.replaceByDate ?? "—"}</td>
+                  <td className="px-5 py-2.5">
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                        status.status === "OVERDUE"
+                          ? "bg-red/10 text-red"
+                          : status.status === "DUE SOON"
+                          ? "bg-amber/10 text-[#92400e]"
+                          : status.status === "ON TRACK"
+                          ? "bg-green-pale text-green-mid"
+                          : "bg-chalk text-mist"
+                      }`}
+                    >
+                      {status.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}
