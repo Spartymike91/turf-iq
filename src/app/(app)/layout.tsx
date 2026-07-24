@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPlatformAdminSession } from "@/lib/supabase/platform-admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
+import { isPlanTier, type PlanTier } from "@/lib/billing";
 import AppShell from "./AppShell";
 
 export default async function AppLayout({
@@ -28,13 +29,15 @@ export default async function AppLayout({
   const isAdminView = !!context?.isAdminView && isPlatformAdmin;
 
   let courseName: string | undefined;
+  let planTier: PlanTier | null = null;
   if (context?.courseId) {
     const { data: course } = await supabase
       .from("courses")
-      .select("name")
+      .select("name, plan_tier")
       .eq("id", context.courseId)
       .single();
     courseName = course?.name ?? undefined;
+    planTier = isPlanTier(course?.plan_tier) ? course.plan_tier : null;
   }
 
   return (
@@ -43,6 +46,7 @@ export default async function AppLayout({
       isPlatformAdmin={isPlatformAdmin}
       isAdminView={isAdminView}
       isEditElevated={isAdminView && isEditElevated}
+      planTier={planTier}
     >
       {children}
     </AppShell>

@@ -1,21 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import AppHeader from "@/components/layout/AppHeader";
 import AgronomistPanel from "@/components/agronomist/AgronomistPanel";
+import { hasModuleAccess, getModuleLabel, getRequiredTier } from "@/lib/planAccess";
+import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
 
 export default function AppShell({
   courseName,
   isPlatformAdmin,
   isAdminView,
   isEditElevated,
+  planTier,
   children,
 }: {
   courseName?: string;
   isPlatformAdmin?: boolean;
   isAdminView?: boolean;
   isEditElevated?: boolean;
+  planTier?: PlanTier | null;
   children: React.ReactNode;
 }) {
   const [agronomistOpen, setAgronomistOpen] = useState(false);
@@ -25,6 +29,14 @@ export default function AppShell({
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [locking, setLocking] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Admin View (a platform admin inspecting a different customer's course for
+  // support) always gets full access, regardless of that course's tier. A
+  // platform admin using their own course is still gated normally.
+  const locked = !isAdminView && !hasModuleAccess(planTier ?? null, pathname);
+  const requiredTier = locked ? getRequiredTier(pathname) : null;
+  const moduleInfo = locked ? getModuleLabel(pathname) : null;
 
   async function handleExitAdminView() {
     setExiting(true);
@@ -112,6 +124,8 @@ export default function AppShell({
       <AppHeader
         courseName={courseName}
         isPlatformAdmin={isPlatformAdmin}
+        isAdminView={isAdminView}
+        planTier={planTier}
         onToggleAgronomist={() => setAgronomistOpen(!agronomistOpen)}
       />
       <div className="flex flex-1 overflow-hidden">
@@ -120,7 +134,28 @@ export default function AppShell({
             agronomistOpen ? "mr-[440px]" : ""
           }`}
         >
-          {children}
+          {locked && requiredTier ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="max-w-sm text-center bg-white border-[1.5px] border-rule rounded-[10px] p-8">
+                <div className="text-4xl mb-3">{moduleInfo?.icon ?? "🔒"}</div>
+                <div className="font-serif text-xl text-green-dark mb-2">
+                  {moduleInfo?.label ?? "This module"} is locked
+                </div>
+                <div className="text-sm text-mist mb-5">
+                  Included in the {PLAN_DISPLAY[requiredTier].name} plan (${PLAN_DISPLAY[requiredTier].price}/mo).
+                  Upgrade to unlock it for this course.
+                </div>
+                <button
+                  onClick={() => router.push("/course")}
+                  className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors"
+                >
+                  View Plans
+                </button>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
         </main>
         <AgronomistPanel
           open={agronomistOpen}

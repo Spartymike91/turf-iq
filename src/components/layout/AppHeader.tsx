@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getRequiredTier, TIER_RANK } from "@/lib/planAccess";
+import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
 
 const tabs = [
   { href: "/weather", icon: "🌤", label: "Weather" },
@@ -20,14 +22,21 @@ const tabs = [
 export default function AppHeader({
   courseName,
   isPlatformAdmin,
+  isAdminView,
+  planTier,
   onToggleAgronomist,
 }: {
   courseName?: string;
   isPlatformAdmin?: boolean;
+  isAdminView?: boolean;
+  planTier?: PlanTier | null;
   onToggleAgronomist?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Admin View (inspecting a different customer's course) always sees every
+  // tab. A platform admin using their own course is still gated normally.
+  const bypassGating = !!isAdminView;
 
   async function handleLogout() {
     const supabase = createClient();
@@ -49,6 +58,29 @@ export default function AppHeader({
         {tabs.map((tab) => {
           const isActive =
             pathname === tab.href || pathname.startsWith(tab.href + "/");
+          const requiredTier = getRequiredTier(tab.href);
+          const locked =
+            !bypassGating &&
+            !!requiredTier &&
+            !!planTier &&
+            TIER_RANK[planTier] < TIER_RANK[requiredTier];
+
+          if (locked) {
+            return (
+              <button
+                key={tab.href}
+                type="button"
+                onClick={() => router.push("/course")}
+                title={`Included in the ${PLAN_DISPLAY[requiredTier].name} plan ($${PLAN_DISPLAY[requiredTier].price}/mo) — visit Course to upgrade.`}
+                className="px-3.5 text-xs font-medium flex items-center gap-1.5 border-b-2 border-transparent -mb-[2px] whitespace-nowrap select-none text-white/25 cursor-pointer hover:text-white/40 transition-colors"
+              >
+                <span className="text-[13px] opacity-50">{tab.icon}</span>
+                {tab.label}
+                <span className="text-[9px]">🔒</span>
+              </button>
+            );
+          }
+
           return (
             <Link
               key={tab.href}
