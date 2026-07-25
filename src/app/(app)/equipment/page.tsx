@@ -506,7 +506,8 @@ export default function EquipmentPage() {
             <div className="text-sm text-mist">No equipment added yet. Add your first piece above.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Name</th>
@@ -568,6 +569,7 @@ export default function EquipmentPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -582,7 +584,8 @@ export default function EquipmentPage() {
             <div className="text-sm text-mist">No active equipment to plan around yet.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Equipment</th>
@@ -620,6 +623,7 @@ export default function EquipmentPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -773,7 +777,8 @@ export default function EquipmentPage() {
             {selectedItems.length === 0 ? (
               <div className="text-sm text-mist text-center py-6">No schedule items yet.</div>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
                 <thead>
                   <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                     <th className="text-left py-2 font-medium">Task</th>
@@ -862,6 +867,7 @@ export default function EquipmentPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
@@ -928,7 +934,8 @@ export default function EquipmentPage() {
             {selectedLogs.length === 0 ? (
               <div className="text-sm text-mist text-center py-6">No service history logged yet.</div>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
                 <thead>
                   <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                     <th className="text-left py-2 font-medium">Date</th>
@@ -956,6 +963,7 @@ export default function EquipmentPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>

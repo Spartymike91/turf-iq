@@ -309,7 +309,7 @@ export default function FertilityPage() {
         />
       )}
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip
           label="N Applied YTD"
           value={stats.nAppliedYtd.toFixed(1)}
@@ -489,7 +489,8 @@ export default function FertilityPage() {
             </div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Date</th>
@@ -524,6 +525,7 @@ export default function FertilityPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -632,7 +634,8 @@ export default function FertilityPage() {
             <div className="text-sm text-mist">No soil tests on file yet. Add your first one above.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Date</th>
@@ -667,6 +670,7 @@ export default function FertilityPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

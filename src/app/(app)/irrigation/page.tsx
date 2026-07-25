@@ -277,7 +277,7 @@ export default function IrrigationPage() {
         />
       )}
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip
           label="Tonight's ET Target"
           value={et0In != null ? et0In.toFixed(2) : "—"}
@@ -430,7 +430,8 @@ export default function IrrigationPage() {
             <div className="text-sm text-mist">No irrigation cycles logged yet for {fiscalYear}. Add your first one above.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Date</th>
@@ -456,6 +457,7 @@ export default function IrrigationPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -527,7 +529,8 @@ export default function IrrigationPage() {
             </div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Date</th>
@@ -562,6 +565,7 @@ export default function IrrigationPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

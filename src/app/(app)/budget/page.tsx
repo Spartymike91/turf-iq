@@ -299,7 +299,7 @@ export default function BudgetPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip
           label="Annual Budget"
           value={fmtMoney(stats.annualBudget)}
@@ -391,7 +391,8 @@ export default function BudgetPage() {
             </div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Category</th>
@@ -503,6 +504,7 @@ export default function BudgetPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -599,7 +601,8 @@ export default function BudgetPage() {
                 <div className="text-sm text-mist">No expenses logged yet for FY {fiscalYear}.</div>
               </div>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
                 <thead>
                   <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                     <th className="text-left px-5 py-2.5 font-medium">Date</th>
@@ -630,6 +633,7 @@ export default function BudgetPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </>
         )}
@@ -725,7 +729,7 @@ export default function BudgetPage() {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3 mb-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                         <StatChip
                           label="Budget vs. Actual"
                           value={fmtMoney(r.data.expenses.totalSpent)}

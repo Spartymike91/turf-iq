@@ -220,7 +220,7 @@ export default function LaborPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip label="Active Staff" value={String(stats.active)} sub={`${employees.length} total on roster`} tag="Roster" tagColor="ok" />
         <StatChip label="Full-Time" value={String(stats.fullTime)} sub="FT positions" valueColor="#3b5bdb" />
         <StatChip label="Part-Time / Seasonal" value={String(stats.partTime + stats.seasonal)} sub={`${stats.partTime} PT · ${stats.seasonal} seasonal`} />
@@ -307,7 +307,8 @@ export default function LaborPage() {
             <div className="text-sm text-mist">No staff on the roster yet. Add your first employee above.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Employee</th>
@@ -428,6 +429,7 @@ export default function LaborPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

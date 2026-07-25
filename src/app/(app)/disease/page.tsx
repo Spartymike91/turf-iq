@@ -191,7 +191,7 @@ export default function DiseasePage() {
       )}
 
       {/* Disease Tiles */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white border-[1.5px] border-green-mid bg-green-pale rounded-lg p-3.5 text-center">
           <div className="flex items-center justify-center gap-1.5 mb-1.5">
             <span className="text-[11px] font-semibold text-ink">Dollar Spot</span>
@@ -483,7 +483,8 @@ export default function DiseasePage() {
             <div className="text-sm text-mist">No fungicide applications logged yet. Add your first one above.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Applied At</th>
@@ -522,6 +523,7 @@ export default function DiseasePage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

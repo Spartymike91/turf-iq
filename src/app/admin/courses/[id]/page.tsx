@@ -179,7 +179,7 @@ export default function AdminCourseDetailPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip label="Holes" value={String(course.num_holes ?? "—")} />
         <StatChip label="Maintained Acres" value={String(course.maintained_acres ?? "—")} />
         <StatChip label="Employees" value={String(employeeCount)} sub="Labor roster" />
@@ -188,7 +188,7 @@ export default function AdminCourseDetailPage() {
 
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5">
         <div className="font-serif text-lg text-green-dark mb-3">Billing</div>
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <StatChip label="Plan" value={course.plan_tier ? TIER_NAME[course.plan_tier] ?? course.plan_tier : "None"} />
           <StatChip
             label="Status"
@@ -250,7 +250,7 @@ export default function AdminCourseDetailPage() {
 
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5">
         <div className="font-serif text-lg text-green-dark mb-3">Course Profile</div>
-        <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
           <div>
             <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1">Grass Type</div>
             <div>{course.grass_type ?? "Not set"}</div>
@@ -273,7 +273,8 @@ export default function AdminCourseDetailPage() {
         {roster.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No team members yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Name</th>
@@ -301,6 +302,7 @@ export default function AdminCourseDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

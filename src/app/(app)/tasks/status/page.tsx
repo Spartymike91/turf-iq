@@ -107,7 +107,7 @@ export default function TaskStatusPage() {
           <div className="text-sm text-mist">No tasks scheduled for today. Add some in the Scheduler.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {columns.map((col) => (
             <div key={col} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
               <div className="px-4 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">

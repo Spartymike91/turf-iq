@@ -246,7 +246,8 @@ export default function TaskSchedulerPage() {
             <div className="text-sm text-mist">No tasks scheduled for {dateFilter}.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Task</th>
@@ -280,6 +281,7 @@ export default function TaskSchedulerPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

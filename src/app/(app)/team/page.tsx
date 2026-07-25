@@ -209,7 +209,7 @@ export default function TeamPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip label="Total Members" value={String(members.length)} tag="Roster" tagColor="ok" />
         <StatChip label="Owners" value={String(roleCounts.owner ?? 0)} valueColor="#3b5bdb" />
         <StatChip label="Superintendents" value={String(roleCounts.superintendent ?? 0)} />
@@ -298,7 +298,8 @@ export default function TeamPage() {
             <div className="text-sm text-mist">No team members yet.</div>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Member</th>
@@ -353,6 +354,7 @@ export default function TeamPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

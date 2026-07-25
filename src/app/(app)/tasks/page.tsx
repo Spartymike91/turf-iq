@@ -120,7 +120,7 @@ export default function TasksDashboardPage() {
         </div>
       </div>
 
-      <div className="bg-green-dark rounded-[10px] p-5 grid grid-cols-4 gap-5 items-center relative overflow-hidden">
+      <div className="bg-green-dark rounded-[10px] p-5 grid grid-cols-2 sm:grid-cols-4 gap-5 items-center relative overflow-hidden">
         <div className="absolute -top-[60px] -right-[60px] w-[200px] h-[200px] rounded-full bg-green-bright/[0.06]" />
         <div className="text-center">
           <div className="text-[10px] font-mono uppercase tracking-wider text-white/45 mb-2">Tasks Complete</div>
@@ -162,7 +162,7 @@ export default function TasksDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip
           label="Hours Today"
           value={hoursToday_.toFixed(1)}

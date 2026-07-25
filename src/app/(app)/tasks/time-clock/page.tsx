@@ -138,7 +138,8 @@ export default function TimeClockPage() {
         {employees.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No active employees. Add staff in Labor first.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Employee</th>
@@ -195,6 +196,7 @@ export default function TimeClockPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -203,7 +205,8 @@ export default function TimeClockPage() {
         {entries.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No time entries logged yet today.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Employee</th>
@@ -227,6 +230,7 @@ export default function TimeClockPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

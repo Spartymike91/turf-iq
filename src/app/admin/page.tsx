@@ -107,7 +107,7 @@ export default function AdminCoursesPage() {
         <div className="text-[13px] text-mist mt-1">{courses.length} courses on the platform</div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatChip label="Total Courses" value={String(courses.length)} tag="Live" tagColor="ok" />
         <StatChip label="Total Members" value={String(totalMembers)} sub="Across all courses" />
         <StatChip label="Total Holes" value={String(totalHoles)} sub="Combined footprint" />
@@ -226,7 +226,8 @@ export default function AdminCoursesPage() {
         {courses.length === 0 ? (
           <div className="p-10 text-center text-sm text-mist">No courses signed up yet.</div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Course</th>
@@ -265,6 +266,7 @@ export default function AdminCoursesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

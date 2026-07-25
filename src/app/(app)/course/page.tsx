@@ -334,7 +334,7 @@ function CourseForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-semibold uppercase tracking-wide">
               Grass Type
@@ -403,7 +403,7 @@ function CourseForm() {
             <label className="text-[11px] font-semibold uppercase tracking-wide">
               Choose Your Plan
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {PLAN_TIERS.map((t) => (
                 <button
                   type="button"

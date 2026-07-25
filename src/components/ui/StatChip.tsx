@@ -23,12 +23,12 @@ export default function StatChip({
   };
 
   return (
-    <div className="bg-white border-[1.5px] border-rule rounded-lg px-4 py-3.5">
+    <div className="bg-white border-[1.5px] border-rule rounded-lg px-4 py-3.5 overflow-hidden">
       <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1.5">
         {label}
       </div>
       <div
-        className="font-mono text-[22px] font-semibold leading-none"
+        className="font-mono text-[16px] sm:text-[22px] font-semibold leading-none truncate"
         style={valueColor ? { color: valueColor } : undefined}
       >
         {value}
