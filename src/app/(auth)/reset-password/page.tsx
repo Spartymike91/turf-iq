@@ -1,24 +1,25 @@
 "use client";
 
 import { Suspense, useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function AcceptInvitePage() {
+export default function ResetPasswordPage() {
   return (
     <Suspense fallback={null}>
-      <AcceptInviteForm />
+      <ResetPasswordForm />
     </Suspense>
   );
 }
 
-function AcceptInviteForm() {
+function ResetPasswordForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [canAccept, setCanAccept] = useState(false);
+  const [canReset, setCanReset] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const tokenHash = searchParams.get("token_hash");
@@ -34,7 +35,7 @@ function AcceptInviteForm() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      setCanAccept(!!session || (!!tokenHash && type === "invite"));
+      setCanReset(!!session || (!!tokenHash && type === "recovery"));
       setChecking(false);
     }
     check();
@@ -57,15 +58,15 @@ function AcceptInviteForm() {
     setLoading(true);
     const supabase = createClient();
 
-    // The invite token is only ever verified here, at the moment the user
-    // submits their chosen password — never automatically on page load.
-    // That's what keeps this link safe from email-security link scanners:
-    // they prefetch the URL (which would silently burn a single-use token
-    // if we verified on mount) but never submit a form.
-    if (tokenHash && type === "invite") {
+    // The recovery token is only ever verified here, at the moment the user
+    // submits a new password — never automatically on page load. That's
+    // what keeps this link safe from email-security link scanners: they
+    // prefetch the URL (which would silently burn a single-use token if we
+    // verified on mount) but never submit a form.
+    if (tokenHash && type === "recovery") {
       const { error: verifyError } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
-        type: "invite",
+        type: "recovery",
       });
       if (verifyError) {
         setError(verifyError.message);
@@ -94,7 +95,7 @@ function AcceptInviteForm() {
     );
   }
 
-  if (!canAccept) {
+  if (!canReset) {
     return (
       <div className="bg-white rounded-xl shadow-2xl overflow-hidden">
         <div className="bg-green-dark p-6 text-center">
@@ -102,8 +103,13 @@ function AcceptInviteForm() {
             Turf<span className="text-green-bright">IQ</span>
           </h1>
         </div>
-        <div className="p-6 text-center text-sm text-mist">
-          This invite link is invalid or has expired. Ask whoever invited you to send a new one.
+        <div className="p-6 text-center flex flex-col gap-3">
+          <div className="text-sm text-mist">
+            This reset link is invalid or has expired.
+          </div>
+          <Link href="/forgot-password" className="text-green-mid font-semibold text-sm hover:underline">
+            Request a new one
+          </Link>
         </div>
       </div>
     );
@@ -115,14 +121,14 @@ function AcceptInviteForm() {
         <h1 className="font-serif text-2xl text-white">
           Turf<span className="text-green-bright">IQ</span>
         </h1>
-        <p className="text-white/50 text-sm mt-1">Set a password to finish joining the team</p>
+        <p className="text-white/50 text-sm mt-1">Set a new password</p>
       </div>
       <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
         {error && (
           <div className="bg-red/10 border border-red/30 rounded-lg p-3 text-red text-sm">{error}</div>
         )}
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wide text-ink">Password</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-ink">New Password</label>
           <input
             type="password"
             value={password}
@@ -135,7 +141,7 @@ function AcceptInviteForm() {
           <span className="text-xs text-mist">Minimum 6 characters</span>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wide text-ink">Confirm Password</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-ink">Confirm New Password</label>
           <input
             type="password"
             value={confirmPassword}
@@ -151,7 +157,7 @@ function AcceptInviteForm() {
           disabled={loading}
           className="mt-2 px-4 py-3 bg-green-mid text-white font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Setting password..." : "Set Password & Continue"}
+          {loading ? "Saving..." : "Set New Password"}
         </button>
       </form>
     </div>
