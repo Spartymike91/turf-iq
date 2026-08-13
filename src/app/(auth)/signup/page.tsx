@@ -17,6 +17,7 @@ function SignupForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -104,9 +105,29 @@ function SignupForm() {
           />
           <span className="text-xs text-mist">Minimum 6 characters</span>
         </div>
+        <label className="flex items-start gap-2 text-xs text-mist">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+            required
+            className="mt-0.5"
+          />
+          <span>
+            I agree to the{" "}
+            <Link href="/terms" target="_blank" className="text-green-mid font-semibold hover:underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" target="_blank" className="text-green-mid font-semibold hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !agreed}
           className="mt-2 px-4 py-3 bg-green-mid text-white font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? "Creating account..." : "Create Account"}

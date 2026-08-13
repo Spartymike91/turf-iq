@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 
@@ -9,6 +9,7 @@ interface TaskTemplate {
   name: string;
   category: string;
   estimated_duration: string | null;
+  target_minutes: number | null;
 }
 
 interface Employee {
@@ -27,7 +28,19 @@ interface TaskAssignment {
   priority: "low" | "normal" | "high";
   status: "not_started" | "in_progress" | "complete";
   estimated_minutes: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  quality_rating: number | null;
   notes: string | null;
+}
+
+interface EmployeeStat {
+  employeeId: string;
+  name: string;
+  avgMinutes: number | null;
+  completions: number;
+  avgQuality: number | null;
+  qualityCount: number;
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -44,6 +57,7 @@ export default function TaskSchedulerPage() {
   const [saving, setSaving] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(emptyForm);
+  const [suggestMetric, setSuggestMetric] = useState<"speed" | "quality">("speed");
 
   useEffect(() => {
     async function load() {
@@ -57,7 +71,7 @@ export default function TaskSchedulerPage() {
       setCourseId(context.courseId);
 
       const [{ data: tpl }, { data: emp }, { data: assign }] = await Promise.all([
-        supabase.from("task_templates").select("id, name, category, estimated_duration").eq("course_id", context.courseId).order("name"),
+        supabase.from("task_templates").select("id, name, category, estimated_duration, target_minutes").eq("course_id", context.courseId).order("name"),
         supabase.from("employees").select("id, name, is_active").eq("course_id", context.courseId).eq("is_active", true).order("name"),
         supabase.from("task_assignments").select("*").eq("course_id", context.courseId).order("scheduled_date", { ascending: false }),
       ]);
@@ -70,6 +84,48 @@ export default function TaskSchedulerPage() {
   }, []);
 
   const filtered = assignments.filter((a) => a.scheduled_date === dateFilter);
+
+  // Real history for this specific recurring task, per employee — the raw
+  // averages are shown alongside their sample size deliberately (rather than
+  // picking a single "best" employee) so a superintendent can judge whether
+  // one completion at 5 stars is actually more trustworthy than eight
+  // completions averaging 4.6. We don't try to adjust for that ourselves.
+  const employeeStats: EmployeeStat[] = useMemo(() => {
+    if (!addForm.template_id) return [];
+    const byEmployee = new Map<string, { durations: number[]; qualities: number[] }>();
+    for (const a of assignments) {
+      if (a.template_id !== addForm.template_id || a.status !== "complete" || !a.assigned_to) continue;
+      if (!byEmployee.has(a.assigned_to)) byEmployee.set(a.assigned_to, { durations: [], qualities: [] });
+      const entry = byEmployee.get(a.assigned_to)!;
+      if (a.started_at && a.completed_at) {
+        entry.durations.push((new Date(a.completed_at).getTime() - new Date(a.started_at).getTime()) / 60000);
+      }
+      if (a.quality_rating != null) entry.qualities.push(a.quality_rating);
+    }
+    const stats: EmployeeStat[] = [];
+    for (const [employeeId, { durations, qualities }] of byEmployee) {
+      const employee = employees.find((e) => e.id === employeeId);
+      if (!employee) continue; // inactive/deleted since — not assignable anyway
+      stats.push({
+        employeeId,
+        name: employee.name,
+        avgMinutes: durations.length ? durations.reduce((s, d) => s + d, 0) / durations.length : null,
+        completions: durations.length,
+        avgQuality: qualities.length ? qualities.reduce((s, q) => s + q, 0) / qualities.length : null,
+        qualityCount: qualities.length,
+      });
+    }
+    return stats.sort((a, b) => {
+      if (suggestMetric === "speed") {
+        if (a.avgMinutes == null) return 1;
+        if (b.avgMinutes == null) return -1;
+        return a.avgMinutes - b.avgMinutes;
+      }
+      if (a.avgQuality == null) return 1;
+      if (b.avgQuality == null) return -1;
+      return b.avgQuality - a.avgQuality;
+    });
+  }, [addForm.template_id, assignments, employees, suggestMetric]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -92,7 +148,8 @@ export default function TaskSchedulerPage() {
         assigned_to: addForm.assigned_to || null,
         scheduled_date: addForm.scheduled_date,
         priority: addForm.priority,
-        estimated_minutes: template?.estimated_duration ? parseInt(template.estimated_duration) || null : null,
+        estimated_minutes:
+          template?.target_minutes ?? (template?.estimated_duration ? parseInt(template.estimated_duration) || null : null),
         notes: addForm.notes || null,
       })
       .select()
@@ -237,6 +294,63 @@ export default function TaskSchedulerPage() {
             <button type="submit" disabled={saving} className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50">
               {saving ? "Saving..." : "Save"}
             </button>
+
+            {addForm.template_id && (
+              <div className="w-full flex flex-col gap-2 pt-3 mt-1 border-t border-rule">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide">Suggest an employee</label>
+                  <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-0.5">
+                    {(["speed", "quality"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setSuggestMetric(m)}
+                        className={`px-2.5 py-1 rounded text-[11px] font-semibold capitalize transition-colors ${
+                          suggestMetric === m ? "bg-green-mid text-white" : "text-mist hover:text-ink"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {employeeStats.length === 0 ? (
+                  <div className="text-xs text-mist">
+                    No completed history yet for this task — suggestions will appear once a few are done.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {employeeStats.map((s, i) => (
+                      <button
+                        key={s.employeeId}
+                        type="button"
+                        onClick={() => setAddForm({ ...addForm, assigned_to: s.employeeId })}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs border-[1.5px] transition-colors ${
+                          addForm.assigned_to === s.employeeId
+                            ? "bg-green-pale border-green-mid text-green-dark"
+                            : "border-rule hover:border-green-mid"
+                        }`}
+                      >
+                        {i === 0 && <span title={suggestMetric === "speed" ? "Fastest on record" : "Best quality on record"}>⭐</span>}
+                        <span className="font-semibold">{s.name}</span>
+                        <span className="text-mist font-mono">
+                          {suggestMetric === "speed"
+                            ? s.avgMinutes != null
+                              ? `${Math.round(s.avgMinutes)} min avg`
+                              : "no timed runs"
+                            : s.avgQuality != null
+                            ? `${s.avgQuality.toFixed(1)}★ avg`
+                            : "no ratings"}
+                        </span>
+                        <span className="text-mist">
+                          ({suggestMetric === "speed" ? s.completions : s.qualityCount}x)
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         )}
 
@@ -247,7 +361,7 @@ export default function TaskSchedulerPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Task</th>

@@ -46,3 +46,28 @@ export function hasModuleAccess(courseTier: PlanTier | null, pathname: string): 
   if (!required || !courseTier) return true;
   return TIER_RANK[courseTier] >= TIER_RANK[required];
 }
+
+// The full set of restrictable nav tabs. Shared by AppHeader (rendering) and
+// the per-crew permission checklist on the Team page (invite + edit access) —
+// keeping one canonical list avoids the two drifting apart.
+export const ALL_MODULES: { slug: string; href: string; icon: string; label: string }[] = [
+  { slug: "weather", href: "/weather", icon: "🌤", label: "Weather" },
+  { slug: "disease", href: "/disease", icon: "🦠", label: "Disease Risk" },
+  { slug: "fertility", href: "/fertility", icon: "🌱", label: "Fertility" },
+  { slug: "irrigation", href: "/irrigation", icon: "💧", label: "Irrigation" },
+  { slug: "pest-weed", href: "/pest-weed", icon: "🧪", label: "Pest & Weed" },
+  { slug: "equipment", href: "/equipment", icon: "🔧", label: "Equipment" },
+  { slug: "budget", href: "/budget", icon: "📊", label: "Budget" },
+  { slug: "labor", href: "/labor", icon: "👷", label: "Labor" },
+  { slug: "tasks", href: "/tasks", icon: "📋", label: "Tasks" },
+  { slug: "team", href: "/team", icon: "👥", label: "Team" },
+];
+
+// null = unrestricted (default for owners/superintendents and any member
+// who's never been restricted) — sees everything the plan tier allows.
+export function hasModulePermission(allowedModules: string[] | null, pathname: string): boolean {
+  if (!allowedModules) return true;
+  const found = ALL_MODULES.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`));
+  if (!found) return true; // dashboard, course settings, etc. are never restrictable
+  return allowedModules.includes(found.slug);
+}

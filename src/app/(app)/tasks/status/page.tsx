@@ -7,6 +7,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 interface Employee {
   id: string;
   name: string;
+  course_member_id: string | null;
 }
 
 interface TaskAssignment {
@@ -18,9 +19,9 @@ interface TaskAssignment {
   estimated_minutes: number | null;
   started_at: string | null;
   completed_at: string | null;
+  quality_rating: number | null;
 }
 
-const STATUS_ORDER: TaskAssignment["status"][] = ["not_started", "in_progress", "complete"];
 const STATUS_LABEL: Record<TaskAssignment["status"], string> = {
   not_started: "Not Started",
   in_progress: "In Progress",
@@ -34,42 +35,102 @@ export default function TaskStatusPage() {
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
   const [checking, setChecking] = useState(true);
   const [courseId, setCourseId] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string | null>(null);
+  const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null);
+
+  const [completingTask, setCompletingTask] = useState<TaskAssignment | null>(null);
+  const [materialsCost, setMaterialsCost] = useState("");
+  const [materialsNote, setMaterialsNote] = useState("");
+  const [qualityRating, setQualityRating] = useState<number | null>(null);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const context = await resolveCourseIdClient(supabase);
 
-      if (!context) {
+      if (!context || !user) {
         setChecking(false);
         return;
       }
       setCourseId(context.courseId);
 
-      const [{ data: emp }, { data: assign }] = await Promise.all([
-        supabase.from("employees").select("id, name").eq("course_id", context.courseId),
+      const [{ data: emp }, { data: assign }, { data: membership }] = await Promise.all([
+        supabase.from("employees").select("id, name, course_member_id").eq("course_id", context.courseId),
         supabase.from("task_assignments").select("*").eq("course_id", context.courseId).eq("scheduled_date", todayStr()),
+        supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
       ]);
       setEmployees(emp ?? []);
       setTasks(assign ?? []);
+      setMyRole(membership?.role ?? null);
+      setMyEmployeeId((emp ?? []).find((e) => e.course_member_id === membership?.id)?.id ?? null);
       setChecking(false);
     }
     load();
   }, []);
 
-  async function advanceStatus(task: TaskAssignment) {
-    const idx = STATUS_ORDER.indexOf(task.status);
-    if (idx >= STATUS_ORDER.length - 1) return;
-    const newStatus = STATUS_ORDER[idx + 1];
-    const supabase = createClient();
-    const updates: Record<string, unknown> = { status: newStatus };
-    if (newStatus === "in_progress") updates.started_at = new Date().toISOString();
-    if (newStatus === "complete") updates.completed_at = new Date().toISOString();
+  function canManage(task: TaskAssignment) {
+    return myRole === "owner" || myRole === "superintendent" || task.assigned_to === myEmployeeId;
+  }
 
-    const { data, error } = await supabase.from("task_assignments").update(updates).eq("id", task.id).select().single();
-    if (!error && data) {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? data : t)));
+  async function advanceStatus(task: TaskAssignment) {
+    // Only handles not_started -> in_progress now. Completion goes through
+    // openCompleteDialog/handleCompleteTask instead, since it also triggers
+    // labor/materials cost logging via /api/tasks/complete.
+    try {
+      const res = await fetch("/api/tasks/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: task.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? data.assignment : t)));
+      }
+    } catch {
+      // Best-effort — board just won't update if this fails.
     }
+  }
+
+  function openCompleteDialog(task: TaskAssignment) {
+    setCompletingTask(task);
+    setMaterialsCost("");
+    setMaterialsNote("");
+    setQualityRating(null);
+    setCompleteError(null);
+  }
+
+  async function handleCompleteTask(e: React.FormEvent) {
+    e.preventDefault();
+    if (!completingTask) return;
+    setCompleting(true);
+    setCompleteError(null);
+    try {
+      const res = await fetch("/api/tasks/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignment_id: completingTask.id,
+          materials_cost: materialsCost ? parseFloat(materialsCost) : undefined,
+          materials_note: materialsNote || undefined,
+          quality_rating: qualityRating ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCompleteError(data.error ?? "Could not complete task.");
+      } else {
+        setTasks((prev) => prev.map((t) => (t.id === completingTask.id ? data.assignment : t)));
+        setCompletingTask(null);
+      }
+    } catch {
+      setCompleteError("Could not complete task.");
+    }
+    setCompleting(false);
   }
 
   if (checking) {
@@ -129,9 +190,9 @@ export default function TaskStatusPage() {
                         </span>
                       </div>
                       <div className="text-mist mb-2">{employees.find((e) => e.id === t.assigned_to)?.name ?? "Unassigned"}</div>
-                      {col !== "complete" && (
+                      {col !== "complete" && canManage(t) && (
                         <button
-                          onClick={() => advanceStatus(t)}
+                          onClick={() => (col === "not_started" ? advanceStatus(t) : openCompleteDialog(t))}
                           className="text-green-mid font-semibold hover:text-green-dark"
                         >
                           {col === "not_started" ? "Start →" : "Complete →"}
@@ -142,6 +203,80 @@ export default function TaskStatusPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {completingTask && (
+        <div className="fixed inset-0 bg-black/35 z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[10px] p-6 max-w-sm w-full">
+            <div className="font-serif text-lg text-green-dark mb-1">Mark Complete</div>
+            <div className="text-sm text-mist mb-4">{completingTask.name}</div>
+            <form onSubmit={handleCompleteTask} className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">
+                  Materials Cost <span className="text-mist font-normal normal-case">(optional — e.g. chemical used)</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={materialsCost}
+                  onChange={(e) => setMaterialsCost(e.target.value)}
+                  placeholder="0.00"
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              {materialsCost && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-semibold uppercase tracking-wide">What was used</label>
+                  <input
+                    value={materialsNote}
+                    onChange={(e) => setMaterialsNote(e.target.value)}
+                    placeholder="e.g. 2 gal fungicide on #4-9 greens"
+                    className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                  />
+                </div>
+              )}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">
+                  Quality <span className="text-mist font-normal normal-case">(optional, 1-5)</span>
+                </label>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setQualityRating(qualityRating === n ? null : n)}
+                      className={`w-9 h-9 rounded-lg text-sm font-semibold border-[1.5px] transition-colors ${
+                        qualityRating === n
+                          ? "bg-green-mid text-white border-green-mid"
+                          : "border-rule text-mist hover:border-green-mid"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {completeError && <div className="text-xs text-red">{completeError}</div>}
+              <div className="flex gap-2 mt-1">
+                <button
+                  type="submit"
+                  disabled={completing}
+                  className="flex-1 px-4 py-2.5 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+                >
+                  {completing ? "Saving..." : "Mark Complete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCompletingTask(null)}
+                  className="px-4 py-2.5 text-mist text-sm font-semibold hover:text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </>

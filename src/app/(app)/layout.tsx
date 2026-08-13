@@ -40,6 +40,24 @@ export default async function AppLayout({
     planTier = isPlanTier(course?.plan_tier) ? course.plan_tier : null;
   }
 
+  // Owner/superintendent are always unrestricted regardless of what's stored
+  // on their row — the invite/edit UI never offers the checklist to them in
+  // the first place, this is just a server-side safety net. Admin view (a
+  // platform admin inspecting a customer's course) is unrestricted too, same
+  // as tier gating.
+  let allowedModules: string[] | null = null;
+  if (context?.courseId && !isAdminView) {
+    const { data: membership } = await supabase
+      .from("course_members")
+      .select("role, allowed_modules")
+      .eq("user_id", user.id)
+      .eq("course_id", context.courseId)
+      .single();
+    if (membership && membership.role !== "owner" && membership.role !== "superintendent") {
+      allowedModules = membership.allowed_modules ?? null;
+    }
+  }
+
   return (
     <AppShell
       courseName={courseName}
@@ -47,6 +65,7 @@ export default async function AppLayout({
       isAdminView={isAdminView}
       isEditElevated={isAdminView && isEditElevated}
       planTier={planTier}
+      allowedModules={allowedModules}
     >
       {children}
     </AppShell>

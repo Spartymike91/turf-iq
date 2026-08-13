@@ -1,9 +1,11 @@
 "use client";
 
 import { Suspense, useState, useEffect } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PLAN_TIERS, PLAN_DISPLAY, isPlanTier, type PlanTier } from "@/lib/billing";
+import { DEFAULT_TASK_LIBRARY } from "@/lib/defaultTaskLibrary";
 
 export default function CoursePage() {
   return (
@@ -43,6 +45,8 @@ function CourseForm() {
   const [resubscribeTier, setResubscribeTier] = useState<PlanTier | "">("");
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -144,6 +148,10 @@ function CourseForm() {
           role: "owner",
         });
 
+        await supabase.from("task_templates").insert(
+          DEFAULT_TASK_LIBRARY.map((task) => ({ ...task, course_id: courseId }))
+        );
+
         try {
           const res = await fetch("/api/billing/checkout", {
             method: "POST",
@@ -204,6 +212,33 @@ function CourseForm() {
       setBillingError("Could not start checkout.");
     }
     setBillingLoading(false);
+  }
+
+  async function handleExportData() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch("/api/export");
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setExportError(data?.error ?? "Could not export data.");
+        setExporting(false);
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="(.+)"/);
+      const filename = match?.[1] ?? "turfiq-export.json";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Could not export data.");
+    }
+    setExporting(false);
   }
 
   if (checking) {
@@ -440,6 +475,42 @@ function CourseForm() {
             : "Create Course & Get Started →"}
         </button>
       </form>
+
+      {existingCourse && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 mt-4">
+          <div className="font-serif text-lg text-green-dark mb-3">Data &amp; Privacy</div>
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-mist max-w-sm">
+              Download a full export of your course&apos;s data — profile, team, tasks, expenses,
+              equipment, applications, and reports.
+            </div>
+            <button
+              type="button"
+              onClick={handleExportData}
+              disabled={exporting}
+              className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 whitespace-nowrap"
+            >
+              {exporting ? "Exporting..." : "Export My Data"}
+            </button>
+          </div>
+          {exportError && <div className="text-xs text-red mt-2">{exportError}</div>}
+          <div className="text-xs text-mist mt-4 pt-3 border-t border-rule">
+            See our{" "}
+            <Link href="/terms" target="_blank" className="text-green-mid font-semibold hover:underline">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" target="_blank" className="text-green-mid font-semibold hover:underline">
+              Privacy Policy
+            </Link>
+            . Curious how the predictions on your dashboard are calculated?{" "}
+            <Link href="/how-it-works" target="_blank" className="text-green-mid font-semibold hover:underline">
+              See how we calculate this
+            </Link>
+            .
+          </div>
+        </div>
+      )}
     </div>
   );
 }

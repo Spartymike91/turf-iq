@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
+import { ALL_MODULES } from "@/lib/planAccess";
 
 type Role = "owner" | "superintendent" | "assistant" | "crew_lead" | "crew";
 
@@ -13,7 +14,10 @@ interface Member {
   role: Role;
   email: string | null;
   full_name: string | null;
+  allowed_modules: string[] | null;
 }
+
+const ALL_MODULE_SLUGS = ALL_MODULES.map((m) => m.slug);
 
 const ROLE_LABEL: Record<Role, string> = {
   owner: "Owner",
@@ -41,7 +45,12 @@ export default function TeamPage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("crew");
+  const [inviteAllowedModules, setInviteAllowedModules] = useState<string[]>(ALL_MODULE_SLUGS);
   const [inviting, setInviting] = useState(false);
+
+  const [editingAccessId, setEditingAccessId] = useState<string | null>(null);
+  const [editAccessModules, setEditAccessModules] = useState<string[]>(ALL_MODULE_SLUGS);
+  const [savingAccess, setSavingAccess] = useState(false);
 
   async function load() {
     const supabase = createClient();
@@ -79,7 +88,7 @@ export default function TeamPage() {
 
     const { data: memberRows } = await supabase
       .from("course_members")
-      .select("id, user_id, role")
+      .select("id, user_id, role, allowed_modules")
       .eq("course_id", context.courseId);
 
     const userIds = (memberRows ?? []).map((m) => m.user_id);
@@ -94,6 +103,7 @@ export default function TeamPage() {
       role: m.role as Role,
       email: profileById.get(m.user_id)?.email ?? null,
       full_name: profileById.get(m.user_id)?.full_name ?? null,
+      allowed_modules: m.allowed_modules,
     }));
     merged.sort((a, b) => ALL_ROLES.indexOf(a.role) - ALL_ROLES.indexOf(b.role));
 
@@ -127,11 +137,19 @@ export default function TeamPage() {
     setError(null);
     setNotice(null);
 
+    const isRestricted =
+      JUNIOR_ROLES.includes(inviteRole) && inviteAllowedModules.length < ALL_MODULE_SLUGS.length;
+
     try {
       const res = await fetch("/api/team/invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole, full_name: inviteName || undefined }),
+        body: JSON.stringify({
+          email: inviteEmail,
+          role: inviteRole,
+          full_name: inviteName || undefined,
+          allowed_modules: isRestricted ? inviteAllowedModules : null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -145,6 +163,7 @@ export default function TeamPage() {
         setInviteName("");
         setInviteEmail("");
         setInviteRole("crew");
+        setInviteAllowedModules(ALL_MODULE_SLUGS);
         setShowInviteForm(false);
         await load();
       }
@@ -152,6 +171,43 @@ export default function TeamPage() {
       setError("Something went wrong sending the invite.");
     }
     setInviting(false);
+  }
+
+  function toggleInviteModule(slug: string) {
+    setInviteAllowedModules((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  }
+
+  function startEditAccess(member: Member) {
+    setEditingAccessId(member.id);
+    setEditAccessModules(member.allowed_modules ?? ALL_MODULE_SLUGS);
+  }
+
+  function toggleEditAccessModule(slug: string) {
+    setEditAccessModules((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  }
+
+  async function handleSaveAccess(member: Member) {
+    setSavingAccess(true);
+    setError(null);
+    const isRestricted = editAccessModules.length < ALL_MODULE_SLUGS.length;
+    const supabase = createClient();
+    const { error: updateError } = await supabase
+      .from("course_members")
+      .update({ allowed_modules: isRestricted ? editAccessModules : null })
+      .eq("id", member.id);
+    if (updateError) {
+      setError(updateError.message);
+    } else {
+      setMembers((prev) =>
+        prev.map((m) => (m.id === member.id ? { ...m, allowed_modules: isRestricted ? editAccessModules : null } : m))
+      );
+      setEditingAccessId(null);
+    }
+    setSavingAccess(false);
   }
 
   async function handleRoleChange(member: Member, role: Role) {
@@ -245,50 +301,72 @@ export default function TeamPage() {
         {canManage && showInviteForm && (
           <form
             onSubmit={handleInvite}
-            className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk"
+            className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk"
           >
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Name</label>
-              <input
-                type="text"
-                value={inviteName}
-                onChange={(e) => setInviteName(e.target.value)}
-                placeholder="Jordan Reyes"
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Email</label>
-              <input
-                type="email"
-                required
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="teammate@example.com"
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Role</label>
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value as Role)}
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Name</label>
+                <input
+                  type="text"
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="Jordan Reyes"
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="teammate@example.com"
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Role</label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as Role)}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                >
+                  {assignableRoles.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_LABEL[r]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={inviting}
+                className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
               >
-                {assignableRoles.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABEL[r]}
-                  </option>
-                ))}
-              </select>
+                {inviting ? "Sending..." : "Send Invite"}
+              </button>
             </div>
-            <button
-              type="submit"
-              disabled={inviting}
-              className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
-            >
-              {inviting ? "Sending..." : "Send Invite"}
-            </button>
+
+            {JUNIOR_ROLES.includes(inviteRole) && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">
+                  Visible Tabs <span className="text-mist font-normal normal-case">— unchecked tabs won&apos;t show for this person</span>
+                </label>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {ALL_MODULES.map((m) => (
+                    <label key={m.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={inviteAllowedModules.includes(m.slug)}
+                        onChange={() => toggleInviteModule(m.slug)}
+                      />
+                      <span>{m.icon} {m.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </form>
         )}
 
@@ -299,7 +377,7 @@ export default function TeamPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Member</th>
@@ -312,8 +390,10 @@ export default function TeamPage() {
               {members.map((m) => {
                 const isSelf = m.user_id === myUserId;
                 const manageable = canManageRow(m);
+                const restrictable = manageable && !isSelf && JUNIOR_ROLES.includes(m.role);
                 return (
-                  <tr key={m.id} className="border-b border-rule last:border-0">
+                  <Fragment key={m.id}>
+                  <tr className="border-b border-rule last:border-0">
                     <td className="px-5 py-2.5 font-medium">
                       {m.full_name || "—"} {isSelf && <span className="text-mist text-xs">(You)</span>}
                     </td>
@@ -339,6 +419,14 @@ export default function TeamPage() {
                     </td>
                     {canManage && (
                       <td className="px-5 py-2.5 text-right whitespace-nowrap">
+                        {restrictable && (
+                          <button
+                            onClick={() => (editingAccessId === m.id ? setEditingAccessId(null) : startEditAccess(m))}
+                            className="text-mist text-xs font-semibold hover:text-green-dark mr-3"
+                          >
+                            {editingAccessId === m.id ? "Cancel" : m.allowed_modules ? "Access (restricted)" : "Access"}
+                          </button>
+                        )}
                         {manageable && !isSelf && (
                           <button
                             onClick={() => handleRemove(m)}
@@ -350,6 +438,39 @@ export default function TeamPage() {
                       </td>
                     )}
                   </tr>
+                  {editingAccessId === m.id && (
+                    <tr className="border-b border-rule last:border-0 bg-chalk">
+                      <td colSpan={canManage ? 4 : 3} className="px-5 py-4">
+                        <div className="flex flex-col gap-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-mist">
+                            Visible tabs for {m.full_name || m.email}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                            {ALL_MODULES.map((mod) => (
+                              <label key={mod.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={editAccessModules.includes(mod.slug)}
+                                  onChange={() => toggleEditAccessModule(mod.slug)}
+                                />
+                                <span>{mod.icon} {mod.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <div>
+                            <button
+                              onClick={() => handleSaveAccess(m)}
+                              disabled={savingAccess}
+                              className="px-3 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+                            >
+                              {savingAccess ? "Saving..." : "Save Access"}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -24,6 +24,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           <span className="text-[10px] font-mono uppercase tracking-widest text-white/50 border border-white/20 rounded-full px-2 py-0.5">
             Platform Admin
           </span>
+          <Link href="/admin" className="text-[11px] text-white/60 hover:text-white/90">
+            Customers
+          </Link>
+          <Link href="/admin/errors" className="text-[11px] text-white/60 hover:text-white/90">
+            Errors
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="text-[11px] text-white/60 hover:text-white/90">

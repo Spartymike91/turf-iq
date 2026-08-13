@@ -12,6 +12,7 @@ interface TaskTemplate {
   name: string;
   frequency: string | null;
   estimated_duration: string | null;
+  target_minutes: number | null;
   equipment: string | null;
   materials: string | null;
   description: string | null;
@@ -23,6 +24,7 @@ const emptyForm = {
   name: "",
   frequency: "",
   estimated_duration: "",
+  target_minutes: "",
   equipment: "",
   materials: "",
   description: "",
@@ -77,7 +79,11 @@ export default function TaskLibraryPage() {
     const supabase = createClient();
     const { data, error: insertError } = await supabase
       .from("task_templates")
-      .insert({ course_id: courseId, ...addForm })
+      .insert({
+        course_id: courseId,
+        ...addForm,
+        target_minutes: addForm.target_minutes ? parseInt(addForm.target_minutes) : null,
+      })
       .select()
       .single();
     if (insertError) {
@@ -98,6 +104,7 @@ export default function TaskLibraryPage() {
       name: t.name,
       frequency: t.frequency ?? "",
       estimated_duration: t.estimated_duration ?? "",
+      target_minutes: t.target_minutes != null ? String(t.target_minutes) : "",
       equipment: t.equipment ?? "",
       materials: t.materials ?? "",
       description: t.description ?? "",
@@ -109,7 +116,10 @@ export default function TaskLibraryPage() {
     const supabase = createClient();
     const { data, error: updateError } = await supabase
       .from("task_templates")
-      .update(editForm)
+      .update({
+        ...editForm,
+        target_minutes: editForm.target_minutes ? parseInt(editForm.target_minutes) : null,
+      })
       .eq("id", id)
       .select()
       .single();
@@ -175,6 +185,15 @@ export default function TaskLibraryPage() {
             <input required value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Mow greens" className="w-36 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
             <input value={addForm.frequency} onChange={(e) => setAddForm({ ...addForm, frequency: e.target.value })} placeholder="Daily" className="w-24 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
             <input value={addForm.estimated_duration} onChange={(e) => setAddForm({ ...addForm, estimated_duration: e.target.value })} placeholder="45 min" className="w-24 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
+            <input
+              type="number"
+              min="0"
+              value={addForm.target_minutes}
+              onChange={(e) => setAddForm({ ...addForm, target_minutes: e.target.value })}
+              placeholder="Target min"
+              title="Target minutes — standard time for this task, used for labor-cost and employee comparisons"
+              className="w-24 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
+            />
             <input value={addForm.equipment} onChange={(e) => setAddForm({ ...addForm, equipment: e.target.value })} placeholder="Greens mower" className="w-32 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
             <input value={addForm.materials} onChange={(e) => setAddForm({ ...addForm, materials: e.target.value })} placeholder="—" className="w-28 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
             <input value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} placeholder="Notes" className="flex-1 min-w-[120px] px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
@@ -191,7 +210,7 @@ export default function TaskLibraryPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium"></th>
@@ -199,6 +218,7 @@ export default function TaskLibraryPage() {
                 <th className="text-left px-3 py-2.5 font-medium">Task</th>
                 <th className="text-left px-3 py-2.5 font-medium">Frequency</th>
                 <th className="text-left px-3 py-2.5 font-medium">Duration</th>
+                <th className="text-left px-3 py-2.5 font-medium">Target Min</th>
                 <th className="text-left px-3 py-2.5 font-medium">Equipment</th>
                 <th className="text-right px-5 py-2.5 font-medium">Actions</th>
               </tr>
@@ -223,6 +243,9 @@ export default function TaskLibraryPage() {
                       <input value={editForm.estimated_duration} onChange={(e) => setEditForm({ ...editForm, estimated_duration: e.target.value })} className="w-20 px-2 py-1 border-[1.5px] border-rule rounded text-sm" />
                     </td>
                     <td className="px-3 py-2.5">
+                      <input type="number" min="0" value={editForm.target_minutes} onChange={(e) => setEditForm({ ...editForm, target_minutes: e.target.value })} className="w-20 px-2 py-1 border-[1.5px] border-rule rounded text-sm" />
+                    </td>
+                    <td className="px-3 py-2.5">
                       <input value={editForm.equipment} onChange={(e) => setEditForm({ ...editForm, equipment: e.target.value })} className="w-28 px-2 py-1 border-[1.5px] border-rule rounded text-sm" />
                     </td>
                     <td className="px-5 py-2.5 text-right whitespace-nowrap">
@@ -239,6 +262,7 @@ export default function TaskLibraryPage() {
                     <td className="px-3 py-2.5 font-medium">{t.name}</td>
                     <td className="px-3 py-2.5 text-mist">{t.frequency || "—"}</td>
                     <td className="px-3 py-2.5 text-mist">{t.estimated_duration || "—"}</td>
+                    <td className="px-3 py-2.5 text-mist">{t.target_minutes != null ? `${t.target_minutes} min` : "—"}</td>
                     <td className="px-3 py-2.5 text-mist">{t.equipment || "—"}</td>
                     <td className="px-5 py-2.5 text-right whitespace-nowrap">
                       <button onClick={() => startEdit(t)} className="text-mist text-xs font-semibold hover:text-green-dark mr-2">Edit</button>

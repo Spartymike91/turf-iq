@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPlatformAdminSession } from "@/lib/supabase/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DEFAULT_TASK_LIBRARY } from "@/lib/defaultTaskLibrary";
 
 export async function GET() {
   const { user, isPlatformAdmin } = await getPlatformAdminSession();
@@ -108,6 +109,10 @@ export async function POST(request: NextRequest) {
   if (courseError) {
     return NextResponse.json({ error: courseError.message }, { status: 500 });
   }
+
+  await adminClient.from("task_templates").insert(
+    DEFAULT_TASK_LIBRARY.map((task) => ({ ...task, course_id: courseId }))
+  );
 
   if (existingProfile) {
     const { error: memberError } = await adminClient.from("course_members").insert({

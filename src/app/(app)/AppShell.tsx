@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import AppHeader from "@/components/layout/AppHeader";
 import AgronomistPanel from "@/components/agronomist/AgronomistPanel";
-import { hasModuleAccess, getModuleLabel, getRequiredTier } from "@/lib/planAccess";
+import { hasModuleAccess, getModuleLabel, getRequiredTier, hasModulePermission, ALL_MODULES } from "@/lib/planAccess";
 import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
 
 export default function AppShell({
@@ -13,6 +13,7 @@ export default function AppShell({
   isAdminView,
   isEditElevated,
   planTier,
+  allowedModules,
   children,
 }: {
   courseName?: string;
@@ -20,6 +21,7 @@ export default function AppShell({
   isAdminView?: boolean;
   isEditElevated?: boolean;
   planTier?: PlanTier | null;
+  allowedModules?: string[] | null;
   children: React.ReactNode;
 }) {
   const [agronomistOpen, setAgronomistOpen] = useState(false);
@@ -37,6 +39,14 @@ export default function AppShell({
   const locked = !isAdminView && !hasModuleAccess(planTier ?? null, pathname);
   const requiredTier = locked ? getRequiredTier(pathname) : null;
   const moduleInfo = locked ? getModuleLabel(pathname) : null;
+
+  // Checked only once the tier already allows the page — a tier-locked page
+  // shows the upgrade message above regardless of per-crew permission.
+  const permissionDenied =
+    !isAdminView && !locked && !hasModulePermission(allowedModules ?? null, pathname);
+  const deniedModuleInfo = permissionDenied
+    ? ALL_MODULES.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`))
+    : null;
 
   async function handleExitAdminView() {
     setExiting(true);
@@ -126,12 +136,13 @@ export default function AppShell({
         isPlatformAdmin={isPlatformAdmin}
         isAdminView={isAdminView}
         planTier={planTier}
+        allowedModules={allowedModules}
         onToggleAgronomist={() => setAgronomistOpen(!agronomistOpen)}
       />
       <div className="flex flex-1 overflow-hidden">
         <main
-          className={`flex-1 overflow-y-auto p-6 flex flex-col gap-5 transition-[margin-right] duration-300 ${
-            agronomistOpen ? "mr-[440px]" : ""
+          className={`flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-5 transition-[margin-right] duration-300 ${
+            agronomistOpen ? "sm:mr-[440px]" : ""
           }`}
         >
           {locked && requiredTier ? (
@@ -150,6 +161,24 @@ export default function AppShell({
                   className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors"
                 >
                   View Plans
+                </button>
+              </div>
+            </div>
+          ) : permissionDenied ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="max-w-sm text-center bg-white border-[1.5px] border-rule rounded-[10px] p-8">
+                <div className="text-4xl mb-3">{deniedModuleInfo?.icon ?? "🔒"}</div>
+                <div className="font-serif text-xl text-green-dark mb-2">
+                  You don&apos;t have access to {deniedModuleInfo?.label ?? "this page"}
+                </div>
+                <div className="text-sm text-mist mb-5">
+                  Ask your course owner or superintendent to grant access from the Team page.
+                </div>
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors"
+                >
+                  Back to Dashboard
                 </button>
               </div>
             </div>

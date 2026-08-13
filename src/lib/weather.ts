@@ -32,7 +32,7 @@ export interface ForecastDay {
 }
 
 export interface WeatherResult {
-  location: { city: string; state: string };
+  location: { city: string; state: string; lat: number | null; lon: number | null };
   current: {
     tempF: number;
     description: string;
@@ -446,7 +446,7 @@ async function fetchFreshWeather(
   const windDirDeg = latestObs.windDirection?.value;
 
   return {
-    location: { city: course.city, state: course.state },
+    location: { city: course.city, state: course.state, lat, lon },
     current: {
       tempF: tempC != null ? Math.round(cToF(tempC)) : today.hiF,
       description: latestObs.textDescription || "—",

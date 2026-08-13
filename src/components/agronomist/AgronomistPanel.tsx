@@ -114,8 +114,8 @@ export default function AgronomistPanel({
 
       {/* Panel */}
       <div
-        className={`fixed top-0 bottom-0 w-[440px] bg-white flex flex-col shadow-[-8px_0_32px_rgba(0,0,0,0.15)] z-[300] transition-[right] duration-300 ${
-          open ? "right-0" : "-right-[480px]"
+        className={`fixed top-0 bottom-0 w-full sm:w-[440px] bg-white flex flex-col shadow-[-8px_0_32px_rgba(0,0,0,0.15)] z-[300] transition-[right] duration-300 ${
+          open ? "right-0" : "-right-full sm:-right-[480px]"
         }`}
       >
         {/* Header */}

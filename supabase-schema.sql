@@ -1069,3 +1069,238 @@ CREATE POLICY "Platform admins can insert monthly_reports when edit-unlocked"
 -- just shows as "not tracked" until a purchase date is filled in.
 ALTER TABLE equipment ADD COLUMN IF NOT EXISTS purchase_date DATE;
 
+-- ============================================
+-- ERROR MONITORING
+-- ============================================
+
+-- Captures unhandled client errors/rejections (via instrumentation-client.ts)
+-- and server request errors (via instrumentation.ts onRequestError). course_id
+-- and user_id are nullable because errors can happen pre-login (e.g. on
+-- /login) or with no course context at all. Rows are only ever written by
+-- the service-role client (in /api/errors or directly from instrumentation.ts),
+-- never from a user-session client — so there is deliberately no INSERT
+-- policy for anon/authenticated roles, same pattern as admin_edit_sessions.
+CREATE TABLE IF NOT EXISTS error_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  source TEXT NOT NULL CHECK (source IN ('client', 'server')),
+  message TEXT NOT NULL,
+  stack TEXT,
+  url TEXT,
+  user_agent TEXT,
+  context JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE error_log ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Platform admins can view error_log"
+  ON error_log FOR SELECT USING (public.is_platform_admin());
+
+-- ============================================
+-- SENSITIVE-DATA PIN (Budget / Labor / Payroll)
+-- ============================================
+-- Same shape as the platform-admin PIN elevation above: each user sets their
+-- own 4-digit PIN; entering it correctly opens a 30-minute session that RLS
+-- checks before allowing reads of budget/payroll data. Every course member
+-- currently sees Budget/Labor once the plan tier unlocks those tabs — this
+-- adds a second, per-person factor so a real customer's crew can't casually
+-- see the owner's spend or each other's pay just by clicking the tab.
+
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS sensitive_pin_hash TEXT;
+
+CREATE TABLE IF NOT EXISTS sensitive_data_sessions (
+  user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE sensitive_data_sessions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own sensitive session" ON sensitive_data_sessions;
+CREATE POLICY "Users can view own sensitive session"
+  ON sensitive_data_sessions FOR SELECT USING (auth.uid() = user_id);
+
+-- Deliberately no INSERT/UPDATE/DELETE policy: only the service-role-backed
+-- /api/account/sensitive-pin/verify route writes it, after verifying the
+-- caller's PIN server-side via verify_sensitive_pin() — same pattern as
+-- admin_edit_sessions.
+
+CREATE OR REPLACE FUNCTION public.is_sensitive_data_elevated()
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM sensitive_data_sessions
+    WHERE user_id = auth.uid() AND expires_at > now()
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.verify_sensitive_pin(input_pin TEXT)
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public, extensions STABLE AS $$
+  SELECT sensitive_pin_hash IS NOT NULL AND sensitive_pin_hash = extensions.crypt(input_pin, sensitive_pin_hash)
+  FROM profiles WHERE id = auth.uid();
+$$;
+
+-- Callable by any logged-in user to set/change their own PIN (never someone
+-- else's — always scoped to auth.uid()). SECURITY DEFINER so it can hash via
+-- pgcrypto without a client ever handling the hash.
+CREATE OR REPLACE FUNCTION public.set_sensitive_pin(input_pin TEXT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
+BEGIN
+  IF input_pin !~ '^[0-9]{4}$' THEN
+    RAISE EXCEPTION 'PIN must be exactly 4 digits.';
+  END IF;
+  UPDATE profiles SET sensitive_pin_hash = extensions.crypt(input_pin, extensions.gen_salt('bf'))
+  WHERE id = auth.uid();
+END;
+$$;
+
+-- Employee pay rate, split out of `employees` into its own table so the
+-- general employee directory (needed broadly for task assignment, time
+-- clock, and scheduler dropdowns) stays visible to all course members, while
+-- the actual dollar rate requires the sensitive-data PIN unlock. Without this
+-- split, gating the whole `employees` table would break every page that just
+-- needs employee names.
+CREATE TABLE IF NOT EXISTS employee_pay_rates (
+  employee_id UUID PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+  hourly_rate NUMERIC(6,2) NOT NULL
+);
+
+-- Guarded: safe to re-run even if a prior attempt already copied the data
+-- and dropped the column (the column won't exist the second time around).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'employees' AND column_name = 'hourly_rate'
+  ) THEN
+    INSERT INTO employee_pay_rates (employee_id, hourly_rate)
+    SELECT id, hourly_rate FROM employees
+    ON CONFLICT (employee_id) DO NOTHING;
+
+    ALTER TABLE employees DROP COLUMN hourly_rate;
+  END IF;
+END $$;
+
+ALTER TABLE employee_pay_rates ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Elevated members can view pay rates" ON employee_pay_rates;
+CREATE POLICY "Elevated members can view pay rates"
+  ON employee_pay_rates FOR SELECT USING (
+    public.is_sensitive_data_elevated() AND
+    EXISTS (
+      SELECT 1 FROM employees e
+      JOIN course_members cm ON cm.course_id = e.course_id
+      WHERE e.id = employee_pay_rates.employee_id AND cm.user_id = auth.uid()
+    )
+  );
+DROP POLICY IF EXISTS "Owners and supers can insert pay rates when elevated" ON employee_pay_rates;
+CREATE POLICY "Owners and supers can insert pay rates when elevated"
+  ON employee_pay_rates FOR INSERT WITH CHECK (
+    public.is_sensitive_data_elevated() AND
+    EXISTS (
+      SELECT 1 FROM employees e
+      JOIN course_members cm ON cm.course_id = e.course_id
+      WHERE e.id = employee_pay_rates.employee_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent')
+    )
+  );
+DROP POLICY IF EXISTS "Owners and supers can update pay rates when elevated" ON employee_pay_rates;
+CREATE POLICY "Owners and supers can update pay rates when elevated"
+  ON employee_pay_rates FOR UPDATE USING (
+    public.is_sensitive_data_elevated() AND
+    EXISTS (
+      SELECT 1 FROM employees e
+      JOIN course_members cm ON cm.course_id = e.course_id
+      WHERE e.id = employee_pay_rates.employee_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent')
+    )
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete pay rates when elevated" ON employee_pay_rates;
+CREATE POLICY "Owners and supers can delete pay rates when elevated"
+  ON employee_pay_rates FOR DELETE USING (
+    public.is_sensitive_data_elevated() AND
+    EXISTS (
+      SELECT 1 FROM employees e
+      JOIN course_members cm ON cm.course_id = e.course_id
+      WHERE e.id = employee_pay_rates.employee_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent')
+    )
+  );
+
+DROP POLICY IF EXISTS "Platform admins can view employee_pay_rates" ON employee_pay_rates;
+CREATE POLICY "Platform admins can view employee_pay_rates"
+  ON employee_pay_rates FOR SELECT USING (public.is_platform_admin());
+DROP POLICY IF EXISTS "Platform admins can insert employee_pay_rates when edit-unlocked" ON employee_pay_rates;
+CREATE POLICY "Platform admins can insert employee_pay_rates when edit-unlocked"
+  ON employee_pay_rates FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+DROP POLICY IF EXISTS "Platform admins can update employee_pay_rates when edit-unlocked" ON employee_pay_rates;
+CREATE POLICY "Platform admins can update employee_pay_rates when edit-unlocked"
+  ON employee_pay_rates FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+-- Budget/labor data: viewing now also requires the sensitive-data PIN
+-- unlock, on top of ordinary course membership. Write permissions
+-- (owner/superintendent only) are unchanged — this feature is about who can
+-- *see* the numbers, not who can edit them.
+ALTER POLICY "Members can view expenses" ON expenses
+  USING (public.is_course_member(course_id) AND public.is_sensitive_data_elevated());
+ALTER POLICY "Members can view budget categories" ON budget_categories
+  USING (public.is_course_member(course_id) AND public.is_sensitive_data_elevated());
+ALTER POLICY "Members can view monthly reports" ON monthly_reports
+  USING (public.is_course_member(course_id) AND public.is_sensitive_data_elevated());
+
+-- ============================================
+-- PER-CREW TAB PERMISSIONS
+-- ============================================
+-- NULL means unrestricted (sees every module the plan tier allows) — the
+-- default for every existing row, so this is fully backward compatible.
+-- A non-null array restricts nav visibility to just those module slugs
+-- (enforced in the app, not RLS — this governs what shows in the nav and
+-- whether a direct page visit is blocked, not row-level data access; Budget
+-- and Labor already have their own real RLS gate via the sensitive-data PIN
+-- above regardless of this). Owner/superintendent are always treated as
+-- unrestricted in the app regardless of what's stored here, as a safety net.
+-- Covered by the existing course_members_update_v1 / _insert_v2 policies —
+-- no new RLS policy needed, this is just a new column on an already-policied
+-- table.
+ALTER TABLE course_members ADD COLUMN IF NOT EXISTS allowed_modules TEXT[];
+
+-- ============================================
+-- TASK COST LINKAGE
+-- ============================================
+-- Foundations for tying real labor/materials cost to Budget automatically
+-- when a scheduled task is marked complete, and for comparing employees'
+-- actual time against a per-course target.
+--
+-- target_minutes is a structured, per-course-editable standard time for a
+-- task (distinct from the existing free-text estimated_duration, which stays
+-- as-is for display). quality_rating is an optional 1-5 self/super rating
+-- captured at completion, for future "which employee is fastest/best for
+-- this task" comparisons — captured now so the data starts accumulating
+-- immediately, even though nothing reads it yet.
+ALTER TABLE task_templates ADD COLUMN IF NOT EXISTS target_minutes INTEGER;
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS quality_rating SMALLINT CHECK (quality_rating BETWEEN 1 AND 5);
+
+-- Nullable link back to the task that generated this expense (manual expense
+-- entries have no assignment, so this stays null for those), plus a source
+-- tag so the Expense Log can show *why* a row exists instead of it looking
+-- like a mystery charge. Both written only by /api/tasks/complete, using the
+-- service-role client — see that route for why (the caller who completes a
+-- task may not have their own Budget PIN elevated, and this is a system
+-- computation, not the caller viewing someone else's data).
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS task_assignment_id UUID REFERENCES task_assignments(id) ON DELETE SET NULL;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'task_labor', 'task_materials'));
+
+-- ============================================
+-- EMPLOYEE SELF-SERVICE TASK START/COMPLETE
+-- ============================================
+-- `employees` is a roster (name, pay rate) used for kiosk time-clock and
+-- task assignment — it deliberately has no guaranteed link to a real login
+-- (course_members), since a physical crew member may not have one. This
+-- column is that link, set optionally by an owner/superintendent on the
+-- Labor page: "this employee IS this logged-in team member." Once linked,
+-- that person can start/complete tasks assigned to them from their own
+-- login via /api/tasks/start and /api/tasks/complete — those routes check
+-- this link server-side (using the service-role client) rather than
+-- broadening the task_assignments UPDATE RLS policy itself, since RLS is
+-- row-level and can't cleanly restrict a crew member to touching only
+-- status/started_at/completed_at on their own row without also letting them
+-- rewrite the task's name, priority, or reassign it to someone else.
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS course_member_id UUID REFERENCES course_members(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS employees_course_member_id_unique ON employees(course_member_id) WHERE course_member_id IS NOT NULL;
+

@@ -41,6 +41,10 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/cron") ||
+    pathname.startsWith("/api/errors") ||
+    pathname.startsWith("/terms") ||
+    pathname.startsWith("/privacy") ||
+    pathname.startsWith("/how-it-works") ||
     pathname.startsWith("/walkthrough.html");
 
   if (!user && !isPublic) {

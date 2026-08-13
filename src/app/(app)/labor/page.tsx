@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
+import PinGate from "@/components/PinGate";
 
 type EmployeeType = "FT" | "PT" | "SEA";
 
@@ -17,6 +18,12 @@ interface Employee {
   hourly_rate: number;
   color: string;
   is_active: boolean;
+  course_member_id: string | null;
+}
+
+interface TeamMember {
+  id: string;
+  label: string;
 }
 
 const TYPE_LABELS: Record<EmployeeType, string> = {
@@ -42,12 +49,21 @@ function initialsFor(name: string) {
     .join("");
 }
 
-const emptyForm = { name: "", role: "", type: "FT" as EmployeeType, hourly_rate: "" };
+const emptyForm = { name: "", role: "", type: "FT" as EmployeeType, hourly_rate: "", course_member_id: "" };
 
 export default function LaborPage() {
+  return (
+    <PinGate>
+      <LaborPageInner />
+    </PinGate>
+  );
+}
+
+function LaborPageInner() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [checking, setChecking] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState(emptyForm);
@@ -80,11 +96,43 @@ export default function LaborPage() {
         .eq("course_id", context.courseId)
         .order("name");
 
-      setEmployees(staff ?? []);
+      const ids = (staff ?? []).map((s) => s.id);
+      const { data: rates } = ids.length
+        ? await supabase.from("employee_pay_rates").select("employee_id, hourly_rate").in("employee_id", ids)
+        : { data: [] as { employee_id: string; hourly_rate: number }[] };
+      const rateMap = new Map((rates ?? []).map((r) => [r.employee_id, Number(r.hourly_rate)]));
+
+      setEmployees((staff ?? []).map((s) => ({ ...s, hourly_rate: rateMap.get(s.id) ?? 0 })));
+
+      const { data: memberRows } = await supabase
+        .from("course_members")
+        .select("id, user_id")
+        .eq("course_id", context.courseId);
+      const memberUserIds = (memberRows ?? []).map((m) => m.user_id);
+      const { data: profileRows } = memberUserIds.length
+        ? await supabase.from("profiles").select("id, full_name, email").in("id", memberUserIds)
+        : { data: [] as { id: string; full_name: string | null; email: string | null }[] };
+      const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
+      setTeamMembers(
+        (memberRows ?? []).map((m) => {
+          const p = profileById.get(m.user_id);
+          return { id: m.id, label: p?.full_name || p?.email || "Unnamed" };
+        })
+      );
+
       setChecking(false);
     }
     load();
   }, []);
+
+  function availableTeamMembers(currentEmployeeId?: string) {
+    const takenByOthers = new Set(
+      employees
+        .filter((e) => e.id !== currentEmployeeId && e.course_member_id)
+        .map((e) => e.course_member_id)
+    );
+    return teamMembers.filter((m) => !takenByOthers.has(m.id));
+  }
 
   const stats = useMemo(() => {
     const active = employees.filter((e) => e.is_active);
@@ -116,16 +164,29 @@ export default function LaborPage() {
         initials: initialsFor(addForm.name),
         role: addForm.role,
         type: addForm.type,
-        hourly_rate: parseFloat(addForm.hourly_rate),
         color: AVATAR_COLORS[employees.length % AVATAR_COLORS.length],
+        course_member_id: addForm.course_member_id || null,
       })
       .select()
       .single();
 
     if (insertError) {
       setError(insertError.message);
+      setSaving(false);
+      return;
+    }
+
+    const hourlyRate = parseFloat(addForm.hourly_rate);
+    const { error: rateError } = await supabase
+      .from("employee_pay_rates")
+      .insert({ employee_id: data.id, hourly_rate: hourlyRate });
+
+    if (rateError) {
+      setError(rateError.message);
     } else if (data) {
-      setEmployees((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setEmployees((prev) =>
+        [...prev, { ...data, hourly_rate: hourlyRate }].sort((a, b) => a.name.localeCompare(b.name))
+      );
       setAddForm(emptyForm);
       setShowAddForm(false);
     }
@@ -139,6 +200,7 @@ export default function LaborPage() {
       role: emp.role,
       type: emp.type,
       hourly_rate: String(emp.hourly_rate),
+      course_member_id: emp.course_member_id ?? "",
     });
   }
 
@@ -153,7 +215,7 @@ export default function LaborPage() {
         initials: initialsFor(editForm.name),
         role: editForm.role,
         type: editForm.type,
-        hourly_rate: parseFloat(editForm.hourly_rate),
+        course_member_id: editForm.course_member_id || null,
       })
       .eq("id", id)
       .select()
@@ -161,9 +223,22 @@ export default function LaborPage() {
 
     if (updateError) {
       setError(updateError.message);
+      setSaving(false);
+      return;
+    }
+
+    const hourlyRate = parseFloat(editForm.hourly_rate);
+    const { error: rateError } = await supabase
+      .from("employee_pay_rates")
+      .upsert({ employee_id: id, hourly_rate: hourlyRate });
+
+    if (rateError) {
+      setError(rateError.message);
     } else if (data) {
       setEmployees((prev) =>
-        prev.map((e) => (e.id === id ? data : e)).sort((a, b) => a.name.localeCompare(b.name))
+        prev
+          .map((e) => (e.id === id ? { ...data, hourly_rate: hourlyRate } : e))
+          .sort((a, b) => a.name.localeCompare(b.name))
       );
       setEditingId(null);
     }
@@ -289,6 +364,24 @@ export default function LaborPage() {
                 className="w-28 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
               />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">
+                Linked Login <span className="text-mist font-normal normal-case">(optional)</span>
+              </label>
+              <select
+                value={addForm.course_member_id}
+                onChange={(e) => setAddForm({ ...addForm, course_member_id: e.target.value })}
+                title="Link this employee to a Team login so they can start/stop their own assigned tasks"
+                className="w-40 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              >
+                <option value="">Not linked</option>
+                {availableTeamMembers().map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="submit"
               disabled={saving}
@@ -308,13 +401,14 @@ export default function LaborPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Employee</th>
                 <th className="text-left px-3 py-2.5 font-medium">Role</th>
                 <th className="text-left px-3 py-2.5 font-medium">Type</th>
                 <th className="text-left px-3 py-2.5 font-medium">Rate</th>
+                <th className="text-left px-3 py-2.5 font-medium">Linked Login</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
                 <th className="text-right px-5 py-2.5 font-medium">Actions</th>
               </tr>
@@ -360,6 +454,20 @@ export default function LaborPage() {
                           className="px-2 py-1 border-[1.5px] border-rule rounded text-sm w-20 outline-none focus:border-green-mid"
                         />
                       </td>
+                      <td className="px-3 py-2.5">
+                        <select
+                          value={editForm.course_member_id}
+                          onChange={(e) => setEditForm({ ...editForm, course_member_id: e.target.value })}
+                          className="px-2 py-1 border-[1.5px] border-rule rounded text-sm outline-none focus:border-green-mid"
+                        >
+                          <option value="">Not linked</option>
+                          {availableTeamMembers(emp.id).map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="px-3 py-2.5" />
                       <td className="px-5 py-2.5 text-right whitespace-nowrap">
                         <button
@@ -399,6 +507,11 @@ export default function LaborPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 font-mono">${Number(emp.hourly_rate).toFixed(2)}</td>
+                      <td className="px-3 py-2.5 text-mist">
+                        {emp.course_member_id
+                          ? teamMembers.find((m) => m.id === emp.course_member_id)?.label ?? "—"
+                          : "—"}
+                      </td>
                       <td className="px-3 py-2.5">
                         <button
                           onClick={() => toggleActive(emp)}

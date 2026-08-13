@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
+import PinGate from "@/components/PinGate";
 import type { ReportData } from "@/lib/monthlyReport";
 
 interface MonthlyReport {
@@ -40,7 +41,14 @@ interface Expense {
   amount: number;
   description: string | null;
   expense_date: string;
+  source: "manual" | "task_labor" | "task_materials";
 }
+
+const SOURCE_TAG: Record<Expense["source"], { label: string; className: string } | null> = {
+  manual: null,
+  task_labor: { label: "AUTO: LABOR", className: "bg-blue/10 text-blue" },
+  task_materials: { label: "AUTO: MATERIALS", className: "bg-amber/10 text-[#92400e]" },
+};
 
 function fmtMoney(n: number) {
   const formatted = Math.abs(n).toLocaleString("en-US", {
@@ -54,6 +62,14 @@ const emptyCategoryForm = { name: "", annual_budget: "" };
 const emptyExpenseForm = { category_id: "", amount: "", description: "", expense_date: "" };
 
 export default function BudgetPage() {
+  return (
+    <PinGate>
+      <BudgetPageInner />
+    </PinGate>
+  );
+}
+
+function BudgetPageInner() {
   const fiscalYear = new Date().getFullYear();
 
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -392,7 +408,7 @@ export default function BudgetPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Category</th>
@@ -602,7 +618,7 @@ export default function BudgetPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm whitespace-nowrap">
                 <thead>
                   <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                     <th className="text-left px-5 py-2.5 font-medium">Date</th>
@@ -619,7 +635,16 @@ export default function BudgetPage() {
                       <td className="px-3 py-2.5">
                         {categories.find((c) => c.id === exp.category_id)?.name ?? "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-mist">{exp.description || "—"}</td>
+                      <td className="px-3 py-2.5 text-mist">
+                        {exp.description || "—"}
+                        {SOURCE_TAG[exp.source] && (
+                          <span
+                            className={`ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${SOURCE_TAG[exp.source]!.className}`}
+                          >
+                            {SOURCE_TAG[exp.source]!.label}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2.5 font-mono">{fmtMoney(Number(exp.amount))}</td>
                       <td className="px-5 py-2.5 text-right">
                         <button

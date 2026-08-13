@@ -1,7 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import type { WeatherResult } from "@/lib/weather";
+
+// Leaflet touches `window` on import, so it can never run during SSR — even
+// with "use client", the initial server render still executes this module
+// tree once for hydration. next/dynamic with ssr:false skips that entirely.
+const RadarMap = dynamic(() => import("@/components/weather/RadarMap"), {
+  ssr: false,
+  loading: () => <div className="w-full h-full flex items-center justify-center text-mist text-sm">Loading radar…</div>,
+});
 
 export default function WeatherPage() {
   const [weather, setWeather] = useState<WeatherResult | null>(null);
@@ -160,6 +169,26 @@ export default function WeatherPage() {
             />
           ))}
         </div>
+      </div>
+
+      {/* Live Radar */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-serif text-[17px] text-green-dark">Live Radar</div>
+          <div className="text-[11px] text-mist">NEXRAD · updates every ~5 min</div>
+        </div>
+        {weather.location.lat != null && weather.location.lon != null ? (
+          <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden h-[360px]">
+            <RadarMap lat={weather.location.lat} lon={weather.location.lon} />
+          </div>
+        ) : (
+          <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
+            <div className="text-sm text-mist">
+              Radar needs your course&apos;s coordinates, which we couldn&apos;t determine from its
+              city/state. Double-check those on the Course Settings page.
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

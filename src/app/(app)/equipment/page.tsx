@@ -507,7 +507,7 @@ export default function EquipmentPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Name</th>
@@ -585,7 +585,7 @@ export default function EquipmentPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Equipment</th>
@@ -778,7 +778,7 @@ export default function EquipmentPage() {
               <div className="text-sm text-mist text-center py-6">No schedule items yet.</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm whitespace-nowrap">
                 <thead>
                   <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                     <th className="text-left py-2 font-medium">Task</th>
@@ -935,7 +935,7 @@ export default function EquipmentPage() {
               <div className="text-sm text-mist text-center py-6">No service history logged yet.</div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm whitespace-nowrap">
                 <thead>
                   <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                     <th className="text-left py-2 font-medium">Date</th>

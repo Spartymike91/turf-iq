@@ -288,8 +288,11 @@ export default function LandingPage() {
         <div className="font-serif text-base text-white/50">
           Turf<span className="text-green-bright">IQ</span>
         </div>
-        <div className="text-[11px] text-white/25 font-mono">
-          © 2026 Turf IQ · Golf course management platform
+        <div className="flex items-center gap-4 text-[11px] text-white/25 font-mono">
+          <span>© 2026 Turf IQ · Golf course management platform</span>
+          <Link href="/terms" className="hover:text-white/50 transition-colors">Terms</Link>
+          <Link href="/privacy" className="hover:text-white/50 transition-colors">Privacy</Link>
+          <Link href="/how-it-works" className="hover:text-white/50 transition-colors">How It Works</Link>
         </div>
       </footer>
     </div>

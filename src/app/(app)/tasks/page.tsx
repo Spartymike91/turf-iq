@@ -34,6 +34,7 @@ export default function TasksDashboardPage() {
   const [tasksToday, setTasksToday] = useState<TaskAssignment[]>([]);
   const [checking, setChecking] = useState(true);
   const [now, setNow] = useState(() => Date.now());
+  const [ratesVisible, setRatesVisible] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 60_000);
@@ -54,7 +55,7 @@ export default function TasksDashboardPage() {
       setCourseId(context.courseId);
 
       const [{ data: emp }, { data: timeRows }, { data: tasks }] = await Promise.all([
-        supabase.from("employees").select("id, name, hourly_rate, is_active").eq("course_id", context.courseId),
+        supabase.from("employees").select("id, name, is_active").eq("course_id", context.courseId),
         supabase
           .from("time_entries")
           .select("employee_id, clock_in, clock_out")
@@ -66,7 +67,18 @@ export default function TasksDashboardPage() {
           .eq("course_id", context.courseId)
           .eq("scheduled_date", todayStr()),
       ]);
-      setEmployees(emp ?? []);
+
+      // Pay rates require the sensitive-data PIN unlock — RLS returns an
+      // empty set here if the viewer hasn't unlocked Budget/Labor, and we
+      // show "—" for cost figures below rather than a misleading $0.
+      const ids = (emp ?? []).map((e) => e.id);
+      const { data: rates } = ids.length
+        ? await supabase.from("employee_pay_rates").select("employee_id, hourly_rate").in("employee_id", ids)
+        : { data: [] as { employee_id: string; hourly_rate: number }[] };
+      const rateMap = new Map((rates ?? []).map((r) => [r.employee_id, Number(r.hourly_rate)]));
+      setRatesVisible((rates ?? []).length > 0);
+
+      setEmployees((emp ?? []).map((e) => ({ ...e, hourly_rate: rateMap.get(e.id) ?? 0 })));
       setEntries(timeRows ?? []);
       setTasksToday(tasks ?? []);
       setChecking(false);
@@ -167,7 +179,7 @@ export default function TasksDashboardPage() {
           label="Hours Today"
           value={hoursToday_.toFixed(1)}
           unit="h"
-          sub={`Est. labor cost $${laborCostToday.toFixed(0)}`}
+          sub={ratesVisible ? `Est. labor cost $${laborCostToday.toFixed(0)}` : "Unlock Payroll to see cost"}
           valueColor="#3b5bdb"
         />
         <StatChip

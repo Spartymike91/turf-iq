@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import { computeWeeklyPayroll, getWeekStart } from "@/lib/payroll";
+import PinGate from "@/components/PinGate";
 
 interface Employee {
   id: string;
@@ -19,6 +20,14 @@ interface TimeEntry {
 }
 
 export default function PayrollPage() {
+  return (
+    <PinGate>
+      <PayrollPageInner />
+    </PinGate>
+  );
+}
+
+function PayrollPageInner() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -44,14 +53,21 @@ export default function PayrollPage() {
       setCourseId(context.courseId);
 
       const [{ data: emp }, { data: timeRows }] = await Promise.all([
-        supabase.from("employees").select("id, name, hourly_rate, is_active").eq("course_id", context.courseId),
+        supabase.from("employees").select("id, name, is_active").eq("course_id", context.courseId),
         supabase
           .from("time_entries")
           .select("employee_id, clock_in, clock_out")
           .eq("course_id", context.courseId)
           .gte("clock_in", weekStart.toISOString()),
       ]);
-      setEmployees(emp ?? []);
+
+      const ids = (emp ?? []).map((e) => e.id);
+      const { data: rates } = ids.length
+        ? await supabase.from("employee_pay_rates").select("employee_id, hourly_rate").in("employee_id", ids)
+        : { data: [] as { employee_id: string; hourly_rate: number }[] };
+      const rateMap = new Map((rates ?? []).map((r) => [r.employee_id, Number(r.hourly_rate)]));
+
+      setEmployees((emp ?? []).map((e) => ({ ...e, hourly_rate: rateMap.get(e.id) ?? 0 })));
       setEntries(timeRows ?? []);
       setChecking(false);
     }
@@ -104,7 +120,7 @@ export default function PayrollPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Employee</th>
