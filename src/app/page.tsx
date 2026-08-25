@@ -1,15 +1,15 @@
 import Link from "next/link";
 
 const modules = [
-  { icon: "🌤", name: "Weather Intelligence", desc: "Real-time conditions, 7-day forecast, ET calculations, GDD accumulation, and agronomic context.", tags: ["NWS", "ET", "GDD", "Leaf Wetness"], tier: 1 },
+  { icon: "🌤", name: "Weather Intelligence", desc: "Real-time conditions, live NEXRAD radar, 7-day forecast, ET calculations, GDD accumulation, and agronomic context.", tags: ["Live Radar", "NWS", "ET", "GDD"], tier: 1 },
   { icon: "🦠", name: "Disease Risk Prediction", desc: "Smith-Kerns Dollar Spot model, Brown Patch, Pythium — running against live weather data with product recommendations.", tags: ["Smith-Kerns", "Fungicide Recs", "Spray Log"], tier: 1 },
   { icon: "🌱", name: "Fertility Management", desc: "Soil test tracking, nutrient deficiency alerts, annual N/P/K programs per zone, and application history.", tags: ["Soil Tests", "N Budget", "Zone Programs"], tier: 1 },
   { icon: "🧪", name: "Pest & Weed Control", desc: "GDD-driven pest timing tracker, pressure cards for weeds and insects, and full compliance spray log.", tags: ["GDD Timing", "REI Tracking", "Compliance"], tier: 1 },
   { icon: "💧", name: "Irrigation Management", desc: "ET-based nightly scheduling, soil moisture sensor integration, live VWC maps, and dry spot alerts.", tags: ["ET Scheduling", "VWC Sensors", "Moisture Map"], tier: 2 },
   { icon: "🔧", name: "Equipment Management", desc: "Fleet inventory, service interval tracking, repair cost history, fuel usage, and 5-year replacement planning.", tags: ["Service Alerts", "Hour Tracking", "Replacement Planning"], tier: 2 },
-  { icon: "📊", name: "Budget & Reporting", desc: "Budget vs. actual by category, monthly trends, cost per acre, cost per round, and full-year forecast.", tags: ["Budget vs Actual", "Cost/Acre", "Forecasting"], tier: 2 },
-  { icon: "👷", name: "Labor & Staffing", desc: "Weekly crew scheduling, hour logging, overtime tracking, certification management, and seasonal headcount projections.", tags: ["Schedule Grid", "OT Alerts", "Certifications"], tier: 3 },
-  { icon: "📋", name: "Task Management", desc: "Crew task scheduling, live status boards, kiosk time clock, and automatic weekly payroll calculations.", tags: ["Scheduler", "Time Clock", "Payroll"], tier: 3 },
+  { icon: "📊", name: "Budget & Reporting", desc: "Budget vs. actual by category, monthly trends, cost per acre, cost per round, and full-year forecast — PIN-protected for whoever you choose.", tags: ["Budget vs Actual", "Cost/Acre", "PIN-Protected"], tier: 2 },
+  { icon: "👷", name: "Labor & Staffing", desc: "Weekly crew scheduling, hour logging, overtime tracking, certification management, and seasonal headcount projections. Pay data is PIN-protected.", tags: ["Schedule Grid", "OT Alerts", "PIN-Protected"], tier: 3 },
+  { icon: "📋", name: "Task Management", desc: "Crew task scheduling with target-time tracking, live status boards, performance-based crew suggestions, kiosk time clock, and automatic weekly payroll calculations.", tags: ["Scheduler", "Time Targets", "Time Clock"], tier: 3 },
   { icon: "👥", name: "Team & Roles", desc: "Invite your crew with role-based permissions — owner, superintendent, assistant, crew lead, and crew.", tags: ["Invites", "Roles", "Permissions"], tier: 3 },
   { icon: "🌿", name: "AI Agronomist", desc: "Ask anything about your course — always available from any screen. Powered by Claude with live course context.", tags: ["Claude AI", "Context-Aware", "Always On"], highlight: true, tier: "all" },
 ];
@@ -135,7 +135,7 @@ export default function LandingPage() {
         <div className="bg-white/[0.04] border-t border-white/[0.08] px-12 py-6 flex justify-center gap-16 flex-wrap relative z-10">
           {[
             { val: "10", label: "Integrated Modules" },
-            { val: "~16,000", label: "Target US Courses" },
+            { val: "Live", label: "NEXRAD Radar" },
             { val: "From $399", label: "Per Course / Month" },
             { val: "AI", label: "Agronomist Built In" },
           ].map((s) => (
