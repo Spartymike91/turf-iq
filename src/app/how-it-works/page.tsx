@@ -81,6 +81,24 @@ export default function HowItWorksPage() {
           </section>
 
           <section>
+            <h2 className="font-serif text-lg text-green-dark mb-2">Soil Temperature</h2>
+            <p className="mb-2">
+              This map isn&apos;t a sensor reading — no soil probe network exists at this scale.
+              It&apos;s the top 4 inches of soil temperature from NOAA&apos;s GFS weather model
+              (the same national forecast model behind most weather apps), which computes soil
+              state as part of running its forecast. It updates 4 times a day; we refresh our copy
+              every 6 hours.
+            </p>
+            <p>
+              The resolution is coarser than the radar or rainfall data — about 17 miles per grid
+              cell, versus radar&apos;s 1km — so treat it as a regional trend, not a
+              precise reading for your exact location. Rendering happens outside the main app on a
+              schedule, since decoding weather-model data isn&apos;t something a typical web server
+              is built to do.
+            </p>
+          </section>
+
+          <section>
             <h2 className="font-serif text-lg text-green-dark mb-2">
               Growing Degree Days (GDD) <Badge tone="science">STANDARD FORMULA</Badge>
             </h2>
