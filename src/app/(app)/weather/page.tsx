@@ -182,7 +182,7 @@ export default function WeatherPage() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="font-serif text-[17px] text-green-dark">Live Radar</div>
-          <div className="text-[11px] text-mist">NEXRAD · updates every ~5 min</div>
+          <div className="text-[11px] text-mist">NOAA MRMS · trailing 1 hour</div>
         </div>
         {weather.location.lat != null && weather.location.lon != null ? (
           <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden h-[360px]">

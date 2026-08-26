@@ -3,18 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 
-// One hour of history at 5-minute steps, oldest to newest — matches IEM's
-// documented set of pre-rendered lookback layers (nexrad-n0q, then
-// nexrad-n0q-m05m through -m55m). There's no arbitrary-timestamp lookup;
-// these fixed offsets are the only historical frames IEM serves this way.
+// Trailing hour at 5-minute steps, oldest to newest. NOAA's MRMS layer
+// publishes real frames roughly every 2 minutes with `nearestValue` time
+// matching enabled, so we don't need to fetch its capabilities to discover
+// exact timestamps — any ISO timestamp we ask for snaps to the closest
+// actual frame server-side.
 const LOOKBACK_MINUTES = [55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5, 0];
 const FRAME_INTERVAL_MS = 600;
 const REBUILD_INTERVAL_MS = 5 * 60 * 1000;
-const RADAR_OPACITY = 0.65;
+const RADAR_OPACITY = 0.75;
 
-function tileUrlFor(minutesAgo: number, cacheBust: number): string {
-  const layer = minutesAgo === 0 ? "nexrad-n0q-900913" : `nexrad-n0q-m${String(minutesAgo).padStart(2, "0")}m-900913`;
-  return `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${layer}/{z}/{x}/{y}.png?_cb=${cacheBust}`;
+const MRMS_WMS_URL = "https://opengeo.ncep.noaa.gov/geoserver/conus/ows";
+
+function isoMinutesAgo(minutesAgo: number): string {
+  return new Date(Date.now() - minutesAgo * 60 * 1000).toISOString();
 }
 
 export default function RadarMap({ lat, lon }: { lat: number; lon: number }) {
@@ -29,7 +31,7 @@ export default function RadarMap({ lat, lon }: { lat: number; lon: number }) {
   useEffect(() => {
     let cancelled = false;
     let map: import("leaflet").Map | undefined;
-    let frameLayers: import("leaflet").TileLayer[] = [];
+    let frameLayers: import("leaflet").TileLayer.WMS[] = [];
     let frameIndex = 0;
     let animInterval: ReturnType<typeof setInterval> | undefined;
     let rebuildInterval: ReturnType<typeof setInterval> | undefined;
@@ -48,24 +50,25 @@ export default function RadarMap({ lat, lon }: { lat: number; lon: number }) {
         maxZoom: 12,
       }).addTo(map);
 
-      // Iowa Environmental Mesonet's public NEXRAD base-reflectivity mosaic
-      // (n0q) — same NOAA source data as the National Weather Service
-      // forecast this app already pulls from, just a different public
-      // service since api.weather.gov itself doesn't serve radar imagery.
-      // IEM also pre-renders the trailing hour at 5-minute steps under
-      // fixed layer names (nexrad-n0q-m05m, -m10m, ... -m55m), which is
-      // what makes a loop possible without an API key or per-timestamp
-      // lookup service.
+      // NOAA's public MRMS (Multi-Radar Multi-Sensor) quality-controlled
+      // CONUS base reflectivity — a 1km-resolution national mosaic, the
+      // same class of product behind radar.weather.gov's national view,
+      // and notably higher resolution than the older NEXRAD composite
+      // mosaic this used to pull from a third-party mirror.
       function buildFrames() {
         if (!map) return;
-        const cacheBust = Date.now();
         frameLayers.forEach((l) => l.remove());
         frameLayers = LOOKBACK_MINUTES.map((minutesAgo, i) =>
-          L.tileLayer(tileUrlFor(minutesAgo, cacheBust), {
+          L.tileLayer.wms(MRMS_WMS_URL, {
+            layers: "conus:conus_bref_qcd",
+            format: "image/png",
+            transparent: true,
+            version: "1.3.0",
+            time: isoMinutesAgo(minutesAgo),
             opacity: i === LOOKBACK_MINUTES.length - 1 ? RADAR_OPACITY : 0,
             maxZoom: 12,
-            attribution: "Radar: Iowa Environmental Mesonet (NEXRAD)",
-          }).addTo(map!)
+            attribution: "Radar: NOAA MRMS",
+          } as L.WMSOptions).addTo(map!)
         );
         frameIndex = frameLayers.length - 1;
       }
