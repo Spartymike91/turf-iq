@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
+import { createPinIcon } from "./mapPin";
 
 // Trailing hour at 5-minute steps, oldest to newest. NOAA's MRMS layer
 // publishes real frames roughly every 2 minutes with `nearestValue` time
@@ -74,7 +75,7 @@ export default function RadarMap({ lat, lon }: { lat: number; lon: number }) {
       }
 
       buildFrames();
-      L.marker([lat, lon]).addTo(map);
+      L.marker([lat, lon], { icon: createPinIcon(L) }).addTo(map);
 
       animInterval = setInterval(() => {
         if (!playingRef.current || frameLayers.length === 0) return;

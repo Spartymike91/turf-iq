@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
+import { createPinIcon } from "./mapPin";
 
 // Kept in sync with scripts/render_soil_temp.py's TOP_LAT/BOTTOM_LAT/LEFT_LON/RIGHT_LON
 // and COLOR_STOPS — this component only displays what that script renders,
@@ -71,7 +72,7 @@ export default function SoilTempMap({ lat, lon }: { lat: number; lon: number }) 
       overlay.on("error", () => setLoadFailed(true));
       overlay.addTo(map);
 
-      L.marker([lat, lon]).addTo(map);
+      L.marker([lat, lon], { icon: createPinIcon(L) }).addTo(map);
     });
 
     return () => {
