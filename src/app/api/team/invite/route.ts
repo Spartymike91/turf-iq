@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
+import { sendEmail, inviteEmailHtml } from "@/lib/email";
 
 type Role = "owner" | "superintendent" | "assistant" | "crew_lead" | "crew";
 const JUNIOR_ROLES: Role[] = ["assistant", "crew_lead", "crew"];
@@ -111,19 +112,51 @@ export async function POST(request: NextRequest) {
   }
 
   const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origin}/accept-invite`,
-    data: full_name ? { full_name } : undefined,
+  // Supabase's own SMTP dispatch to Resend was confirmed broken (generateLink
+  // creates the user + link without emailing anything; a direct Resend API
+  // call with the same credentials succeeds instantly — so the failure is
+  // specifically in Supabase's SMTP relay, not the credentials or domain).
+  // Sending the email ourselves via Resend's API sidesteps it entirely.
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: {
+      redirectTo: `${origin}/accept-invite`,
+      data: full_name ? { full_name } : undefined,
+    },
   });
 
-  if (inviteError || !invited?.user) {
-    console.error("Invite error:", inviteError);
-    return NextResponse.json({ error: inviteError?.message ?? "Failed to send invite." }, { status: 400 });
+  if (linkError || !linkData?.user) {
+    console.error("Invite link error:", linkError);
+    return NextResponse.json({ error: linkError?.message ?? "Failed to create invite." }, { status: 400 });
+  }
+
+  const { data: course } = await supabase.from("courses").select("name").eq("id", courseId).single();
+
+  try {
+    await sendEmail({
+      to: email,
+      subject: `You're invited to join ${course?.name ?? "your course"} on TurfIQ`,
+      html: inviteEmailHtml({
+        courseName: course?.name ?? "your course",
+        role,
+        actionLink: linkData.properties.action_link,
+      }),
+    });
+  } catch (error) {
+    console.error("Invite email send failed:", error);
+    // The user + invite link were created successfully even if the email
+    // failed to send — don't silently strand them without a way to know,
+    // but also don't roll back the invite since it's still valid/usable.
+    return NextResponse.json(
+      { error: "Invite created, but the email failed to send. Please try again or contact support." },
+      { status: 502 }
+    );
   }
 
   const { error: insertError } = await supabase.from("course_members").insert({
     course_id: courseId,
-    user_id: invited.user.id,
+    user_id: linkData.user.id,
     role,
     allowed_modules: resolvedAllowedModules,
   });
