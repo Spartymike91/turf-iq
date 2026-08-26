@@ -551,20 +551,24 @@ CREATE POLICY "Owners and supers can delete maintenance log"
     EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_log.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent'))
   );
 
--- Task assignments: same pattern as employees
+-- Task assignments: same pattern as employees. Scheduling day-to-day work is
+-- an assistant-level responsibility in practice (confirmed by a real customer
+-- hitting this as a hard block), not just owner/superintendent — crew_lead
+-- and crew still can't create/edit/delete assignments, only view and
+-- start/complete their own via the service-role-backed routes.
 CREATE POLICY "Members can view task assignments"
   ON task_assignments FOR SELECT USING (public.is_course_member(course_id));
 CREATE POLICY "Owners and supers can insert task assignments"
   ON task_assignments FOR INSERT WITH CHECK (
-    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
   );
 CREATE POLICY "Owners and supers can update task assignments"
   ON task_assignments FOR UPDATE USING (
-    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
   );
 CREATE POLICY "Owners and supers can delete task assignments"
   ON task_assignments FOR DELETE USING (
-    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = task_assignments.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
   );
 
 -- Time entries: same pattern as employees

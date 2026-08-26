@@ -156,7 +156,11 @@ export default function TaskSchedulerPage() {
       .single();
 
     if (insertError) {
-      setError(insertError.message);
+      setError(
+        insertError.message.includes("row-level security policy")
+          ? "You don't have permission to schedule tasks. Ask an owner, superintendent, or assistant for access."
+          : insertError.message
+      );
     } else if (data) {
       setAssignments((prev) => [data, ...prev]);
       setAddForm({ ...emptyForm, scheduled_date: addForm.scheduled_date });
@@ -168,7 +172,15 @@ export default function TaskSchedulerPage() {
   async function handleDelete(id: string) {
     const supabase = createClient();
     const { error: deleteError } = await supabase.from("task_assignments").delete().eq("id", id);
-    if (!deleteError) setAssignments((prev) => prev.filter((a) => a.id !== id));
+    if (deleteError) {
+      setError(
+        deleteError.message.includes("row-level security policy")
+          ? "You don't have permission to delete tasks. Ask an owner, superintendent, or assistant for access."
+          : deleteError.message
+      );
+    } else {
+      setAssignments((prev) => prev.filter((a) => a.id !== id));
+    }
   }
 
   if (checking) {
