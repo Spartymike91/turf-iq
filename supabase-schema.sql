@@ -702,6 +702,12 @@ CREATE POLICY "course_members_update_v1" ON course_members FOR UPDATE
     OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'crew'))
   );
 
+-- Guards against removing/demoting a course's sole owner via the Team page —
+-- but NOT against a full course deletion, which necessarily removes every
+-- member including the owner. The DELETE branch's early-return checks
+-- whether the `courses` row itself is already gone (i.e. this is firing as
+-- part of an ON DELETE CASCADE from `courses`, not a standalone removal of
+-- just this one membership row) and skips the guard in that case.
 CREATE OR REPLACE FUNCTION public.prevent_last_owner_removal()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -711,6 +717,9 @@ AS $$
 BEGIN
   IF (TG_OP = 'DELETE' AND OLD.role = 'owner')
      OR (TG_OP = 'UPDATE' AND OLD.role = 'owner' AND NEW.role <> 'owner') THEN
+    IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM courses WHERE id = OLD.course_id) THEN
+      RETURN OLD;
+    END IF;
     IF (SELECT COUNT(*) FROM course_members
         WHERE course_id = OLD.course_id AND role = 'owner' AND id <> OLD.id) = 0 THEN
       RAISE EXCEPTION 'Cannot remove or demote the last remaining owner of this course';
@@ -1303,4 +1312,72 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manu
 -- rewrite the task's name, priority, or reassign it to someone else.
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS course_member_id UUID REFERENCES course_members(id) ON DELETE SET NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS employees_course_member_id_unique ON employees(course_member_id) WHERE course_member_id IS NOT NULL;
+
+-- ============================================
+-- RAINFALL TRACKING (actual vs. historical average, year-to-date)
+-- ============================================
+
+-- Daily actual rainfall, accumulated in real time as the weather integration
+-- runs — same opportunistic upsert pattern as gdd_daily_log, except today's
+-- row is overwritten (not ignoreDuplicates) as more hourly observations come
+-- in through the day. Like gdd_daily_log, there's no way to reconstruct rain
+-- for a period before this table started being written to.
+CREATE TABLE IF NOT EXISTS rainfall_daily_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  log_date DATE NOT NULL,
+  rainfall_in NUMERIC(6,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, log_date)
+);
+
+-- Historical daily-average rainfall by calendar day (Jan 1 = '01-01', etc.),
+-- computed once per course from a 10-year lookback via Open-Meteo's archive
+-- API, then cached indefinitely — climate normals don't change day to day, so
+-- there's no reason to recompute them on every page load. Stores a running
+-- cumulative-from-Jan-1 average so "average rainfall so far this year" is a
+-- single indexed lookup.
+CREATE TABLE IF NOT EXISTS course_rainfall_normals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  month_day TEXT NOT NULL,
+  cumulative_avg_in NUMERIC(7,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, month_day)
+);
+
+ALTER TABLE rainfall_daily_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_rainfall_normals ENABLE ROW LEVEL SECURITY;
+
+-- Rainfall daily log: same pattern as gdd_daily_log
+CREATE POLICY "Members can view rainfall log"
+  ON rainfall_daily_log FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert rainfall log"
+  ON rainfall_daily_log FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = rainfall_daily_log.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update rainfall log"
+  ON rainfall_daily_log FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = rainfall_daily_log.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- Rainfall normals: same pattern, members can view once computed
+CREATE POLICY "Members can view rainfall normals"
+  ON course_rainfall_normals FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert rainfall normals"
+  ON course_rainfall_normals FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_rainfall_normals.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+CREATE POLICY "Platform admins can view rainfall_daily_log"
+  ON rainfall_daily_log FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert rainfall_daily_log when edit-unlocked"
+  ON rainfall_daily_log FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update rainfall_daily_log when edit-unlocked"
+  ON rainfall_daily_log FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+CREATE POLICY "Platform admins can view course_rainfall_normals"
+  ON course_rainfall_normals FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert course_rainfall_normals when edit-unlocked"
+  ON course_rainfall_normals FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
 

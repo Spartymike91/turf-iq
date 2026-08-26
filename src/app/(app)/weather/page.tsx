@@ -153,6 +153,12 @@ export default function WeatherPage() {
         </div>
       </div>
 
+      {/* Rainfall Tracking */}
+      <RainfallTracking
+        actualIn={weather.agronomics.rainfallYtdIn}
+        avgIn={weather.agronomics.rainfallYtdAvgIn}
+      />
+
       {/* 7-Day Forecast */}
       <div>
         <div className="font-serif text-[17px] text-green-dark mb-3">7-Day Forecast</div>
@@ -224,6 +230,85 @@ function AgroCard({
           className="h-full rounded transition-all duration-700"
           style={{ width: `${fill}%`, background: color }}
         />
+      </div>
+    </div>
+  );
+}
+
+function RainfallTracking({ actualIn, avgIn }: { actualIn: number; avgIn: number | null }) {
+  const delta = avgIn != null ? actualIn - avgIn : null;
+  const onPace = delta != null && Math.abs(delta) < 0.1;
+  const ahead = delta != null && delta >= 0;
+  const maxIn = Math.max(actualIn, avgIn ?? 0, 0.1);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="font-serif text-[17px] text-green-dark">Rainfall Tracking</div>
+        <div className="text-[11px] text-mist">Year-to-date vs. 10-year average</div>
+      </div>
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5">
+        <div className="grid grid-cols-2 gap-6 mb-4">
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1.5">
+              Actual (YTD)
+            </div>
+            <div className="font-mono text-3xl font-semibold text-green-mid leading-none">
+              {actualIn.toFixed(2)}
+              <span className="text-sm font-normal text-mist"> in</span>
+            </div>
+            <div className="h-1.5 bg-rule rounded mt-2.5 overflow-hidden">
+              <div
+                className="h-full rounded bg-[var(--water)] transition-all duration-700"
+                style={{ width: `${Math.min(100, (actualIn / maxIn) * 100)}%` }}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1.5">
+              10-Year Average (YTD)
+            </div>
+            {avgIn != null ? (
+              <>
+                <div className="font-mono text-3xl font-semibold text-mist leading-none">
+                  {avgIn.toFixed(2)}
+                  <span className="text-sm font-normal text-mist"> in</span>
+                </div>
+                <div className="h-1.5 bg-rule rounded mt-2.5 overflow-hidden">
+                  <div
+                    className="h-full rounded bg-mist/50 transition-all duration-700"
+                    style={{ width: `${Math.min(100, (avgIn / maxIn) * 100)}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="text-sm text-mist mt-1">Calculating…</div>
+            )}
+          </div>
+        </div>
+
+        {delta != null && (
+          <div
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-semibold ${
+              onPace
+                ? "bg-mist/15 text-ink"
+                : ahead
+                ? "bg-green-pale text-green-mid"
+                : "bg-amber/10 text-[#92400e]"
+            }`}
+          >
+            {onPace
+              ? "On pace with average"
+              : ahead
+              ? `+${delta.toFixed(2)} in ahead of average`
+              : `${Math.abs(delta).toFixed(2)} in behind average`}
+          </div>
+        )}
+
+        <div className="text-[11px] text-mist mt-3 leading-snug">
+          Actual rainfall is tracked daily for your course&apos;s exact location; the average is a
+          10-year historical baseline for that same location, both measured from January 1st.
+        </div>
       </div>
     </div>
   );

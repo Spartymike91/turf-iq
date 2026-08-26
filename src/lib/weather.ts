@@ -50,6 +50,8 @@ export interface WeatherResult {
     gddSeasonToDate: number;
     leafWetnessHours: number;
     weekRainfallIn: number;
+    rainfallYtdIn: number;
+    rainfallYtdAvgIn: number | null;
   };
   diseaseRisk: {
     dollarSpot: {
@@ -333,6 +335,159 @@ function sumWeeklyRainfallIn(grid: {
   return totalMm / 25.4;
 }
 
+/**
+ * Actual daily rainfall backfill/refresh via Open-Meteo's forecast API
+ * (`past_days`) — used instead of the NWS station observations already
+ * fetched above because point-station METAR precipitation fields are
+ * frequently null even in clear weather (a known ASOS reporting gap), while
+ * Open-Meteo's blended model/reanalysis daily totals are gap-free. Refreshes
+ * the last 10 days on every fetch (so "today" keeps updating through the
+ * day and any short gap in usage self-heals), independent of the once-ever
+ * full-year backfill below.
+ */
+async function refreshRecentRainfall(
+  supabase: SupabaseClient,
+  courseId: string,
+  lat: number,
+  lon: number,
+  todayStr: string
+): Promise<void> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=precipitation_sum&timezone=auto&past_days=10&forecast_days=1`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = await res.json();
+  const dates: string[] = data?.daily?.time ?? [];
+  const mm: Array<number | null> = data?.daily?.precipitation_sum ?? [];
+
+  const rows = dates
+    .map((date, i) => ({ date, mmVal: mm[i] }))
+    .filter((r) => r.date <= todayStr)
+    .map((r) => ({
+      course_id: courseId,
+      log_date: r.date,
+      rainfall_in: Math.round(((r.mmVal ?? 0) / 25.4) * 100) / 100,
+    }));
+
+  if (rows.length) {
+    await supabase.from("rainfall_daily_log").upsert(rows, { onConflict: "course_id,log_date" });
+  }
+}
+
+/**
+ * One-time (per course) backfill of Jan 1 → ~6 days ago using Open-Meteo's
+ * archive API (real historical reanalysis, not a forecast) — gives every
+ * course true full-calendar-year actual rainfall immediately, even one
+ * adopting the app mid-season, rather than only counting days tracked since
+ * setup. Only runs when this year's log doesn't already reach back near
+ * Jan 1, so it's not re-fetched on every page load once filled in.
+ */
+async function ensureRainfallYearBackfilled(
+  supabase: SupabaseClient,
+  courseId: string,
+  lat: number,
+  lon: number,
+  now: Date
+): Promise<void> {
+  const yearStart = `${now.getFullYear()}-01-01`;
+  const { data: earliestThisYear } = await supabase
+    .from("rainfall_daily_log")
+    .select("log_date")
+    .eq("course_id", courseId)
+    .gte("log_date", yearStart)
+    .order("log_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const cutoff = `${now.getFullYear()}-01-06`;
+  if (earliestThisYear?.log_date && earliestThisYear.log_date <= cutoff) return;
+
+  const archiveEnd = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (archiveEnd < yearStart) return;
+
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${yearStart}&end_date=${archiveEnd}&daily=precipitation_sum&timezone=auto`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = await res.json();
+  const dates: string[] = data?.daily?.time ?? [];
+  const mm: Array<number | null> = data?.daily?.precipitation_sum ?? [];
+
+  const rows = dates.map((date, i) => ({
+    course_id: courseId,
+    log_date: date,
+    rainfall_in: Math.round(((mm[i] ?? 0) / 25.4) * 100) / 100,
+  }));
+
+  if (rows.length) {
+    await supabase.from("rainfall_daily_log").upsert(rows, { onConflict: "course_id,log_date" });
+  }
+}
+
+const REFERENCE_YEAR_DAYS = (() => {
+  const days: string[] = [];
+  const d = new Date(Date.UTC(2001, 0, 1)); // 2001 is not a leap year — exactly 365 days
+  while (d.getUTCFullYear() === 2001) {
+    days.push(d.toISOString().slice(5, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return days;
+})();
+
+/**
+ * One-time (per course) 10-year historical daily-average rainfall, computed
+ * from Open-Meteo's archive API and cached indefinitely as a running
+ * cumulative-from-Jan-1 total per calendar day — climate normals don't
+ * change day to day, so this never needs recomputing once it exists.
+ */
+async function ensureRainfallNormals(
+  supabase: SupabaseClient,
+  courseId: string,
+  lat: number,
+  lon: number
+): Promise<void> {
+  const { count } = await supabase
+    .from("course_rainfall_normals")
+    .select("*", { count: "exact", head: true })
+    .eq("course_id", courseId);
+  if (count && count > 0) return;
+
+  const thisYear = new Date().getFullYear();
+  const startYear = thisYear - 10;
+  const endYear = thisYear - 1;
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${startYear}-01-01&end_date=${endYear}-12-31&daily=precipitation_sum&timezone=auto`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = await res.json();
+  const dates: string[] = data?.daily?.time ?? [];
+  const mm: Array<number | null> = data?.daily?.precipitation_sum ?? [];
+  if (dates.length === 0) return;
+
+  const byMonthDay = new Map<string, number[]>();
+  dates.forEach((date, i) => {
+    const monthDay = date.slice(5);
+    const list = byMonthDay.get(monthDay) ?? [];
+    list.push(mm[i] ?? 0);
+    byMonthDay.set(monthDay, list);
+  });
+
+  const orderedDays = byMonthDay.has("02-29")
+    ? [...REFERENCE_YEAR_DAYS.slice(0, REFERENCE_YEAR_DAYS.indexOf("02-28") + 1), "02-29", ...REFERENCE_YEAR_DAYS.slice(REFERENCE_YEAR_DAYS.indexOf("02-28") + 1)]
+    : REFERENCE_YEAR_DAYS;
+
+  let cumulativeMm = 0;
+  const rows = orderedDays.map((monthDay) => {
+    const vals = byMonthDay.get(monthDay) ?? [];
+    const avgMm = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    cumulativeMm += avgMm;
+    return {
+      course_id: courseId,
+      month_day: monthDay,
+      cumulative_avg_in: Math.round((cumulativeMm / 25.4) * 100) / 100,
+    };
+  });
+
+  await supabase.from("course_rainfall_normals").upsert(rows, { onConflict: "course_id,month_day" });
+}
+
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
 export async function getWeatherForCourse(
@@ -438,6 +593,31 @@ async function fetchFreshWeather(
     .gte("log_date", yearStart);
   const gddSeasonToDate = (gddRows ?? []).reduce((sum, r) => sum + Number(r.gdd), 0);
 
+  try {
+    await refreshRecentRainfall(supabase, course.id, lat, lon, todayStr);
+    await ensureRainfallYearBackfilled(supabase, course.id, lat, lon, now);
+    await ensureRainfallNormals(supabase, course.id, lat, lon);
+  } catch (err) {
+    console.error("Rainfall tracking update failed (non-fatal):", err);
+  }
+
+  const { data: rainRows } = await supabase
+    .from("rainfall_daily_log")
+    .select("rainfall_in")
+    .eq("course_id", course.id)
+    .gte("log_date", yearStart)
+    .lte("log_date", todayStr);
+  const rainfallYtdIn =
+    Math.round((rainRows ?? []).reduce((sum, r) => sum + Number(r.rainfall_in), 0) * 100) / 100;
+
+  const { data: normalRow } = await supabase
+    .from("course_rainfall_normals")
+    .select("cumulative_avg_in")
+    .eq("course_id", course.id)
+    .eq("month_day", todayStr.slice(5))
+    .maybeSingle();
+  const rainfallYtdAvgIn = normalRow ? Number(normalRow.cumulative_avg_in) : null;
+
   const tempC = latestObs.temperature?.value;
   const humidity = latestObs.relativeHumidity?.value != null
     ? Math.round(latestObs.relativeHumidity.value)
@@ -464,6 +644,8 @@ async function fetchFreshWeather(
       gddSeasonToDate: Math.round(gddSeasonToDate * 10) / 10,
       leafWetnessHours,
       weekRainfallIn: Math.round(weekRainfallIn * 100) / 100,
+      rainfallYtdIn,
+      rainfallYtdAvgIn,
     },
     diseaseRisk: {
       dollarSpot,

@@ -61,6 +61,26 @@ export default function HowItWorksPage() {
           </section>
 
           <section>
+            <h2 className="font-serif text-lg text-green-dark mb-2">Rainfall Tracking</h2>
+            <p className="mb-2">
+              We use a separate source from the rest of the weather page for this one: NWS
+              station observations frequently report no precipitation reading at all — even in
+              clear weather — so summing them would leave real gaps. Instead, actual daily rainfall
+              comes from Open-Meteo&apos;s blended forecast/reanalysis model at your course&apos;s
+              exact coordinates, refreshed daily and backfilled to January 1st using their archive
+              of historical data — so you get a true year-to-date total from day one, not just days
+              tracked since setup.
+            </p>
+            <p>
+              The 10-year average is computed once per course (then cached indefinitely — climate
+              normals don&apos;t change day to day) as the mean daily rainfall on each calendar date
+              over the past 10 years at that same location, accumulated from January 1st. &quot;Ahead&quot;
+              or &quot;behind&quot; compares your real, tracked total against that historical baseline for
+              today&apos;s date.
+            </p>
+          </section>
+
+          <section>
             <h2 className="font-serif text-lg text-green-dark mb-2">
               Growing Degree Days (GDD) <Badge tone="science">STANDARD FORMULA</Badge>
             </h2>
