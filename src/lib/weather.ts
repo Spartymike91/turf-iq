@@ -376,6 +376,46 @@ async function refreshRecentRainfall(
 }
 
 /**
+ * Fills any gap between the once-ever Jan-1 GDD backfill (which only
+ * reaches to ~6 days ago) and yesterday — without this, those few days
+ * would only ever get logged if the app happened to be opened on each of
+ * them specifically, the same gap rainfall already avoids via
+ * refreshRecentRainfall. Deliberately excludes today: gddToday (and its
+ * stored row) already comes from the NWS forecast the rest of the page
+ * uses, so overwriting it here with Open-Meteo's number would make the
+ * displayed "+X today" figure disagree with what's summed into the season
+ * total.
+ */
+async function refreshRecentGdd(
+  supabase: SupabaseClient,
+  courseId: string,
+  lat: number,
+  lon: number,
+  todayStr: string
+): Promise<void> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&past_days=10&forecast_days=1`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = await res.json();
+  const dates: string[] = data?.daily?.time ?? [];
+  const highs: Array<number | null> = data?.daily?.temperature_2m_max ?? [];
+  const lows: Array<number | null> = data?.daily?.temperature_2m_min ?? [];
+
+  const rows = dates
+    .map((date, i) => ({ date, high: highs[i], low: lows[i] }))
+    .filter((r) => r.date < todayStr && r.high != null && r.low != null)
+    .map((r) => ({
+      course_id: courseId,
+      log_date: r.date,
+      gdd: Math.round(computeGdd(r.high as number, r.low as number) * 100) / 100,
+    }));
+
+  if (rows.length) {
+    await supabase.from("gdd_daily_log").upsert(rows, { onConflict: "course_id,log_date" });
+  }
+}
+
+/**
  * One-time (per course) backfill of Jan 1 → ~6 days ago using Open-Meteo's
  * archive API (real historical reanalysis, not a forecast) — gives every
  * course true full-calendar-year actual rainfall immediately, even one
@@ -639,6 +679,7 @@ async function fetchFreshWeather(
     );
 
   try {
+    await refreshRecentGdd(supabase, course.id, lat, lon, todayStr);
     await ensureGddYearBackfilled(supabase, course.id, lat, lon, now);
   } catch (err) {
     console.error("GDD backfill failed (non-fatal):", err);

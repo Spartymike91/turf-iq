@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
@@ -28,7 +28,6 @@ export default function PestWeedPage() {
   const [courseName, setCourseName] = useState("");
   const [grassType, setGrassType] = useState("");
   const [weather, setWeather] = useState<WeatherResult | null>(null);
-  const [daysTracked, setDaysTracked] = useState(0);
   const [applications, setApplications] = useState<PestApplication[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,20 +60,11 @@ export default function PestWeedPage() {
       setCourseName(course?.name ?? "");
       setGrassType(course?.grass_type ?? "");
 
-      const fiscalYear = new Date().getFullYear();
-      const [{ count }, { data: apps }] = await Promise.all([
-        supabase
-          .from("gdd_daily_log")
-          .select("id", { count: "exact", head: true })
-          .eq("course_id", context.courseId)
-          .gte("log_date", `${fiscalYear}-01-01`),
-        supabase
-          .from("pest_applications")
-          .select("*")
-          .eq("course_id", context.courseId)
-          .order("applied_at", { ascending: false }),
-      ]);
-      setDaysTracked(count ?? 0);
+      const { data: apps } = await supabase
+        .from("pest_applications")
+        .select("*")
+        .eq("course_id", context.courseId)
+        .order("applied_at", { ascending: false });
       setApplications(apps ?? []);
 
       try {
@@ -90,11 +80,6 @@ export default function PestWeedPage() {
     load();
   }, []);
 
-  const dayOfYear = useMemo(
-    () => Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000),
-    []
-  );
-  const trackingGapDays = dayOfYear - daysTracked;
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -174,15 +159,6 @@ export default function PestWeedPage() {
           {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {grassType || "—"} · {courseName}
         </div>
       </div>
-
-      {trackingGapDays > 14 && (
-        <div className="bg-blue/5 border-[1.5px] border-blue/40 rounded-[7px] px-4 py-3 text-[11px] text-mist">
-          GDD tracking only has {daysTracked} day{daysTracked === 1 ? "" : "s"} of history this season (day{" "}
-          {dayOfYear} of the year) — season-to-date GDD above may understate the true accumulation if this
-          course started using Turf IQ partway through the season. Treat pest windows below cautiously until
-          more tracking history builds up.
-        </div>
-      )}
 
       {!weather && (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
