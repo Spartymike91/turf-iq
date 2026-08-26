@@ -134,7 +134,7 @@ export default function WeatherPage() {
             label="Growing Degree Days"
             value={weather.agronomics.gddSeasonToDate.toLocaleString()}
             unit=" GDD"
-            desc={`Base 50°F · +${weather.agronomics.gddToday.toFixed(1)} today · tracked since app setup`}
+            desc={`Base 50°F · +${weather.agronomics.gddToday.toFixed(1)} today · since Jan 1`}
             fill={Math.min(100, (weather.agronomics.gddSeasonToDate / 2500) * 100)}
             color="var(--gm)"
           />

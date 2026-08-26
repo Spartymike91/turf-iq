@@ -424,6 +424,57 @@ async function ensureRainfallYearBackfilled(
   }
 }
 
+/**
+ * One-time (per course) backfill of Jan 1 → ~6 days ago for season-to-date
+ * GDD, using the same Open-Meteo archive approach as the rainfall backfill —
+ * without this, a course that signs up mid-season only ever accumulates GDD
+ * from its setup date forward, understating the true season total.
+ */
+async function ensureGddYearBackfilled(
+  supabase: SupabaseClient,
+  courseId: string,
+  lat: number,
+  lon: number,
+  now: Date
+): Promise<void> {
+  const yearStart = `${now.getFullYear()}-01-01`;
+  const { data: earliestThisYear } = await supabase
+    .from("gdd_daily_log")
+    .select("log_date")
+    .eq("course_id", courseId)
+    .gte("log_date", yearStart)
+    .order("log_date", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const cutoff = `${now.getFullYear()}-01-06`;
+  if (earliestThisYear?.log_date && earliestThisYear.log_date <= cutoff) return;
+
+  const archiveEnd = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (archiveEnd < yearStart) return;
+
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${yearStart}&end_date=${archiveEnd}&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto`;
+  const res = await fetch(url);
+  if (!res.ok) return;
+  const data = await res.json();
+  const dates: string[] = data?.daily?.time ?? [];
+  const highs: Array<number | null> = data?.daily?.temperature_2m_max ?? [];
+  const lows: Array<number | null> = data?.daily?.temperature_2m_min ?? [];
+
+  const rows = dates
+    .map((date, i) => ({ date, high: highs[i], low: lows[i] }))
+    .filter((r) => r.high != null && r.low != null)
+    .map((r) => ({
+      course_id: courseId,
+      log_date: r.date,
+      gdd: Math.round(computeGdd(r.high as number, r.low as number) * 100) / 100,
+    }));
+
+  if (rows.length) {
+    await supabase.from("gdd_daily_log").upsert(rows, { onConflict: "course_id,log_date" });
+  }
+}
+
 const REFERENCE_YEAR_DAYS = (() => {
   const days: string[] = [];
   const d = new Date(Date.UTC(2001, 0, 1)); // 2001 is not a leap year — exactly 365 days
@@ -586,6 +637,12 @@ async function fetchFreshWeather(
       },
       { onConflict: "course_id,log_date", ignoreDuplicates: true }
     );
+
+  try {
+    await ensureGddYearBackfilled(supabase, course.id, lat, lon, now);
+  } catch (err) {
+    console.error("GDD backfill failed (non-fatal):", err);
+  }
 
   const yearStart = `${now.getFullYear()}-01-01`;
   const { data: gddRows } = await supabase

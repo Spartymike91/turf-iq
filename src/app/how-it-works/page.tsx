@@ -105,9 +105,10 @@ export default function HowItWorksPage() {
             <p>
               We use the standard simple-average method with a 50°F base: <code className="text-xs bg-white border border-rule rounded px-1.5 py-0.5">GDD = ((high°F + low°F) / 2) − 50</code>,
               floored at zero. It&apos;s computed once per day from that day&apos;s forecast high/low
-              and added to your season total, which starts accumulating from January 1st (or from
-              whenever your course was set up, if that&apos;s later in the year — see the note under
-              Pest &amp; Weed Timing below).
+              and added to your season total, which always starts from January 1st — backfilled
+              from historical weather data if your course was set up later in the season, the same
+              way rainfall tracking is, so a mid-season signup doesn&apos;t understate the real
+              season-to-date total.
             </p>
           </section>
 
@@ -165,11 +166,6 @@ export default function HowItWorksPage() {
               we&apos;ll flag this one honestly too: these GDD windows come from general industry
               guidance rather than a primary university extension source, so treat the timing as
               directional.
-            </p>
-            <p className="text-xs text-mist">
-              Note: if your course was set up partway through the season, season-to-date GDD only
-              reflects days tracked since setup — we show a warning on the Pest &amp; Weed page when
-              that gap could be throwing off the numbers.
             </p>
           </section>
 
