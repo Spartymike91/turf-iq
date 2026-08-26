@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS fertilizer_applications (
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
   zone TEXT NOT NULL,
   product TEXT NOT NULL,
-  n_lbs_per_1000 NUMERIC(5,2) NOT NULL DEFAULT 0,
+  n_lbs_per_1000 NUMERIC(6,3) NOT NULL DEFAULT 0,
   cost NUMERIC(10,2),
   application_date DATE NOT NULL DEFAULT CURRENT_DATE,
   notes TEXT,

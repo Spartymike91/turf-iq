@@ -312,7 +312,7 @@ export default function FertilityPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatChip
           label="N Applied YTD"
-          value={stats.nAppliedYtd.toFixed(1)}
+          value={stats.nAppliedYtd.toFixed(3)}
           unit="lbs/M"
           sub={annualTarget > 0 ? `Target: ${annualTarget.toFixed(1)} lbs/M season` : "No target set"}
           tag={annualTarget > 0 ? `${pctOfTarget.toFixed(0)}% of annual` : undefined}
@@ -433,11 +433,11 @@ export default function FertilityPage() {
               <label className="text-[11px] font-semibold uppercase tracking-wide">N (lbs/M)</label>
               <input
                 type="number"
-                step="0.01"
+                step="0.001"
                 required
                 value={addAppForm.n_lbs_per_1000}
                 onChange={(e) => setAddAppForm({ ...addAppForm, n_lbs_per_1000: e.target.value })}
-                placeholder="0.20"
+                placeholder="0.200"
                 className="w-24 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
               />
             </div>
@@ -508,7 +508,7 @@ export default function FertilityPage() {
                   <td className="px-5 py-2.5 text-mist">{app.application_date}</td>
                   <td className="px-3 py-2.5 font-medium">{app.zone}</td>
                   <td className="px-3 py-2.5">{app.product}</td>
-                  <td className="px-3 py-2.5 font-mono">{Number(app.n_lbs_per_1000).toFixed(2)}</td>
+                  <td className="px-3 py-2.5 font-mono">{Number(app.n_lbs_per_1000).toFixed(3)}</td>
                   <td className="px-3 py-2.5 font-mono">
                     {app.cost != null ? `$${Number(app.cost).toFixed(2)}` : "—"}
                   </td>
