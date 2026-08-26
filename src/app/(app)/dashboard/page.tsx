@@ -5,7 +5,10 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
+import CrewDashboard from "@/components/dashboard/CrewDashboard";
 import type { WeatherResult } from "@/lib/weather";
+
+const CREW_ROLES = ["crew", "crew_lead"];
 
 interface TaskToday {
   id: string;
@@ -41,6 +44,7 @@ interface Employee {
 export default function DashboardPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
+  const [isCrewView, setIsCrewView] = useState(false);
   const [checking, setChecking] = useState(true);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
   const [tasks, setTasks] = useState<TaskToday[]>([]);
@@ -68,6 +72,9 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const context = await resolveCourseIdClient(supabase);
 
       if (!context) {
@@ -76,11 +83,30 @@ export default function DashboardPage() {
       }
       setCourseId(context.courseId);
 
-      const [{ data: course }, { data: emp }] = await Promise.all([
-        supabase.from("courses").select("name").eq("id", context.courseId).single(),
-        supabase.from("employees").select("id, name").eq("course_id", context.courseId),
-      ]);
+      const { data: course } = await supabase.from("courses").select("name").eq("id", context.courseId).single();
       setCourseName(course?.name ?? "");
+
+      let role: string | null = null;
+      if (!context.isAdminView && user) {
+        const { data: membership } = await supabase
+          .from("course_members")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("course_id", context.courseId)
+          .maybeSingle();
+        role = membership?.role ?? null;
+      }
+
+      // Crew and crew leads get the simplified CrewDashboard instead — it
+      // fetches its own data and skips the AI briefing entirely, so bail out
+      // here rather than also loading the manager view's heavier data.
+      if (role && CREW_ROLES.includes(role)) {
+        setIsCrewView(true);
+        setChecking(false);
+        return;
+      }
+
+      const { data: emp } = await supabase.from("employees").select("id, name").eq("course_id", context.courseId);
       setEmployees(emp ?? []);
 
       await loadBriefing();
@@ -144,6 +170,10 @@ export default function DashboardPage() {
         <div className="text-sm text-mist">Set up your course profile first.</div>
       </div>
     );
+  }
+
+  if (isCrewView) {
+    return <CrewDashboard courseId={courseId} courseName={courseName} />;
   }
 
   const weather = briefing?.weather ?? null;
