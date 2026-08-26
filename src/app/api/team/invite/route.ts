@@ -148,9 +148,8 @@ export async function POST(request: NextRequest) {
     // The user + invite link were created successfully even if the email
     // failed to send — don't silently strand them without a way to know,
     // but also don't roll back the invite since it's still valid/usable.
-    const detail = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Invite created, but the email failed to send. Please try again or contact support.", detail },
+      { error: "Invite created, but the email failed to send. Please try again or contact support." },
       { status: 502 }
     );
   }
