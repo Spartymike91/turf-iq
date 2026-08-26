@@ -168,6 +168,7 @@ export default function WeatherPage() {
               key={i}
               dow={day.dow}
               icon={day.icon}
+              description={day.description}
               hi={`${day.hiF}°`}
               lo={`${day.loF}°`}
               rain={day.precipChance != null ? `${day.precipChance}%` : "—"}
@@ -317,6 +318,7 @@ function RainfallTracking({ actualIn, avgIn }: { actualIn: number; avgIn: number
 function ForecastDay({
   dow,
   icon,
+  description,
   hi,
   lo,
   rain,
@@ -324,6 +326,7 @@ function ForecastDay({
 }: {
   dow: string;
   icon: string;
+  description: string;
   hi: string;
   lo: string;
   rain: string;
@@ -345,6 +348,13 @@ function ForecastDay({
         {dow}
       </div>
       <div className="text-xl mb-1.5">{icon}</div>
+      <div
+        className={`text-[9.5px] leading-tight line-clamp-2 mb-1.5 min-h-[22px] ${
+          today ? "text-white/70" : "text-mist"
+        }`}
+      >
+        {description}
+      </div>
       <div className={`text-sm font-bold ${today ? "text-white" : "text-ink"}`}>{hi}</div>
       <div className={`text-[11px] ${today ? "text-white/50" : "text-mist"}`}>{lo}</div>
       <div

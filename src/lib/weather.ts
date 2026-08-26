@@ -26,6 +26,7 @@ export interface ForecastDay {
   dow: string;
   isToday: boolean;
   icon: string;
+  description: string;
   hiF: number;
   loF: number;
   precipChance: number | null;
@@ -194,6 +195,7 @@ function buildForecast(periods: NwsForecastPeriod[]): ForecastDay[] {
       dow: date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(),
       isToday: i === 0,
       icon: iconForForecast(day.shortForecast),
+      description: day.shortForecast,
       hiF: day.temperature,
       loF: night?.temperature ?? day.temperature,
       precipChance:
