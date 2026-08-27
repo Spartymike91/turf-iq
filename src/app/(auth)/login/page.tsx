@@ -29,7 +29,24 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    // Platform admins manage customer courses from the admin panel, not
+    // from a course of their own (some admins also happen to have a
+    // personal/test course_members row, but that shouldn't be where they
+    // land) — send them straight there instead of /dashboard.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    let destination = "/dashboard";
+    if (user) {
+      const { data: adminRow } = await supabase
+        .from("platform_admins")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (adminRow) destination = "/admin";
+    }
+
+    router.push(destination);
     router.refresh();
   }
 

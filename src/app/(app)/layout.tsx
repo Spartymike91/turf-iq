@@ -26,7 +26,9 @@ export default async function AppLayout({
   // selected (context is only null in that combined case — see
   // resolveCourseIdServer) have nothing to do in the course-scoped app.
   // Send them to the admin panel instead of the "no course assigned" dead
-  // end — that's where they manage customer courses anyway.
+  // end — that's where they manage customer courses anyway. (Login itself
+  // also sends admins to /admin directly — see login/page.tsx — this is
+  // just the safety net for landing here some other way.)
   if (isPlatformAdmin && !context) {
     redirect("/admin");
   }
