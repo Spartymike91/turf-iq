@@ -22,6 +22,15 @@ export default async function AppLayout({
   const { isPlatformAdmin, isEditElevated } = await getPlatformAdminSession();
   const context = await resolveCourseIdServer(supabase);
 
+  // Platform admins with no course of their own and no "viewing as" course
+  // selected (context is only null in that combined case — see
+  // resolveCourseIdServer) have nothing to do in the course-scoped app.
+  // Send them to the admin panel instead of the "no course assigned" dead
+  // end — that's where they manage customer courses anyway.
+  if (isPlatformAdmin && !context) {
+    redirect("/admin");
+  }
+
   // isAdminView is only trusted for display once isPlatformAdmin is also
   // server-verified — the cookie alone isn't proof of anything (RLS is the
   // real gate on the data itself), but it shouldn't drive the UI for a
