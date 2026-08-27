@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const context = user ? await resolveCourseIdServer(supabase) : null;
+  const context = user ? await resolveCourseIdServer(supabase, user) : null;
 
   await recordError({
     source: "client",

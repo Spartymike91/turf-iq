@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const context = await resolveCourseIdServer(supabase);
+  const context = await resolveCourseIdServer(supabase, user);
   if (!context) {
     return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
   }

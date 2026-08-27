@@ -60,7 +60,7 @@ export default function TeamPage() {
     if (!user) return;
     setMyUserId(user.id);
 
-    const context = await resolveCourseIdClient(supabase);
+    const context = await resolveCourseIdClient(supabase, user);
     if (!context) {
       setChecking(false);
       return;
@@ -69,27 +69,24 @@ export default function TeamPage() {
     setCourseId(context.courseId);
     setIsAdminView(context.isAdminView);
 
-    const { data: course } = await supabase
-      .from("courses")
-      .select("name")
-      .eq("id", context.courseId)
-      .single();
+    // These three only depend on context.courseId/user.id, not on each
+    // other — fetch concurrently.
+    const [{ data: course }, membershipResult, { data: memberRows }] = await Promise.all([
+      supabase.from("courses").select("name").eq("id", context.courseId).single(),
+      context.isAdminView
+        ? Promise.resolve({ data: null as { role: string } | null })
+        : supabase
+            .from("course_members")
+            .select("role")
+            .eq("user_id", user.id)
+            .eq("course_id", context.courseId)
+            .single(),
+      supabase.from("course_members").select("id, user_id, role, allowed_modules").eq("course_id", context.courseId),
+    ]);
     setCourseName(course?.name ?? "");
-
     if (!context.isAdminView) {
-      const { data: membership } = await supabase
-        .from("course_members")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("course_id", context.courseId)
-        .single();
-      setMyRole((membership?.role as Role) ?? null);
+      setMyRole((membershipResult.data?.role as Role) ?? null);
     }
-
-    const { data: memberRows } = await supabase
-      .from("course_members")
-      .select("id, user_id, role, allowed_modules")
-      .eq("course_id", context.courseId);
 
     const userIds = (memberRows ?? []).map((m) => m.user_id);
     const { data: profileRows } = userIds.length

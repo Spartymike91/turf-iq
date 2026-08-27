@@ -12,12 +12,13 @@ type PlatformAdminSession =
  * isEditElevated reflects whether this admin has unlocked edit mode (via
  * POST /api/admin/elevate + their personal PIN) within the last 30 minutes —
  * viewing customer data never requires this, only writes do.
+ *
+ * Pass `knownUser` when the caller already resolved the user for its own
+ * auth check this request, to skip a second `auth.getUser()` round-trip.
  */
-export async function getPlatformAdminSession(): Promise<PlatformAdminSession> {
+export async function getPlatformAdminSession(knownUser?: User | null): Promise<PlatformAdminSession> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = knownUser !== undefined ? knownUser : (await supabase.auth.getUser()).data.user;
 
   if (!user) return { user: null, isPlatformAdmin: false, isEditElevated: false };
 

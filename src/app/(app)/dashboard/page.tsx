@@ -75,7 +75,7 @@ export default function DashboardPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      const context = await resolveCourseIdClient(supabase);
+      const context = await resolveCourseIdClient(supabase, user);
 
       if (!context) {
         setChecking(false);
@@ -83,19 +83,21 @@ export default function DashboardPage() {
       }
       setCourseId(context.courseId);
 
-      const { data: course } = await supabase.from("courses").select("name").eq("id", context.courseId).single();
+      // Course name and role are both always needed and neither depends on
+      // the other — fetch them together instead of one after another.
+      const [{ data: course }, membershipResult] = await Promise.all([
+        supabase.from("courses").select("name").eq("id", context.courseId).single(),
+        !context.isAdminView && user
+          ? supabase
+              .from("course_members")
+              .select("role")
+              .eq("user_id", user.id)
+              .eq("course_id", context.courseId)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
       setCourseName(course?.name ?? "");
-
-      let role: string | null = null;
-      if (!context.isAdminView && user) {
-        const { data: membership } = await supabase
-          .from("course_members")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("course_id", context.courseId)
-          .maybeSingle();
-        role = membership?.role ?? null;
-      }
+      const role: string | null = membershipResult.data?.role ?? null;
 
       // Crew and crew leads get the simplified CrewDashboard instead — it
       // fetches its own data and skips the AI briefing entirely, so bail out

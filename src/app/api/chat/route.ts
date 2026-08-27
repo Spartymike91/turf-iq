@@ -335,7 +335,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const context = await resolveCourseIdServer(supabase);
+  const context = await resolveCourseIdServer(supabase, user);
 
   if (!context) {
     return NextResponse.json(

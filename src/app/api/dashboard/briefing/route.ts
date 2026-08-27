@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
-import { getWeatherForCourse, type WeatherResult } from "@/lib/weather";
+import { getWeatherForCourse } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
 import { getDueStatus } from "@/lib/equipmentModels";
 
@@ -40,7 +40,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const context = await resolveCourseIdServer(supabase);
+  const context = await resolveCourseIdServer(supabase, user);
   if (!context) {
     return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
   }
@@ -60,16 +60,39 @@ export async function GET() {
     `COURSE: ${course.name}, ${course.city ?? "—"}, ${course.state ?? "—"} · ${course.grass_type ?? "grass type not set"}`,
   ];
 
-  let weather: WeatherResult | null = null;
-  try {
-    weather = await getWeatherForCourse(supabase, {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // None of these four depend on each other — fetching them concurrently
+  // instead of one after another is the difference between ~4 sequential
+  // round-trips and ~1 for this whole section. Weather is caught individually
+  // (same "unavailable" fallback behavior as before) so one slow/failed
+  // external call doesn't fail the others.
+  const [weather, { data: pestApps }, { data: tasksTodayRaw }, { data: equipmentList }] = await Promise.all([
+    getWeatherForCourse(supabase, {
       id: courseId,
       city: course.city,
       state: course.state,
       latitude: course.latitude,
       longitude: course.longitude,
-    });
+    }).catch((error) => {
+      console.error("Briefing weather error:", error);
+      return null;
+    }),
+    supabase
+      .from("pest_applications")
+      .select("applied_at, target, product")
+      .eq("course_id", courseId)
+      .order("applied_at", { ascending: false })
+      .limit(3),
+    supabase
+      .from("task_assignments")
+      .select("id, name, priority, status, assigned_to, estimated_minutes")
+      .eq("course_id", courseId)
+      .eq("scheduled_date", today),
+    supabase.from("equipment").select("id, name, current_hours").eq("course_id", courseId).eq("is_active", true),
+  ]);
 
+  if (weather) {
     const { dollarSpot, pythium, brownPatch } = weather.diseaseRisk;
     promptSections.push(
       `WEATHER: ${weather.current.tempF}°F (${weather.current.description}), high ${weather.current.highF}°F / low ${weather.current.lowF}°F, humidity ${weather.current.humidity ?? "—"}%
@@ -85,17 +108,9 @@ DISEASE RISK: Dollar Spot ${dollarSpot.probabilityPct.toFixed(1)}% (action thres
       pestLines.push(`Annual Bluegrass Weevil — ${abw.stage}.`);
     }
     promptSections.push(pestLines.join(" "));
-  } catch (error) {
-    console.error("Briefing weather error:", error);
+  } else {
     promptSections.push("WEATHER: unavailable right now.");
   }
-
-  const { data: pestApps } = await supabase
-    .from("pest_applications")
-    .select("applied_at, target, product")
-    .eq("course_id", courseId)
-    .order("applied_at", { ascending: false })
-    .limit(3);
 
   if (pestApps && pestApps.length > 0) {
     promptSections.push(
@@ -104,13 +119,6 @@ DISEASE RISK: Dollar Spot ${dollarSpot.probabilityPct.toFixed(1)}% (action thres
   } else {
     promptSections.push("RECENT APPLICATIONS: none logged.");
   }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: tasksTodayRaw } = await supabase
-    .from("task_assignments")
-    .select("id, name, priority, status, assigned_to, estimated_minutes")
-    .eq("course_id", courseId)
-    .eq("scheduled_date", today);
 
   const tasksToday: TaskToday[] = tasksTodayRaw ?? [];
 
@@ -121,12 +129,6 @@ DISEASE RISK: Dollar Spot ${dollarSpot.probabilityPct.toFixed(1)}% (action thres
   } else {
     promptSections.push("TODAY'S TASKS: none scheduled.");
   }
-
-  const { data: equipmentList } = await supabase
-    .from("equipment")
-    .select("id, name, current_hours")
-    .eq("course_id", courseId)
-    .eq("is_active", true);
 
   const equipmentIssues: EquipmentIssue[] = [];
   if (equipmentList && equipmentList.length > 0) {

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 export const ADMIN_VIEW_COOKIE = "admin_view_course_id";
 
@@ -7,12 +7,17 @@ export interface CourseContext {
   isAdminView: boolean;
 }
 
+/**
+ * `knownUser` lets a caller that already resolved the user this request
+ * (almost every route handler does, for its own auth check) skip a second
+ * `auth.getUser()` round-trip here — pass it whenever you have it. Omit it
+ * (or pass undefined) to have this resolve the user itself, same as before.
+ */
 export async function fallbackToOwnCourse(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  knownUser?: User | null
 ): Promise<CourseContext | null> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = knownUser !== undefined ? knownUser : (await supabase.auth.getUser()).data.user;
   if (!user) return null;
 
   const { data: membership } = await supabase
@@ -35,7 +40,8 @@ export async function fallbackToOwnCourse(
  * hand-sets this cookie just gets empty results / rejected writes.
  */
 export async function resolveCourseIdClient(
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  knownUser?: User | null
 ): Promise<CourseContext | null> {
   if (typeof document !== "undefined") {
     const match = document.cookie.match(
@@ -45,5 +51,5 @@ export async function resolveCourseIdClient(
       return { courseId: decodeURIComponent(match[1]), isAdminView: true };
     }
   }
-  return fallbackToOwnCourse(supabase);
+  return fallbackToOwnCourse(supabase, knownUser);
 }

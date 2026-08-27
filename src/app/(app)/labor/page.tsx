@@ -83,35 +83,31 @@ function LaborPageInner() {
       }
 
       setCourseId(context.courseId);
-      const { data: course } = await supabase
-        .from("courses")
-        .select("name")
-        .eq("id", context.courseId)
-        .single();
+
+      // These three don't depend on each other — fetch concurrently.
+      const [{ data: course }, { data: staff }, { data: memberRows }] = await Promise.all([
+        supabase.from("courses").select("name").eq("id", context.courseId).single(),
+        supabase.from("employees").select("*").eq("course_id", context.courseId).order("name"),
+        supabase.from("course_members").select("id, user_id").eq("course_id", context.courseId),
+      ]);
       setCourseName(course?.name ?? "");
 
-      const { data: staff } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("course_id", context.courseId)
-        .order("name");
-
       const ids = (staff ?? []).map((s) => s.id);
-      const { data: rates } = ids.length
-        ? await supabase.from("employee_pay_rates").select("employee_id, hourly_rate").in("employee_id", ids)
-        : { data: [] as { employee_id: string; hourly_rate: number }[] };
-      const rateMap = new Map((rates ?? []).map((r) => [r.employee_id, Number(r.hourly_rate)]));
+      const memberUserIds = (memberRows ?? []).map((m) => m.user_id);
 
+      // Both of these depend on the batch above but not on each other.
+      const [{ data: rates }, { data: profileRows }] = await Promise.all([
+        ids.length
+          ? supabase.from("employee_pay_rates").select("employee_id, hourly_rate").in("employee_id", ids)
+          : Promise.resolve({ data: [] as { employee_id: string; hourly_rate: number }[] }),
+        memberUserIds.length
+          ? supabase.from("profiles").select("id, full_name, email").in("id", memberUserIds)
+          : Promise.resolve({ data: [] as { id: string; full_name: string | null; email: string | null }[] }),
+      ]);
+
+      const rateMap = new Map((rates ?? []).map((r) => [r.employee_id, Number(r.hourly_rate)]));
       setEmployees((staff ?? []).map((s) => ({ ...s, hourly_rate: rateMap.get(s.id) ?? 0 })));
 
-      const { data: memberRows } = await supabase
-        .from("course_members")
-        .select("id, user_id")
-        .eq("course_id", context.courseId);
-      const memberUserIds = (memberRows ?? []).map((m) => m.user_id);
-      const { data: profileRows } = memberUserIds.length
-        ? await supabase.from("profiles").select("id, full_name, email").in("id", memberUserIds)
-        : { data: [] as { id: string; full_name: string | null; email: string | null }[] };
       const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
       setTeamMembers(
         (memberRows ?? []).map((m) => {

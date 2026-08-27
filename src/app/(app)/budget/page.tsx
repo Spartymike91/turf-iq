@@ -105,34 +105,31 @@ function BudgetPageInner() {
       }
 
       setCourseId(context.courseId);
-      const { data: course } = await supabase
-        .from("courses")
-        .select("name")
-        .eq("id", context.courseId)
-        .single();
+
+      // None of these four depend on each other — fetch concurrently.
+      const [{ data: course }, { data: cats }, { data: exp }, { data: reportRows }] = await Promise.all([
+        supabase.from("courses").select("name").eq("id", context.courseId).single(),
+        supabase
+          .from("budget_categories")
+          .select("*")
+          .eq("course_id", context.courseId)
+          .eq("fiscal_year", fiscalYear)
+          .order("name"),
+        supabase
+          .from("expenses")
+          .select("*")
+          .eq("course_id", context.courseId)
+          .gte("expense_date", `${fiscalYear}-01-01`)
+          .lte("expense_date", `${fiscalYear}-12-31`)
+          .order("expense_date", { ascending: false }),
+        supabase
+          .from("monthly_reports")
+          .select("*")
+          .eq("course_id", context.courseId)
+          .order("generated_at", { ascending: false }),
+      ]);
+
       setCourseName(course?.name ?? "");
-
-      const { data: cats } = await supabase
-        .from("budget_categories")
-        .select("*")
-        .eq("course_id", context.courseId)
-        .eq("fiscal_year", fiscalYear)
-        .order("name");
-
-      const { data: exp } = await supabase
-        .from("expenses")
-        .select("*")
-        .eq("course_id", context.courseId)
-        .gte("expense_date", `${fiscalYear}-01-01`)
-        .lte("expense_date", `${fiscalYear}-12-31`)
-        .order("expense_date", { ascending: false });
-
-      const { data: reportRows } = await supabase
-        .from("monthly_reports")
-        .select("*")
-        .eq("course_id", context.courseId)
-        .order("generated_at", { ascending: false });
-
       setCategories(cats ?? []);
       setExpenses(exp ?? []);
       setReports(reportRows ?? []);

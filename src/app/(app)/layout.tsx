@@ -19,8 +19,13 @@ export default async function AppLayout({
     redirect("/login");
   }
 
-  const { isPlatformAdmin, isEditElevated } = await getPlatformAdminSession();
-  const context = await resolveCourseIdServer(supabase);
+  // Both only need the user we already resolved above — pass it through so
+  // neither re-hits Supabase Auth for it, and run them concurrently since
+  // neither depends on the other's result.
+  const [{ isPlatformAdmin, isEditElevated }, context] = await Promise.all([
+    getPlatformAdminSession(user),
+    resolveCourseIdServer(supabase, user),
+  ]);
 
   // Platform admins with no course of their own and no "viewing as" course
   // selected (context is only null in that combined case — see

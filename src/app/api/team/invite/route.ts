@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   // crafted request sends — the checklist only ever applies to junior roles.
   const resolvedAllowedModules = JUNIOR_ROLES.includes(role) ? allowed_modules ?? null : null;
 
-  const context = await resolveCourseIdServer(supabase);
+  const context = await resolveCourseIdServer(supabase, user);
   if (!context) {
     return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
   }
