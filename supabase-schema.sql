@@ -1398,3 +1398,52 @@ CREATE POLICY "Platform admins can insert course_rainfall_normals when edit-unlo
 -- Manager" can actually touch is still done via the existing
 -- allowed_modules checklist on their real role, not a new permission tier.
 ALTER TABLE course_members ADD COLUMN IF NOT EXISTS title TEXT;
+
+
+-- ============================================
+-- PRODUCT DIRECTORY + INVENTORY TRACKING
+-- ============================================
+-- Catalog of chemicals/fertilizers the course uses, with a simple current-
+-- stock quantity. Phase 1 of two: this just tracks what exists and how much
+-- is on hand (manually adjusted via 'Receive Stock' or direct edits). A
+-- later phase wires fertilizer_applications/pest_applications to reference
+-- these products directly (unified dropdowns, multi-product logging) and
+-- auto-decrement stock on use — deliberately not built yet since it doesn't
+-- exist until that phase needs it.
+CREATE TABLE IF NOT EXISTS products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'other')),
+  unit TEXT NOT NULL,
+  unit_cost NUMERIC(10,2),
+  current_stock NUMERIC(10,2) NOT NULL DEFAULT 0,
+  reorder_threshold NUMERIC(10,2),
+  notes TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+
+-- Same pattern as equipment: members view, owner/super manage.
+CREATE POLICY "Members can view products"
+  ON products FOR SELECT USING (public.is_course_member(course_id));
+CREATE POLICY "Owners and supers can insert products"
+  ON products FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = products.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can update products"
+  ON products FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = products.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+CREATE POLICY "Owners and supers can delete products"
+  ON products FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = products.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+CREATE POLICY "Platform admins can view products"
+  ON products FOR SELECT USING (public.is_platform_admin());
+CREATE POLICY "Platform admins can insert products when edit-unlocked"
+  ON products FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
+CREATE POLICY "Platform admins can update products when edit-unlocked"
+  ON products FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
