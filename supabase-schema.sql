@@ -1466,3 +1466,29 @@ ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS quantity_used NUMER
 ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
 ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS quantity_used NUMERIC(10,2);
 ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS area TEXT;
+
+
+-- ============================================
+-- APPLICATION COSTS -> BUDGET
+-- ============================================
+-- pest_applications never had a cost column at all (fertilizer_applications
+-- already did). Both now compute cost automatically when a directory-linked
+-- product with a unit_cost is used (unit_cost * quantity_used), editable by
+-- the user afterward. When an application has a cost, the page that logged
+-- it also records a matching expense so it shows up in Budget vs Actual —
+-- fertilizer_applications under a 'Fertilizer' category, pest_applications
+-- under 'Chemicals' (shared by Pest & Weed and Disease Risk, which both
+-- write to that same table).
+--
+-- ON DELETE CASCADE here (not SET NULL, unlike task_assignment_id on this
+-- same table) is deliberate: deleting a task is rare, but deleting/correcting
+-- an application log entry is routine, and an orphaned expense nobody can
+-- trace back to anything would silently corrupt the budget totals.
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS cost NUMERIC(10,2);
+
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS fertilizer_application_id UUID REFERENCES fertilizer_applications(id) ON DELETE CASCADE;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS pest_application_id UUID REFERENCES pest_applications(id) ON DELETE CASCADE;
+
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_source_check;
+ALTER TABLE expenses ADD CONSTRAINT expenses_source_check
+  CHECK (source IN ('manual', 'task_labor', 'task_materials', 'application_fertilizer', 'application_pest'));

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { COURSE_AREAS } from "@/lib/areas";
+import { recordApplicationExpense } from "@/lib/applicationExpenses";
 
 interface SprayApplication {
   id: string;
@@ -16,6 +17,7 @@ interface SprayApplication {
   product_id: string | null;
   rei_hours: number;
   quantity_used: number | null;
+  cost: number | null;
   notes: string | null;
 }
 
@@ -24,6 +26,7 @@ interface Product {
   name: string;
   category: string;
   unit: string;
+  unit_cost: number | null;
   current_stock: number;
 }
 
@@ -34,7 +37,7 @@ function isDiseaseTarget(target: string) {
 }
 
 const emptySprayForm = { target: "", area: "", applied_at: "", notes: "" };
-const emptySprayLine = { productId: "", customName: "", rei_hours: "", quantity_used: "" };
+const emptySprayLine = { productId: "", customName: "", rei_hours: "", quantity_used: "", cost: "" };
 
 export default function DiseasePage() {
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export default function DiseasePage() {
           .order("applied_at", { ascending: false }),
         supabase
           .from("products")
-          .select("id, name, category, unit, current_stock")
+          .select("id, name, category, unit, unit_cost, current_stock")
           .eq("course_id", context.courseId)
           .eq("is_active", true)
           .in("category", ["fungicide", "other"])
@@ -129,7 +132,23 @@ export default function DiseasePage() {
   }, [sprays, now]);
 
   function updateSprayLine(index: number, patch: Partial<typeof emptySprayLine>) {
-    setSprayLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    setSprayLines((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        const next = { ...l, ...patch };
+        // Auto-compute cost from the directory product's unit cost whenever
+        // the product or quantity changes — still editable afterward, but a
+        // later edit to either will recompute and overwrite a manual value.
+        if ("productId" in patch || "quantity_used" in patch) {
+          const product = products.find((p) => p.id === next.productId);
+          const qty = parseFloat(next.quantity_used);
+          if (product?.unit_cost != null && !Number.isNaN(qty)) {
+            next.cost = (Number(product.unit_cost) * qty).toFixed(2);
+          }
+        }
+        return next;
+      })
+    );
   }
 
   function addSprayLine() {
@@ -160,6 +179,7 @@ export default function DiseasePage() {
         product_id: product ? product.id : null,
         rei_hours: l.rei_hours ? parseInt(l.rei_hours) : 0,
         quantity_used: product && l.quantity_used ? parseFloat(l.quantity_used) : null,
+        cost: l.cost ? parseFloat(l.cost) : null,
         notes: addSprayForm.notes || null,
       };
     });
@@ -181,6 +201,25 @@ export default function DiseasePage() {
             .eq("id", product.id);
           if (!stockError) {
             setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
+          }
+        }
+      }
+
+      // Best-effort: record a matching budget expense for any line with a cost.
+      for (const row of data) {
+        if (row.cost) {
+          try {
+            await recordApplicationExpense(supabase, {
+              courseId,
+              categoryName: "Chemicals",
+              amount: Number(row.cost),
+              description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
+              expenseDate: row.applied_at.slice(0, 10),
+              source: "application_pest",
+              pestApplicationId: row.id,
+            });
+          } catch (expenseError) {
+            console.error("Failed to record fungicide application expense:", expenseError);
           }
         }
       }
@@ -574,6 +613,15 @@ export default function DiseasePage() {
                         className="w-32 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                       />
                     )}
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={line.cost}
+                      onChange={(e) => updateSprayLine(i, { cost: e.target.value })}
+                      placeholder="Cost"
+                      title={linkedProduct ? "Auto-filled from unit cost × quantity used — editable" : "Cost"}
+                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    />
                     {sprayLines.length > 1 && (
                       <button
                         type="button"
@@ -622,6 +670,7 @@ export default function DiseasePage() {
                 <th className="text-left px-3 py-2.5 font-medium">Area</th>
                 <th className="text-left px-3 py-2.5 font-medium">Product</th>
                 <th className="text-left px-3 py-2.5 font-medium">REI</th>
+                <th className="text-left px-3 py-2.5 font-medium">Cost</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
                 <th className="text-left px-3 py-2.5 font-medium">Notes</th>
                 <th className="text-right px-5 py-2.5 font-medium">Actions</th>
@@ -639,6 +688,7 @@ export default function DiseasePage() {
                     <td className="px-3 py-2.5 text-mist">{s.area || "—"}</td>
                     <td className="px-3 py-2.5">{s.product}</td>
                     <td className="px-3 py-2.5 font-mono">{s.rei_hours}h</td>
+                    <td className="px-3 py-2.5 font-mono">{s.cost != null ? `$${Number(s.cost).toFixed(2)}` : "—"}</td>
                     <td className="px-3 py-2.5">
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
                         {restricted ? "RESTRICTED" : "CLEAR"}

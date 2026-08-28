@@ -6,6 +6,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import { COURSE_AREAS } from "@/lib/areas";
+import { recordApplicationExpense } from "@/lib/applicationExpenses";
 
 interface FertilizerApplication {
   id: string;
@@ -25,6 +26,7 @@ interface Product {
   name: string;
   category: string;
   unit: string;
+  unit_cost: number | null;
   current_stock: number;
 }
 
@@ -146,7 +148,7 @@ export default function FertilityPage() {
 
       const { data: prods } = await supabase
         .from("products")
-        .select("id, name, category, unit, current_stock")
+        .select("id, name, category, unit, unit_cost, current_stock")
         .eq("course_id", context.courseId)
         .eq("is_active", true)
         .in("category", ["fertilizer", "other"])
@@ -215,7 +217,23 @@ export default function FertilityPage() {
   }
 
   function updateAppLine(index: number, patch: Partial<typeof emptyAppLine>) {
-    setAppLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    setAppLines((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        const next = { ...l, ...patch };
+        // Auto-compute cost from the directory product's unit cost whenever
+        // the product or quantity changes — still editable afterward, but a
+        // later edit to either will recompute and overwrite a manual value.
+        if ("productId" in patch || "quantity_used" in patch) {
+          const product = products.find((p) => p.id === next.productId);
+          const qty = parseFloat(next.quantity_used);
+          if (product?.unit_cost != null && !Number.isNaN(qty)) {
+            next.cost = (Number(product.unit_cost) * qty).toFixed(2);
+          }
+        }
+        return next;
+      })
+    );
   }
 
   function addAppLine() {
@@ -270,6 +288,25 @@ export default function FertilityPage() {
             .eq("id", product.id);
           if (!stockError) {
             setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
+          }
+        }
+      }
+
+      // Best-effort: record a matching budget expense for any line with a cost.
+      for (const row of data) {
+        if (row.cost) {
+          try {
+            await recordApplicationExpense(supabase, {
+              courseId,
+              categoryName: "Fertilizer",
+              amount: Number(row.cost),
+              description: `${row.product} — ${row.zone}`,
+              expenseDate: row.application_date,
+              source: "application_fertilizer",
+              fertilizerApplicationId: row.id,
+            });
+          } catch (expenseError) {
+            console.error("Failed to record fertilizer application expense:", expenseError);
           }
         }
       }

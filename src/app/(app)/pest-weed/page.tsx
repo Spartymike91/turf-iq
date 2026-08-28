@@ -6,6 +6,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
 import { COURSE_AREAS } from "@/lib/areas";
+import { recordApplicationExpense } from "@/lib/applicationExpenses";
 
 interface PestApplication {
   id: string;
@@ -16,6 +17,7 @@ interface PestApplication {
   product: string;
   product_id: string | null;
   rei_hours: number;
+  cost: number | null;
   quantity_used: number | null;
   notes: string | null;
 }
@@ -25,11 +27,12 @@ interface Product {
   name: string;
   category: string;
   unit: string;
+  unit_cost: number | null;
   current_stock: number;
 }
 
 const emptyForm = { target: "", area: "", applied_at: "", notes: "" };
-const emptyLine = { productId: "", customName: "", rei_hours: "", quantity_used: "" };
+const emptyLine = { productId: "", customName: "", rei_hours: "", cost: "", quantity_used: "" };
 
 function toLocalDatetimeInput(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -84,7 +87,7 @@ export default function PestWeedPage() {
 
       const { data: prods } = await supabase
         .from("products")
-        .select("id, name, category, unit, current_stock")
+        .select("id, name, category, unit, unit_cost, current_stock")
         .eq("course_id", context.courseId)
         .eq("is_active", true)
         .in("category", ["fungicide", "herbicide", "insecticide", "other"])
@@ -106,7 +109,20 @@ export default function PestWeedPage() {
 
 
   function updateLine(index: number, patch: Partial<typeof emptyLine>) {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        const next = { ...l, ...patch };
+        if ("productId" in patch || "quantity_used" in patch) {
+          const product = products.find((p) => p.id === next.productId);
+          const qty = parseFloat(next.quantity_used);
+          if (product?.unit_cost != null && !Number.isNaN(qty)) {
+            next.cost = (Number(product.unit_cost) * qty).toFixed(2);
+          }
+        }
+        return next;
+      })
+    );
   }
 
   function addLine() {
@@ -136,6 +152,7 @@ export default function PestWeedPage() {
         product: product ? product.name : l.customName,
         product_id: product ? product.id : null,
         rei_hours: l.rei_hours ? parseInt(l.rei_hours) : 0,
+        cost: l.cost ? parseFloat(l.cost) : null,
         quantity_used: product && l.quantity_used ? parseFloat(l.quantity_used) : null,
         notes: addForm.notes || null,
       };
@@ -158,6 +175,24 @@ export default function PestWeedPage() {
             .eq("id", product.id);
           if (!stockError) {
             setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
+          }
+        }
+      }
+
+      for (const row of data) {
+        if (row.cost) {
+          try {
+            await recordApplicationExpense(supabase, {
+              courseId,
+              categoryName: "Chemicals",
+              amount: Number(row.cost),
+              description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
+              expenseDate: row.applied_at.slice(0, 10),
+              source: "application_pest",
+              pestApplicationId: row.id,
+            });
+          } catch (expenseError) {
+            console.error("Failed to record pest application expense:", expenseError);
           }
         }
       }
@@ -361,6 +396,15 @@ export default function PestWeedPage() {
                         className="w-32 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                       />
                     )}
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={line.cost}
+                      onChange={(e) => updateLine(i, { cost: e.target.value })}
+                      placeholder="Cost"
+                      title={linkedProduct ? "Auto-filled from unit cost × quantity used — editable" : "Cost"}
+                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    />
                     {lines.length > 1 && (
                       <button
                         type="button"
@@ -407,6 +451,7 @@ export default function PestWeedPage() {
                 <th className="text-left px-3 py-2.5 font-medium">Area</th>
                 <th className="text-left px-3 py-2.5 font-medium">Product</th>
                 <th className="text-left px-3 py-2.5 font-medium">REI</th>
+                <th className="text-left px-3 py-2.5 font-medium">Cost</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
                 <th className="text-left px-3 py-2.5 font-medium">Notes</th>
                 <th className="text-right px-5 py-2.5 font-medium">Actions</th>
@@ -424,6 +469,7 @@ export default function PestWeedPage() {
                     <td className="px-3 py-2.5 text-mist">{a.area || "—"}</td>
                     <td className="px-3 py-2.5">{a.product}</td>
                     <td className="px-3 py-2.5 font-mono">{a.rei_hours}h</td>
+                    <td className="px-3 py-2.5 font-mono">{a.cost != null ? `$${Number(a.cost).toFixed(2)}` : "—"}</td>
                     <td className="px-3 py-2.5">
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
                         {restricted ? "RESTRICTED" : "CLEAR"}
