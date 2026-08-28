@@ -312,7 +312,8 @@ GUIDELINES:
 - Be concise but thorough — superintendents are busy professionals
 - If recommending a spray, specify timing, rate, and any weather considerations
 - Always consider the economic impact of recommendations
-- Never invent numbers for data marked as unavailable above`;
+- Never invent numbers for data marked as unavailable above
+- When a photo is attached, actually look at it and describe what you observe (turf color, pattern, lesion shape, damage type, etc.) before giving your assessment — cross-reference it against the live disease/pest/weather data above where relevant. State your confidence level and recommend an in-person check or a diagnostic lab sample when the photo alone isn't conclusive, rather than guessing.`;
 }
 
 export async function POST(request: NextRequest) {
@@ -325,7 +326,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { messages } = await request.json();
+  const { messages } = (await request.json()) as {
+    messages: { role: string; content: string; image?: { mediaType: string; data: string } }[];
+  };
+
+  const MAX_IMAGE_BASE64_CHARS = 7 * 1024 * 1024; // ~5MB decoded, Anthropic's per-image cap
+  for (const m of messages) {
+    if (m.image && m.image.data.length > MAX_IMAGE_BASE64_CHARS) {
+      return NextResponse.json({ content: "That photo is too large to send — try a smaller one." }, { status: 200 });
+    }
+  }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -358,10 +368,17 @@ export async function POST(request: NextRequest) {
         model: "claude-sonnet-4-6",
         max_tokens: 1000,
         system: systemPrompt,
-        messages: messages.map((m: { role: string; content: string }) => ({
-          role: m.role,
-          content: m.content,
-        })),
+        messages: messages.map((m) =>
+          m.image
+            ? {
+                role: m.role,
+                content: [
+                  { type: "image", source: { type: "base64", media_type: m.image.mediaType, data: m.image.data } },
+                  ...(m.content ? [{ type: "text", text: m.content }] : []),
+                ],
+              }
+            : { role: m.role, content: m.content }
+        ),
       }),
     });
 

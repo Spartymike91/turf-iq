@@ -3,9 +3,15 @@
 import { useState, useRef, useEffect } from "react";
 import type { WeatherResult } from "@/lib/weather";
 
+interface MessageImage {
+  mediaType: string;
+  data: string;
+}
+
 interface Message {
   role: "user" | "assistant";
   content: string;
+  image?: MessageImage;
 }
 
 const SUGGESTIONS = [
@@ -15,10 +21,52 @@ const SUGGESTIONS = [
   "What's my current N applied vs. target?",
 ];
 
+const MAX_IMAGE_DIMENSION = 1568; // matches Anthropic's own recommended max — larger just costs more tokens for no quality benefit
+const MAX_SOURCE_FILE_BYTES = 15 * 1024 * 1024; // reject absurdly large uploads before even trying to decode them
+
 function greeting() {
   const hour = new Date().getHours();
   const timeOfDay = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
   return `Good ${timeOfDay}. Ask me anything about your course today.`;
+}
+
+// Downscales/recompresses to JPEG client-side so a full-resolution phone
+// photo (often 5-10MB) doesn't get sent as-is — keeps requests fast and
+// well under Anthropic's per-image size limit regardless of source size.
+function resizeImageFile(file: File): Promise<MessageImage> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+        if (width > height) {
+          height = Math.round((height * MAX_IMAGE_DIMENSION) / width);
+          width = MAX_IMAGE_DIMENSION;
+        } else {
+          width = Math.round((width * MAX_IMAGE_DIMENSION) / height);
+          height = MAX_IMAGE_DIMENSION;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      URL.revokeObjectURL(objectUrl);
+      if (!ctx) {
+        reject(new Error("Couldn't process that image."));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      resolve({ mediaType: "image/jpeg", data: dataUrl.split(",")[1] });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Couldn't read that image — try a different photo."));
+    };
+    img.src = objectUrl;
+  });
 }
 
 export default function AgronomistPanel({
@@ -34,8 +82,12 @@ export default function AgronomistPanel({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
+  const [pendingImage, setPendingImage] = useState<MessageImage | null>(null);
+  const [imageProcessing, setImageProcessing] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -51,14 +103,15 @@ export default function AgronomistPanel({
 
   async function sendMessage(text?: string) {
     const content = text || input.trim();
-    if (!content || loading) return;
+    if ((!content && !pendingImage) || loading) return;
 
     const newMessages: Message[] = [
       ...messages,
-      { role: "user", content },
+      { role: "user", content, ...(pendingImage ? { image: pendingImage } : {}) },
     ];
     setMessages(newMessages);
     setInput("");
+    setPendingImage(null);
     setLoading(true);
 
     try {
@@ -86,6 +139,32 @@ export default function AgronomistPanel({
       ]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow picking the same file again later
+    if (!file) return;
+
+    setImageError(null);
+    if (!file.type.startsWith("image/")) {
+      setImageError("Please attach a photo (JPEG, PNG, etc.).");
+      return;
+    }
+    if (file.size > MAX_SOURCE_FILE_BYTES) {
+      setImageError("That photo is too large — try one under 15MB.");
+      return;
+    }
+
+    setImageProcessing(true);
+    try {
+      const resized = await resizeImageFile(file);
+      setPendingImage(resized);
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "Couldn't process that photo.");
+    } finally {
+      setImageProcessing(false);
     }
   }
 
@@ -187,10 +266,18 @@ export default function AgronomistPanel({
                     ? "bg-white border-[1.5px] border-rule text-ink rounded-tl-[3px] shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
                     : "bg-green-mid text-white rounded-tr-[3px]"
                 }`}
-                dangerouslySetInnerHTML={{
-                  __html: formatContent(msg.content),
-                }}
-              />
+              >
+                {msg.image && (
+                  <img
+                    src={`data:${msg.image.mediaType};base64,${msg.image.data}`}
+                    alt="Attached photo"
+                    className={`rounded-md max-w-full max-h-[200px] object-cover ${msg.content ? "mb-1.5" : ""}`}
+                  />
+                )}
+                {msg.content && (
+                  <div dangerouslySetInnerHTML={{ __html: formatContent(msg.content) }} />
+                )}
+              </div>
             </div>
           ))}
 
@@ -222,8 +309,53 @@ export default function AgronomistPanel({
           ))}
         </div>
 
+        {/* Pending photo preview */}
+        {pendingImage && (
+          <div className="px-3 pt-2.5 bg-white shrink-0 flex items-center gap-2">
+            <div className="relative">
+              <img
+                src={`data:${pendingImage.mediaType};base64,${pendingImage.data}`}
+                alt="Photo to send"
+                className="w-14 h-14 object-cover rounded-md border-[1.5px] border-rule"
+              />
+              <button
+                onClick={() => setPendingImage(null)}
+                aria-label="Remove photo"
+                className="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 bg-ink text-white rounded-full text-[10px] leading-none flex items-center justify-center hover:bg-red"
+              >
+                ×
+              </button>
+            </div>
+            <span className="text-[10px] text-mist">Photo attached — add a question or send as-is</span>
+          </div>
+        )}
+        {imageError && (
+          <div className="px-3.5 pt-2 text-[10px] text-red bg-white shrink-0">{imageError}</div>
+        )}
+
         {/* Input */}
         <div className="p-3 bg-white border-t border-rule flex gap-2 items-end shrink-0">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={imageProcessing || loading}
+            aria-label="Attach a photo"
+            title="Attach a photo"
+            className="w-9 h-9 border-[1.5px] border-rule rounded-lg cursor-pointer flex items-center justify-center transition-all shrink-0 text-mist hover:border-green-mid hover:text-green-mid disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {imageProcessing ? (
+              <span className="text-[10px]">...</span>
+            ) : (
+              <span className="text-base leading-none">📷</span>
+            )}
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
@@ -235,7 +367,7 @@ export default function AgronomistPanel({
           />
           <button
             onClick={() => sendMessage()}
-            disabled={!input.trim() || loading}
+            disabled={(!input.trim() && !pendingImage) || loading}
             className="w-9 h-9 bg-green-mid border-none rounded-lg cursor-pointer flex items-center justify-center transition-all shrink-0 hover:bg-green-dark disabled:bg-rule disabled:cursor-not-allowed"
           >
             <svg viewBox="0 0 20 20" className="w-3.5 h-3.5 fill-white">
