@@ -4,15 +4,27 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
+import { COURSE_AREAS } from "@/lib/areas";
 
 interface SprayApplication {
   id: string;
   course_id: string;
   applied_at: string;
   target: string;
+  area: string | null;
   product: string;
+  product_id: string | null;
   rei_hours: number;
+  quantity_used: number | null;
   notes: string | null;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  current_stock: number;
 }
 
 const DISEASE_TARGET_KEYWORDS = ["dollar spot", "pythium", "brown patch", "large patch"];
@@ -21,7 +33,8 @@ function isDiseaseTarget(target: string) {
   return DISEASE_TARGET_KEYWORDS.some((d) => t.includes(d));
 }
 
-const emptySprayForm = { target: "", product: "", applied_at: "", rei_hours: "", notes: "" };
+const emptySprayForm = { target: "", area: "", applied_at: "", notes: "" };
+const emptySprayLine = { productId: "", customName: "", rei_hours: "", quantity_used: "" };
 
 export default function DiseasePage() {
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -31,12 +44,14 @@ export default function DiseasePage() {
   const [nAppliedYtd, setNAppliedYtd] = useState<number | null>(null);
   const [nTarget, setNTarget] = useState<number | null>(null);
   const [sprays, setSprays] = useState<SprayApplication[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sprayError, setSprayError] = useState<string | null>(null);
   const [showAddSpray, setShowAddSpray] = useState(false);
   const [addSprayForm, setAddSprayForm] = useState(emptySprayForm);
+  const [sprayLines, setSprayLines] = useState([{ ...emptySprayLine }]);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -61,7 +76,7 @@ export default function DiseasePage() {
       setGrassType(course?.grass_type ?? "");
 
       const fiscalYear = new Date().getFullYear();
-      const [{ data: program }, { data: apps }, { data: sprayRows }] = await Promise.all([
+      const [{ data: program }, { data: apps }, { data: sprayRows }, { data: prods }] = await Promise.all([
         supabase
           .from("fertility_programs")
           .select("annual_n_target")
@@ -78,10 +93,18 @@ export default function DiseasePage() {
           .select("*")
           .eq("course_id", context.courseId)
           .order("applied_at", { ascending: false }),
+        supabase
+          .from("products")
+          .select("id, name, category, unit, current_stock")
+          .eq("course_id", context.courseId)
+          .eq("is_active", true)
+          .in("category", ["fungicide", "other"])
+          .order("name"),
       ]);
       setNTarget(program ? Number(program.annual_n_target) : null);
       setNAppliedYtd((apps ?? []).reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0));
       setSprays((sprayRows ?? []).filter((s) => isDiseaseTarget(s.target)));
+      setProducts(prods ?? []);
 
       try {
         const res = await fetch("/api/weather");
@@ -105,30 +128,65 @@ export default function DiseasePage() {
     return Math.floor((now - lastMs) / 86400000);
   }, [sprays, now]);
 
+  function updateSprayLine(index: number, patch: Partial<typeof emptySprayLine>) {
+    setSprayLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  function addSprayLine() {
+    setSprayLines((prev) => [...prev, { ...emptySprayLine }]);
+  }
+
+  function removeSprayLine(index: number) {
+    setSprayLines((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }
+
   async function handleAddSpray(e: React.FormEvent) {
     e.preventDefault();
-    if (!courseId || !addSprayForm.target || !addSprayForm.product) return;
+    const validLines = sprayLines.filter((l) => l.productId || l.customName);
+    if (!courseId || !addSprayForm.target || !addSprayForm.area || validLines.length === 0) return;
     setSaving(true);
     setSprayError(null);
     const supabase = createClient();
-    const { data, error: insertError } = await supabase
-      .from("pest_applications")
-      .insert({
+    const appliedAt = addSprayForm.applied_at ? new Date(addSprayForm.applied_at).toISOString() : new Date().toISOString();
+
+    const rows = validLines.map((l) => {
+      const product = products.find((p) => p.id === l.productId);
+      return {
         course_id: courseId,
-        applied_at: addSprayForm.applied_at ? new Date(addSprayForm.applied_at).toISOString() : new Date().toISOString(),
+        applied_at: appliedAt,
         target: addSprayForm.target,
-        product: addSprayForm.product,
-        rei_hours: addSprayForm.rei_hours ? parseInt(addSprayForm.rei_hours) : 0,
+        area: addSprayForm.area,
+        product: product ? product.name : l.customName,
+        product_id: product ? product.id : null,
+        rei_hours: l.rei_hours ? parseInt(l.rei_hours) : 0,
+        quantity_used: product && l.quantity_used ? parseFloat(l.quantity_used) : null,
         notes: addSprayForm.notes || null,
-      })
-      .select()
-      .single();
+      };
+    });
+
+    const { data, error: insertError } = await supabase.from("pest_applications").insert(rows).select();
 
     if (insertError) {
       setSprayError(insertError.message);
     } else if (data) {
-      setSprays((prev) => [...prev, data].sort((a, b) => b.applied_at.localeCompare(a.applied_at)));
+      setSprays((prev) => [...prev, ...data].sort((a, b) => b.applied_at.localeCompare(a.applied_at)));
+
+      for (const line of validLines) {
+        const product = products.find((p) => p.id === line.productId);
+        if (product && line.quantity_used) {
+          const newStock = Number(product.current_stock) - parseFloat(line.quantity_used);
+          const { error: stockError } = await supabase
+            .from("products")
+            .update({ current_stock: newStock })
+            .eq("id", product.id);
+          if (!stockError) {
+            setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
+          }
+        }
+      }
+
       setAddSprayForm(emptySprayForm);
+      setSprayLines([{ ...emptySprayLine }]);
       setShowAddSpray(false);
       setNow(Date.now());
     }
@@ -410,66 +468,138 @@ export default function DiseasePage() {
         </div>
 
         {showAddSpray && (
-          <form onSubmit={handleAddSpray} className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
-              <input
-                type="text"
-                required
-                list="disease-target-suggestions"
-                value={addSprayForm.target}
-                onChange={(e) => setAddSprayForm({ ...addSprayForm, target: e.target.value })}
-                placeholder="Dollar Spot"
-                className="w-40 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-              <datalist id="disease-target-suggestions">
-                <option value="Dollar Spot" />
-                <option value="Pythium Blight" />
-                <option value="Brown Patch" />
-                <option value="Large Patch" />
-              </datalist>
+          <form onSubmit={handleAddSpray} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
+                <input
+                  type="text"
+                  required
+                  list="disease-target-suggestions"
+                  value={addSprayForm.target}
+                  onChange={(e) => setAddSprayForm({ ...addSprayForm, target: e.target.value })}
+                  placeholder="Dollar Spot"
+                  className="w-40 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+                <datalist id="disease-target-suggestions">
+                  <option value="Dollar Spot" />
+                  <option value="Pythium Blight" />
+                  <option value="Brown Patch" />
+                  <option value="Large Patch" />
+                </datalist>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Area</label>
+                <select
+                  required
+                  value={addSprayForm.area}
+                  onChange={(e) => setAddSprayForm({ ...addSprayForm, area: e.target.value })}
+                  className="w-36 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                >
+                  <option value="" disabled>
+                    Select area
+                  </option>
+                  {COURSE_AREAS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
+                <input
+                  type="datetime-local"
+                  value={addSprayForm.applied_at}
+                  onChange={(e) => setAddSprayForm({ ...addSprayForm, applied_at: e.target.value })}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
+                <input
+                  type="text"
+                  value={addSprayForm.notes}
+                  onChange={(e) => setAddSprayForm({ ...addSprayForm, notes: e.target.value })}
+                  placeholder="Full course, preventive rotation"
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Product</label>
-              <input
-                type="text"
-                required
-                value={addSprayForm.product}
-                onChange={(e) => setAddSprayForm({ ...addSprayForm, product: e.target.value })}
-                placeholder="Daconil Ultrex"
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">
+                Products <span className="text-mist font-normal normal-case">— log a tank mix in one pass</span>
+              </label>
+              {sprayLines.map((line, i) => {
+                const linkedProduct = products.find((p) => p.id === line.productId);
+                return (
+                  <div key={i} className="flex flex-wrap items-end gap-2">
+                    <select
+                      value={line.productId}
+                      onChange={(e) => updateSprayLine(i, { productId: e.target.value })}
+                      className="w-40 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    >
+                      <option value="">— Custom / not in directory —</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!line.productId && (
+                      <input
+                        required
+                        value={line.customName}
+                        onChange={(e) => updateSprayLine(i, { customName: e.target.value })}
+                        placeholder="Daconil Ultrex"
+                        className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                      />
+                    )}
+                    <input
+                      type="number"
+                      value={line.rei_hours}
+                      onChange={(e) => updateSprayLine(i, { rei_hours: e.target.value })}
+                      placeholder="REI hrs"
+                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    />
+                    {linkedProduct && (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={line.quantity_used}
+                        onChange={(e) => updateSprayLine(i, { quantity_used: e.target.value })}
+                        placeholder={`Qty used (${linkedProduct.unit})`}
+                        title={`Deducted from stock (currently ${linkedProduct.current_stock} ${linkedProduct.unit})`}
+                        className="w-32 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                      />
+                    )}
+                    {sprayLines.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSprayLine(i)}
+                        className="text-mist text-xs font-semibold hover:text-red"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addSprayLine}
+                className="self-start text-xs font-semibold text-green-mid hover:text-green-dark"
+              >
+                + Add Product
+              </button>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
-              <input
-                type="datetime-local"
-                value={addSprayForm.applied_at}
-                onChange={(e) => setAddSprayForm({ ...addSprayForm, applied_at: e.target.value })}
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">REI (hrs)</label>
-              <input
-                type="number"
-                value={addSprayForm.rei_hours}
-                onChange={(e) => setAddSprayForm({ ...addSprayForm, rei_hours: e.target.value })}
-                placeholder="12"
-                className="w-20 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
-              <input
-                type="text"
-                value={addSprayForm.notes}
-                onChange={(e) => setAddSprayForm({ ...addSprayForm, notes: e.target.value })}
-                placeholder="Full course, preventive rotation"
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-            </div>
-            <button type="submit" disabled={saving} className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50">
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="self-start px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+            >
               {saving ? "Saving..." : "Save"}
             </button>
           </form>
@@ -489,6 +619,7 @@ export default function DiseasePage() {
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Applied At</th>
                 <th className="text-left px-3 py-2.5 font-medium">Target</th>
+                <th className="text-left px-3 py-2.5 font-medium">Area</th>
                 <th className="text-left px-3 py-2.5 font-medium">Product</th>
                 <th className="text-left px-3 py-2.5 font-medium">REI</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
@@ -505,6 +636,7 @@ export default function DiseasePage() {
                   <tr key={s.id} className="border-b border-rule last:border-0">
                     <td className="px-5 py-2.5 text-mist">{new Date(s.applied_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td>
                     <td className="px-3 py-2.5 font-medium">{s.target}</td>
+                    <td className="px-3 py-2.5 text-mist">{s.area || "—"}</td>
                     <td className="px-3 py-2.5">{s.product}</td>
                     <td className="px-3 py-2.5 font-mono">{s.rei_hours}h</td>
                     <td className="px-3 py-2.5">
