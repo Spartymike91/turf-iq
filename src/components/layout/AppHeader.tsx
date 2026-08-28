@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -15,18 +15,36 @@ export default function AppHeader({
   isAdminView,
   planTier,
   allowedModules,
-  onToggleAgronomist,
 }: {
   courseName?: string;
   isPlatformAdmin?: boolean;
   isAdminView?: boolean;
   planTier?: PlanTier | null;
   allowedModules?: string[] | null;
-  onToggleAgronomist?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (accountMenuRef.current && !accountMenuRef.current.contains(e.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setAccountMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [accountMenuOpen]);
   // Admin View (inspecting a different customer's course) always sees every
   // tab. A platform admin using their own course is still gated normally.
   const bypassGating = !!isAdminView;
@@ -119,39 +137,39 @@ export default function AppHeader({
         </nav>
 
         <div className="flex items-center gap-2.5 py-2.5 shrink-0 ml-auto md:ml-0">
-          {onToggleAgronomist && (
+          <div className="relative" ref={accountMenuRef}>
             <button
-              onClick={onToggleAgronomist}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 bg-gradient-to-br from-green-mid to-green-forest border border-green-bright/40 rounded-lg text-white text-xs font-semibold cursor-pointer transition-all shadow-[0_2px_8px_rgba(45,106,79,0.35)] hover:from-green-dark hover:to-green-mid hover:shadow-[0_4px_16px_rgba(82,183,136,0.3)] hover:-translate-y-px whitespace-nowrap"
+              onClick={() => setAccountMenuOpen((v) => !v)}
+              className="flex items-center gap-1.5 text-[11px] text-white bg-white/10 border border-white/25 px-2.5 py-1 rounded-full font-medium whitespace-nowrap hover:bg-white/20 transition-colors"
             >
-              <span>🌿</span> <span className="hidden sm:inline">Ask the Agronomist </span>
-              <span className="text-[9px] font-bold bg-green-bright text-green-dark px-1.5 py-0.5 rounded font-mono tracking-wide">
-                AI
-              </span>
+              {courseName ? <>⛳ {courseName}</> : "👤 Account"}
+              <span className="text-[9px] opacity-70">▾</span>
             </button>
-          )}
-          {courseName && (
-            <Link
-              href="/course"
-              className="hidden sm:inline-block text-[11px] text-green-bright bg-green-bright/12 border border-green-bright/25 px-2.5 py-1 rounded-full font-medium whitespace-nowrap hover:bg-green-bright/20 transition-colors"
-            >
-              ⛳ {courseName}
-            </Link>
-          )}
-          {isPlatformAdmin && (
-            <Link
-              href="/admin"
-              className="hidden sm:inline-block text-[11px] text-white bg-white/10 border border-white/25 px-2.5 py-1 rounded-full font-medium whitespace-nowrap hover:bg-white/20 transition-colors"
-            >
-              ⚙ Admin
-            </Link>
-          )}
-          <button
-            onClick={handleLogout}
-            className="text-[11px] text-white/50 hover:text-white/80 px-2 py-1 transition-colors"
-          >
-            Sign out
-          </button>
+            {accountMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-48 bg-white border border-rule rounded-lg shadow-lg overflow-hidden z-50">
+                <Link
+                  href="/course"
+                  className="block px-3.5 py-2.5 text-xs text-ink hover:bg-chalk transition-colors"
+                >
+                  ⛳ Course Settings
+                </Link>
+                {isPlatformAdmin && (
+                  <Link
+                    href="/admin"
+                    className="block px-3.5 py-2.5 text-xs text-ink hover:bg-chalk transition-colors border-t border-rule"
+                  >
+                    ⚙ Admin Panel
+                  </Link>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="w-full text-left px-3.5 py-2.5 text-xs text-red hover:bg-chalk transition-colors border-t border-rule"
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

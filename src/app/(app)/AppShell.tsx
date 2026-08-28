@@ -137,7 +137,6 @@ export default function AppShell({
         isAdminView={isAdminView}
         planTier={planTier}
         allowedModules={allowedModules}
-        onToggleAgronomist={() => setAgronomistOpen(!agronomistOpen)}
       />
       <div className="flex flex-1 overflow-hidden">
         <main
@@ -191,6 +190,19 @@ export default function AppShell({
           onClose={() => setAgronomistOpen(false)}
         />
       </div>
+      {!agronomistOpen && (
+        <button
+          onClick={() => setAgronomistOpen(true)}
+          aria-label="Ask the Agronomist"
+          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 pl-4 pr-4 sm:pr-5 py-3.5 bg-gradient-to-br from-green-mid to-green-forest border border-green-bright/40 rounded-full text-white font-semibold cursor-pointer transition-all shadow-[0_4px_20px_rgba(45,106,79,0.45)] hover:from-green-dark hover:to-green-mid hover:shadow-[0_6px_28px_rgba(82,183,136,0.4)] hover:-translate-y-0.5"
+        >
+          <span className="text-xl leading-none">🌿</span>
+          <span className="hidden sm:inline text-sm whitespace-nowrap">Ask the Agronomist</span>
+          <span className="text-[9px] font-bold bg-green-bright text-green-dark px-1.5 py-0.5 rounded font-mono tracking-wide">
+            AI
+          </span>
+        </button>
+      )}
     </div>
   );
 }
