@@ -5,18 +5,31 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
+import { COURSE_AREAS } from "@/lib/areas";
 
 interface PestApplication {
   id: string;
   course_id: string;
   applied_at: string;
   target: string;
+  area: string | null;
   product: string;
+  product_id: string | null;
   rei_hours: number;
+  quantity_used: number | null;
   notes: string | null;
 }
 
-const emptyForm = { target: "", product: "", applied_at: "", rei_hours: "", notes: "" };
+interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  current_stock: number;
+}
+
+const emptyForm = { target: "", area: "", applied_at: "", notes: "" };
+const emptyLine = { productId: "", customName: "", rei_hours: "", quantity_used: "" };
 
 function toLocalDatetimeInput(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -29,11 +42,13 @@ export default function PestWeedPage() {
   const [grassType, setGrassType] = useState("");
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [applications, setApplications] = useState<PestApplication[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState(emptyForm);
+  const [lines, setLines] = useState([{ ...emptyLine }]);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -67,6 +82,15 @@ export default function PestWeedPage() {
         .order("applied_at", { ascending: false });
       setApplications(apps ?? []);
 
+      const { data: prods } = await supabase
+        .from("products")
+        .select("id, name, category, unit, current_stock")
+        .eq("course_id", context.courseId)
+        .eq("is_active", true)
+        .in("category", ["fungicide", "herbicide", "insecticide", "other"])
+        .order("name");
+      setProducts(prods ?? []);
+
       try {
         const res = await fetch("/api/weather");
         const data = await res.json();
@@ -81,32 +105,65 @@ export default function PestWeedPage() {
   }, []);
 
 
+  function updateLine(index: number, patch: Partial<typeof emptyLine>) {
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  function addLine() {
+    setLines((prev) => [...prev, { ...emptyLine }]);
+  }
+
+  function removeLine(index: number) {
+    setLines((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!courseId || !addForm.target || !addForm.product) return;
+    const validLines = lines.filter((l) => l.productId || l.customName);
+    if (!courseId || !addForm.target || !addForm.area || validLines.length === 0) return;
     setSaving(true);
     setError(null);
     const supabase = createClient();
-    const { data, error: insertError } = await supabase
-      .from("pest_applications")
-      .insert({
+    const appliedAt = addForm.applied_at ? new Date(addForm.applied_at).toISOString() : new Date().toISOString();
+
+    const rows = validLines.map((l) => {
+      const product = products.find((p) => p.id === l.productId);
+      return {
         course_id: courseId,
-        applied_at: addForm.applied_at ? new Date(addForm.applied_at).toISOString() : new Date().toISOString(),
+        applied_at: appliedAt,
         target: addForm.target,
-        product: addForm.product,
-        rei_hours: addForm.rei_hours ? parseInt(addForm.rei_hours) : 0,
+        area: addForm.area,
+        product: product ? product.name : l.customName,
+        product_id: product ? product.id : null,
+        rei_hours: l.rei_hours ? parseInt(l.rei_hours) : 0,
+        quantity_used: product && l.quantity_used ? parseFloat(l.quantity_used) : null,
         notes: addForm.notes || null,
-      })
-      .select()
-      .single();
+      };
+    });
+
+    const { data, error: insertError } = await supabase.from("pest_applications").insert(rows).select();
 
     if (insertError) {
       setError(insertError.message);
     } else if (data) {
-      setApplications((prev) =>
-        [...prev, data].sort((a, b) => b.applied_at.localeCompare(a.applied_at))
-      );
+      setApplications((prev) => [...prev, ...data].sort((a, b) => b.applied_at.localeCompare(a.applied_at)));
+
+      for (const line of validLines) {
+        const product = products.find((p) => p.id === line.productId);
+        if (product && line.quantity_used) {
+          const newStock = Number(product.current_stock) - parseFloat(line.quantity_used);
+          const { error: stockError } = await supabase
+            .from("products")
+            .update({ current_stock: newStock })
+            .eq("id", product.id);
+          if (!stockError) {
+            setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
+          }
+        }
+      }
+
       setAddForm(emptyForm);
+      setLines([{ ...emptyLine }]);
       setShowAdd(false);
       setNow(Date.now());
     }
@@ -204,60 +261,132 @@ export default function PestWeedPage() {
         </div>
 
         {showAdd && (
-          <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
-              <input
-                type="text"
-                required
-                value={addForm.target}
-                onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
-                placeholder="Crabgrass"
-                className="w-32 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
+          <form onSubmit={handleAdd} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
+                <input
+                  type="text"
+                  required
+                  value={addForm.target}
+                  onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
+                  placeholder="Crabgrass"
+                  className="w-32 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Area</label>
+                <select
+                  required
+                  value={addForm.area}
+                  onChange={(e) => setAddForm({ ...addForm, area: e.target.value })}
+                  className="w-36 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                >
+                  <option value="" disabled>
+                    Select area
+                  </option>
+                  {COURSE_AREAS.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
+                <input
+                  type="datetime-local"
+                  value={addForm.applied_at}
+                  onChange={(e) => setAddForm({ ...addForm, applied_at: e.target.value })}
+                  placeholder={toLocalDatetimeInput(new Date())}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
+                <input
+                  type="text"
+                  value={addForm.notes}
+                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+                  placeholder="Post-mow"
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Product</label>
-              <input
-                type="text"
-                required
-                value={addForm.product}
-                onChange={(e) => setAddForm({ ...addForm, product: e.target.value })}
-                placeholder="Dimension 2EW"
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">
+                Products <span className="text-mist font-normal normal-case">— log a tank mix in one pass</span>
+              </label>
+              {lines.map((line, i) => {
+                const linkedProduct = products.find((p) => p.id === line.productId);
+                return (
+                  <div key={i} className="flex flex-wrap items-end gap-2">
+                    <select
+                      value={line.productId}
+                      onChange={(e) => updateLine(i, { productId: e.target.value })}
+                      className="w-40 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    >
+                      <option value="">— Custom / not in directory —</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!line.productId && (
+                      <input
+                        required
+                        value={line.customName}
+                        onChange={(e) => updateLine(i, { customName: e.target.value })}
+                        placeholder="Dimension 2EW"
+                        className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                      />
+                    )}
+                    <input
+                      type="number"
+                      value={line.rei_hours}
+                      onChange={(e) => updateLine(i, { rei_hours: e.target.value })}
+                      placeholder="REI hrs"
+                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    />
+                    {linkedProduct && (
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={line.quantity_used}
+                        onChange={(e) => updateLine(i, { quantity_used: e.target.value })}
+                        placeholder={`Qty used (${linkedProduct.unit})`}
+                        title={`Deducted from stock (currently ${linkedProduct.current_stock} ${linkedProduct.unit})`}
+                        className="w-32 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                      />
+                    )}
+                    {lines.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(i)}
+                        className="text-mist text-xs font-semibold hover:text-red"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addLine}
+                className="self-start text-xs font-semibold text-green-mid hover:text-green-dark"
+              >
+                + Add Product
+              </button>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
-              <input
-                type="datetime-local"
-                value={addForm.applied_at}
-                onChange={(e) => setAddForm({ ...addForm, applied_at: e.target.value })}
-                placeholder={toLocalDatetimeInput(new Date())}
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">REI (hrs)</label>
-              <input
-                type="number"
-                value={addForm.rei_hours}
-                onChange={(e) => setAddForm({ ...addForm, rei_hours: e.target.value })}
-                placeholder="24"
-                className="w-20 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
-              <input
-                type="text"
-                value={addForm.notes}
-                onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
-                placeholder="Fairways, post-mow"
-                className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-              />
-            </div>
-            <button type="submit" disabled={saving} className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50">
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="self-start px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+            >
               {saving ? "Saving..." : "Save"}
             </button>
           </form>
@@ -275,6 +404,7 @@ export default function PestWeedPage() {
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Applied At</th>
                 <th className="text-left px-3 py-2.5 font-medium">Target</th>
+                <th className="text-left px-3 py-2.5 font-medium">Area</th>
                 <th className="text-left px-3 py-2.5 font-medium">Product</th>
                 <th className="text-left px-3 py-2.5 font-medium">REI</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
@@ -291,6 +421,7 @@ export default function PestWeedPage() {
                   <tr key={a.id} className="border-b border-rule last:border-0">
                     <td className="px-5 py-2.5 text-mist">{new Date(a.applied_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td>
                     <td className="px-3 py-2.5 font-medium">{a.target}</td>
+                    <td className="px-3 py-2.5 text-mist">{a.area || "—"}</td>
                     <td className="px-3 py-2.5">{a.product}</td>
                     <td className="px-3 py-2.5 font-mono">{a.rei_hours}h</td>
                     <td className="px-3 py-2.5">

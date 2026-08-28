@@ -1447,3 +1447,22 @@ CREATE POLICY "Platform admins can insert products when edit-unlocked"
   ON products FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
 CREATE POLICY "Platform admins can update products when edit-unlocked"
   ON products FOR UPDATE USING (public.is_platform_admin() AND public.is_admin_edit_elevated());
+
+
+-- ============================================
+-- MULTI-PRODUCT APPLICATION LOGGING
+-- ============================================
+-- Phase 2 of the product inventory work: link applications to the product
+-- directory (optional — free-text product name still works for anything not
+-- in the directory yet) and let one Log Application submission cover several
+-- products at once, sharing the same zone/area/date/target. product TEXT
+-- stays as a denormalized snapshot so historical rows keep displaying
+-- correctly even if a linked product is later renamed or removed.
+-- quantity_used (in the product's own inventory unit) is optional and, when
+-- set on a directory-linked line, decrements that product's current_stock.
+ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
+ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS quantity_used NUMERIC(10,2);
+
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS quantity_used NUMERIC(10,2);
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS area TEXT;
