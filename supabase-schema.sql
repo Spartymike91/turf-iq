@@ -1385,3 +1385,16 @@ CREATE POLICY "Platform admins can view course_rainfall_normals"
 CREATE POLICY "Platform admins can insert course_rainfall_normals when edit-unlocked"
   ON course_rainfall_normals FOR INSERT WITH CHECK (public.is_platform_admin() AND public.is_admin_edit_elevated());
 
+
+
+-- ============================================
+-- CUSTOM MEMBER TITLES
+-- ============================================
+-- course_members.role stays the fixed permission tier (owner/super/
+-- assistant/crew_lead/crew) that actually governs access — this is a
+-- purely cosmetic free-text label a superintendent can set per person
+-- (e.g. "Equipment Manager", "Head Mechanic") shown in place of the
+-- generic role name in the Team roster. Scoping what an "Equipment
+-- Manager" can actually touch is still done via the existing
+-- allowed_modules checklist on their real role, not a new permission tier.
+ALTER TABLE course_members ADD COLUMN IF NOT EXISTS title TEXT;

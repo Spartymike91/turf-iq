@@ -15,6 +15,7 @@ interface Member {
   email: string | null;
   full_name: string | null;
   allowed_modules: string[] | null;
+  title: string | null;
 }
 
 const ALL_MODULE_SLUGS = ALL_MODULES.map((m) => m.slug);
@@ -45,11 +46,13 @@ export default function TeamPage() {
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<Role>("crew");
+  const [inviteTitle, setInviteTitle] = useState("");
   const [inviteAllowedModules, setInviteAllowedModules] = useState<string[]>(ALL_MODULE_SLUGS);
   const [inviting, setInviting] = useState(false);
 
   const [editingAccessId, setEditingAccessId] = useState<string | null>(null);
   const [editAccessModules, setEditAccessModules] = useState<string[]>(ALL_MODULE_SLUGS);
+  const [editTitle, setEditTitle] = useState("");
   const [savingAccess, setSavingAccess] = useState(false);
 
   async function load() {
@@ -81,7 +84,7 @@ export default function TeamPage() {
             .eq("user_id", user.id)
             .eq("course_id", context.courseId)
             .single(),
-      supabase.from("course_members").select("id, user_id, role, allowed_modules").eq("course_id", context.courseId),
+      supabase.from("course_members").select("id, user_id, role, allowed_modules, title").eq("course_id", context.courseId),
     ]);
     setCourseName(course?.name ?? "");
     if (!context.isAdminView) {
@@ -101,6 +104,7 @@ export default function TeamPage() {
       email: profileById.get(m.user_id)?.email ?? null,
       full_name: profileById.get(m.user_id)?.full_name ?? null,
       allowed_modules: m.allowed_modules,
+      title: m.title,
     }));
     merged.sort((a, b) => ALL_ROLES.indexOf(a.role) - ALL_ROLES.indexOf(b.role));
 
@@ -146,6 +150,7 @@ export default function TeamPage() {
           role: inviteRole,
           full_name: inviteName || undefined,
           allowed_modules: isRestricted ? inviteAllowedModules : null,
+          title: inviteTitle || undefined,
         }),
       });
       const data = await res.json();
@@ -160,6 +165,7 @@ export default function TeamPage() {
         setInviteName("");
         setInviteEmail("");
         setInviteRole("crew");
+        setInviteTitle("");
         setInviteAllowedModules(ALL_MODULE_SLUGS);
         setShowInviteForm(false);
         await load();
@@ -179,6 +185,7 @@ export default function TeamPage() {
   function startEditAccess(member: Member) {
     setEditingAccessId(member.id);
     setEditAccessModules(member.allowed_modules ?? ALL_MODULE_SLUGS);
+    setEditTitle(member.title ?? "");
   }
 
   function toggleEditAccessModule(slug: string) {
@@ -191,16 +198,28 @@ export default function TeamPage() {
     setSavingAccess(true);
     setError(null);
     const isRestricted = editAccessModules.length < ALL_MODULE_SLUGS.length;
+    const resolvedTitle = editTitle.trim() || null;
     const supabase = createClient();
     const { error: updateError } = await supabase
       .from("course_members")
-      .update({ allowed_modules: isRestricted ? editAccessModules : null })
+      .update({
+        allowed_modules: JUNIOR_ROLES.includes(member.role) && isRestricted ? editAccessModules : null,
+        title: resolvedTitle,
+      })
       .eq("id", member.id);
     if (updateError) {
       setError(updateError.message);
     } else {
       setMembers((prev) =>
-        prev.map((m) => (m.id === member.id ? { ...m, allowed_modules: isRestricted ? editAccessModules : null } : m))
+        prev.map((m) =>
+          m.id === member.id
+            ? {
+                ...m,
+                allowed_modules: JUNIOR_ROLES.includes(member.role) && isRestricted ? editAccessModules : null,
+                title: resolvedTitle,
+              }
+            : m
+        )
       );
       setEditingAccessId(null);
     }
@@ -336,6 +355,18 @@ export default function TeamPage() {
                   ))}
                 </select>
               </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">
+                  Title <span className="text-mist font-normal normal-case">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={inviteTitle}
+                  onChange={(e) => setInviteTitle(e.target.value)}
+                  placeholder="Equipment Manager"
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={inviting}
@@ -387,7 +418,7 @@ export default function TeamPage() {
               {members.map((m) => {
                 const isSelf = m.user_id === myUserId;
                 const manageable = canManageRow(m);
-                const restrictable = manageable && !isSelf && JUNIOR_ROLES.includes(m.role);
+                const editableRow = manageable && !isSelf;
                 return (
                   <Fragment key={m.id}>
                   <tr className="border-b border-rule last:border-0">
@@ -396,32 +427,35 @@ export default function TeamPage() {
                     </td>
                     <td className="px-3 py-2.5 text-mist">{m.email ?? "—"}</td>
                     <td className="px-3 py-2.5">
-                      {manageable && !isSelf ? (
-                        <select
-                          value={m.role}
-                          onChange={(e) => handleRoleChange(m, e.target.value as Role)}
-                          className="px-2 py-1 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                        >
-                          {(isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES).map((r) => (
-                            <option key={r} value={r}>
-                              {ROLE_LABEL[r]}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-[10px] font-mono uppercase tracking-wide bg-green-pale text-green-mid px-1.5 py-0.5 rounded">
-                          {ROLE_LABEL[m.role]}
-                        </span>
-                      )}
+                      <div className="flex flex-col gap-1">
+                        {m.title && <span className="text-xs font-medium text-ink">{m.title}</span>}
+                        {manageable && !isSelf ? (
+                          <select
+                            value={m.role}
+                            onChange={(e) => handleRoleChange(m, e.target.value as Role)}
+                            className="px-2 py-1 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid w-fit"
+                          >
+                            {(isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES).map((r) => (
+                              <option key={r} value={r}>
+                                {ROLE_LABEL[r]}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-[10px] font-mono uppercase tracking-wide bg-green-pale text-green-mid px-1.5 py-0.5 rounded w-fit">
+                            {ROLE_LABEL[m.role]}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     {canManage && (
                       <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                        {restrictable && (
+                        {editableRow && (
                           <button
                             onClick={() => (editingAccessId === m.id ? setEditingAccessId(null) : startEditAccess(m))}
                             className="text-mist text-xs font-semibold hover:text-green-dark mr-3"
                           >
-                            {editingAccessId === m.id ? "Cancel" : m.allowed_modules ? "Access (restricted)" : "Access"}
+                            {editingAccessId === m.id ? "Cancel" : "Edit"}
                           </button>
                         )}
                         {manageable && !isSelf && (
@@ -438,29 +472,46 @@ export default function TeamPage() {
                   {editingAccessId === m.id && (
                     <tr className="border-b border-rule last:border-0 bg-chalk">
                       <td colSpan={canManage ? 4 : 3} className="px-5 py-4">
-                        <div className="flex flex-col gap-2">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-mist">
-                            Visible tabs for {m.full_name || m.email}
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wide text-mist">
+                              Title for {m.full_name || m.email}{" "}
+                              <span className="font-normal normal-case">(optional — shown instead of the role name above)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              placeholder="Equipment Manager"
+                              className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10 max-w-xs"
+                            />
                           </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                            {ALL_MODULES.map((mod) => (
-                              <label key={mod.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={editAccessModules.includes(mod.slug)}
-                                  onChange={() => toggleEditAccessModule(mod.slug)}
-                                />
-                                <span>{mod.icon} {mod.label}</span>
-                              </label>
-                            ))}
-                          </div>
+                          {JUNIOR_ROLES.includes(m.role) && (
+                            <div className="flex flex-col gap-1.5">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-mist">
+                                Visible tabs
+                              </div>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                                {ALL_MODULES.map((mod) => (
+                                  <label key={mod.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={editAccessModules.includes(mod.slug)}
+                                      onChange={() => toggleEditAccessModule(mod.slug)}
+                                    />
+                                    <span>{mod.icon} {mod.label}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           <div>
                             <button
                               onClick={() => handleSaveAccess(m)}
                               disabled={savingAccess}
                               className="px-3 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
                             >
-                              {savingAccess ? "Saving..." : "Save Access"}
+                              {savingAccess ? "Saving..." : "Save"}
                             </button>
                           </div>
                         </div>

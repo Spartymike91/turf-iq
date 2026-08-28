@@ -17,11 +17,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { email, role, full_name, allowed_modules } = (await request.json()) as {
+  const { email, role, full_name, allowed_modules, title } = (await request.json()) as {
     email?: string;
     role?: Role;
     full_name?: string;
     allowed_modules?: string[] | null;
+    title?: string | null;
   };
   if (!email || !role) {
     return NextResponse.json({ error: "Email and role are required." }, { status: 400 });
@@ -29,6 +30,8 @@ export async function POST(request: NextRequest) {
   // Owners/superintendents are always unrestricted, regardless of what a
   // crafted request sends — the checklist only ever applies to junior roles.
   const resolvedAllowedModules = JUNIOR_ROLES.includes(role) ? allowed_modules ?? null : null;
+  // Purely cosmetic — the role above is what actually governs access.
+  const resolvedTitle = title?.trim() || null;
 
   const context = await resolveCourseIdServer(supabase, user);
   if (!context) {
@@ -104,6 +107,7 @@ export async function POST(request: NextRequest) {
       user_id: existingProfile.id,
       role,
       allowed_modules: resolvedAllowedModules,
+      title: resolvedTitle,
     });
     if (insertError) {
       return NextResponse.json({ error: insertError.message }, { status: 400 });
@@ -159,6 +163,7 @@ export async function POST(request: NextRequest) {
     user_id: linkData.user.id,
     role,
     allowed_modules: resolvedAllowedModules,
+    title: resolvedTitle,
   });
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 400 });
