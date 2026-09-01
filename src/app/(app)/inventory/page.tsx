@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
+import CurrencyInput from "@/components/ui/CurrencyInput";
 
 type Category = "fertilizer" | "fungicide" | "herbicide" | "insecticide" | "other";
 
@@ -308,13 +309,10 @@ export default function InventoryPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Unit Cost</label>
-              <input
-                type="number"
-                step="0.01"
+              <CurrencyInput
                 value={addForm.unit_cost}
-                onChange={(e) => setAddForm({ ...addForm, unit_cost: e.target.value })}
-                placeholder="0.00"
-                className="w-24 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                onChange={(v) => setAddForm({ ...addForm, unit_cost: v })}
+                className="w-24"
               />
             </div>
             <div className="flex flex-col gap-1.5">
@@ -416,13 +414,12 @@ export default function InventoryPage() {
                             className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
                             placeholder="Stock"
                           />
-                          <input
-                            type="number"
-                            step="0.01"
+                          <CurrencyInput
                             value={editForm.unit_cost}
-                            onChange={(e) => setEditForm({ ...editForm, unit_cost: e.target.value })}
-                            className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                            onChange={(v) => setEditForm({ ...editForm, unit_cost: v })}
                             placeholder="Unit cost"
+                            compact
+                            className="w-20"
                           />
                           <input
                             type="number"
