@@ -208,7 +208,7 @@ export default function DiseaseRiskSection() {
           try {
             await recordApplicationExpense(supabase, {
               courseId,
-              categoryName: "Chemicals",
+              categoryName: "Fungicides",
               amount: Number(row.cost),
               description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
               expenseDate: row.applied_at.slice(0, 10),

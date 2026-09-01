@@ -192,7 +192,7 @@ export default function InsectsSection() {
           try {
             await recordApplicationExpense(supabase, {
               courseId,
-              categoryName: "Chemicals",
+              categoryName: "Herbicides & Insecticides",
               amount: Number(row.cost),
               description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
               expenseDate: row.applied_at.slice(0, 10),

@@ -26,10 +26,10 @@ async function findOrCreateCategory(
 
 /**
  * Records a budget expense for a logged product application. "Fertilizer"
- * for fertilizer_applications, "Chemicals" for pest_applications (shared by
- * the Pest & Weed and Disease Risk pages, which both write to that table) —
- * mirrors the auto-created "Labor"/"Materials & Supplies" categories from
- * task completion.
+ * for fertilizer_applications; pest_applications route to "Fungicides"
+ * (Disease Risk) or "Herbicides & Insecticides" (Weed, Insects) — mirrors
+ * the auto-created "Labor"/"Materials & Supplies" categories from task
+ * completion.
  *
  * Best-effort: throws on failure, but callers treat this the same as the
  * stock-decrement follow-up — a budget-recording hiccup shouldn't undo the
@@ -39,7 +39,7 @@ export async function recordApplicationExpense(
   supabase: SupabaseClient,
   params: {
     courseId: string;
-    categoryName: "Fertilizer" | "Chemicals";
+    categoryName: "Fertilizer" | "Fungicides" | "Herbicides & Insecticides";
     amount: number;
     description: string;
     expenseDate: string; // YYYY-MM-DD
