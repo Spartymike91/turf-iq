@@ -8,6 +8,7 @@ import AlertBanner from "@/components/ui/AlertBanner";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
 import { printSection } from "@/lib/printSection";
+import QuantityInput from "@/components/ui/QuantityInput";
 
 interface FertilizerApplication {
   id: string;
@@ -602,14 +603,12 @@ export default function FertilitySection() {
                       className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                     />
                     {linkedProduct && (
-                      <input
-                        type="number"
-                        step="0.01"
+                      <QuantityInput
                         value={line.quantity_used}
-                        onChange={(e) => updateAppLine(i, { quantity_used: e.target.value })}
-                        placeholder={`Qty used (${linkedProduct.unit})`}
+                        onChange={(v) => updateAppLine(i, { quantity_used: v })}
+                        unit={linkedProduct.unit}
                         title={`Deducted from stock (currently ${linkedProduct.current_stock} ${linkedProduct.unit})`}
-                        className="w-32 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                        className="w-32"
                       />
                     )}
                     {appLines.length > 1 && (
