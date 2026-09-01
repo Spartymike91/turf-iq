@@ -76,3 +76,25 @@ body {
 .animate-slide-right {
   animation: slideRight 0.3s ease;
 }
+
+/* Printing a single record card (e.g. an application log) without the
+   surrounding nav/sidebar/forms — printSection() in src/lib/printSection.ts
+   toggles these classes right before calling window.print(). */
+@media print {
+  body.printing-section * {
+    visibility: hidden;
+  }
+  body.printing-section .print-target,
+  body.printing-section .print-target * {
+    visibility: visible;
+  }
+  body.printing-section .print-target {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  body.printing-section .no-print {
+    display: none !important;
+  }
+}

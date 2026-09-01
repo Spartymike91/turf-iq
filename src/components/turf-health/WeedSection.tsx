@@ -4,9 +4,11 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
-import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
+import { getCrabgrassStatus } from "@/lib/pestModels";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
+import { isWeedApplication } from "@/lib/pestCategorization";
+import { printSection } from "@/lib/printSection";
 
 interface PestApplication {
   id: string;
@@ -39,7 +41,7 @@ function toLocalDatetimeInput(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function PestWeedSection() {
+export default function WeedSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [grassType, setGrassType] = useState("");
@@ -90,7 +92,7 @@ export default function PestWeedSection() {
         .select("id, name, category, unit, unit_cost, current_stock")
         .eq("course_id", context.courseId)
         .eq("is_active", true)
-        .in("category", ["fungicide", "herbicide", "insecticide", "other"])
+        .in("category", ["herbicide", "other"])
         .order("name");
       setProducts(prods ?? []);
 
@@ -99,7 +101,7 @@ export default function PestWeedSection() {
         const data = await res.json();
         if (res.ok) setWeather(data);
       } catch {
-        // pest/weed page still works without weather (spray log is independent)
+        // weed page still works without weather (spray log is independent)
       }
 
       setChecking(false);
@@ -107,6 +109,7 @@ export default function PestWeedSection() {
     load();
   }, []);
 
+  const weedApplications = applications.filter((a) => isWeedApplication(a, products));
 
   function updateLine(index: number, patch: Partial<typeof emptyLine>) {
     setLines((prev) =>
@@ -192,7 +195,7 @@ export default function PestWeedSection() {
               pestApplicationId: row.id,
             });
           } catch (expenseError) {
-            console.error("Failed to record pest application expense:", expenseError);
+            console.error("Failed to record weed application expense:", expenseError);
           }
         }
       }
@@ -223,30 +226,19 @@ export default function PestWeedSection() {
     return (
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
         <div className="font-serif text-xl text-green-dark mb-2">No course found</div>
-        <div className="text-sm text-mist">Set up your course profile before tracking pest &amp; weed timing.</div>
+        <div className="text-sm text-mist">Set up your course profile before tracking weed timing.</div>
       </div>
     );
   }
 
   const gdd = weather?.agronomics.gddSeasonToDate ?? null;
   const crabgrass = gdd != null ? getCrabgrassStatus(gdd) : null;
-  const whiteGrub = gdd != null ? getWhiteGrubStatus(gdd) : null;
-  const showAbw = isCoolSeasonGrass(grassType);
-  const abw = showAbw && gdd != null ? getAbwStatus(gdd) : null;
-
-  const cards = [
-    crabgrass && { name: "Crabgrass", badge: "MODEL", badgeColor: "bg-green-mid", status: crabgrass },
-    whiteGrub && { name: "White Grub", badge: "GUIDANCE RANGE", badgeColor: "bg-amber", status: whiteGrub },
-    abw && { name: "Annual Bluegrass Weevil", badge: "MODEL", badgeColor: "bg-green-mid", status: abw },
-  ].filter((c): c is { name: string; badge: string; badgeColor: string; status: ReturnType<typeof getCrabgrassStatus> } => Boolean(c));
 
   return (
     <>
       <div>
-        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
-          Pest &amp; Weed Control
-        </div>
-        <div className="font-serif text-2xl text-green-dark">Integrated Pest Management</div>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Weed Control</div>
+        <div className="font-serif text-2xl text-green-dark">Weed Management</div>
         <div className="text-[13px] text-mist mt-1">
           {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {grassType || "—"} · {courseName}
         </div>
@@ -254,29 +246,22 @@ export default function PestWeedSection() {
 
       {!weather && (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
-          <div className="text-sm text-mist">GDD-based pest timing needs live weather data, which is unavailable right now.</div>
+          <div className="text-sm text-mist">GDD-based weed timing needs live weather data, which is unavailable right now.</div>
         </div>
       )}
 
-      {cards.length > 0 && (
-        <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))` }}>
-          {cards.map((c) => (
-            <div
-              key={c.name}
-              className={`bg-white border-[1.5px] rounded-lg p-3.5 ${c.status.elevated ? "border-amber" : "border-rule"}`}
-            >
-              <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                <span className="text-[11px] font-semibold text-ink">{c.name}</span>
-                <span className={`text-[8px] font-bold px-1 py-0.5 rounded text-white font-mono ${c.badgeColor}`}>
-                  {c.badge}
-                </span>
-              </div>
-              <div className={`text-sm font-semibold mb-1 ${c.status.elevated ? "text-amber" : "text-green-mid"}`}>
-                {c.status.stage}
-              </div>
-              <div className="text-[11px] text-mist leading-relaxed">{c.status.detail}</div>
-            </div>
-          ))}
+      {crabgrass && (
+        <div
+          className={`bg-white border-[1.5px] rounded-lg p-3.5 ${crabgrass.elevated ? "border-amber" : "border-rule"}`}
+        >
+          <div className="flex items-center justify-between gap-1.5 mb-1.5">
+            <span className="text-[11px] font-semibold text-ink">Crabgrass</span>
+            <span className="text-[8px] font-bold px-1 py-0.5 rounded text-white font-mono bg-green-mid">MODEL</span>
+          </div>
+          <div className={`text-sm font-semibold mb-1 ${crabgrass.elevated ? "text-amber" : "text-green-mid"}`}>
+            {crabgrass.stage}
+          </div>
+          <div className="text-[11px] text-mist leading-relaxed">{crabgrass.detail}</div>
         </div>
       )}
 
@@ -284,19 +269,27 @@ export default function PestWeedSection() {
         <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-2 text-xs text-red">{error}</div>
       )}
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+      <div id="weed-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Application Log — REI Compliance</div>
-          <button
-            onClick={() => setShowAdd((v) => !v)}
-            className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
-          >
-            {showAdd ? "Cancel" : "+ Log Application"}
-          </button>
+          <div className="flex items-center gap-2 no-print">
+            <button
+              onClick={() => printSection("weed-application-log")}
+              className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
+            >
+              Print
+            </button>
+            <button
+              onClick={() => setShowAdd((v) => !v)}
+              className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
+            >
+              {showAdd ? "Cancel" : "+ Log Application"}
+            </button>
+          </div>
         </div>
 
         {showAdd && (
-          <form onSubmit={handleAdd} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+          <form onSubmit={handleAdd} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
@@ -436,10 +429,10 @@ export default function PestWeedSection() {
           </form>
         )}
 
-        {applications.length === 0 ? (
+        {weedApplications.length === 0 ? (
           <div className="p-10 text-center">
-            <div className="text-4xl mb-3">🧪</div>
-            <div className="text-sm text-mist">No applications logged yet. Add your first one above.</div>
+            <div className="text-4xl mb-3">🌿</div>
+            <div className="text-sm text-mist">No weed applications logged yet. Add your first one above.</div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -454,11 +447,11 @@ export default function PestWeedSection() {
                 <th className="text-left px-3 py-2.5 font-medium">Cost</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
                 <th className="text-left px-3 py-2.5 font-medium">Notes</th>
-                <th className="text-right px-5 py-2.5 font-medium">Actions</th>
+                <th className="text-right px-5 py-2.5 font-medium no-print">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {applications.map((a) => {
+              {weedApplications.map((a) => {
                 const appliedMs = new Date(a.applied_at).getTime();
                 const clearAt = appliedMs + a.rei_hours * 60 * 60 * 1000;
                 const restricted = now < clearAt;
@@ -476,7 +469,7 @@ export default function PestWeedSection() {
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-mist">{a.notes || "—"}</td>
-                    <td className="px-5 py-2.5 text-right">
+                    <td className="px-5 py-2.5 text-right no-print">
                       <button onClick={() => handleDelete(a.id)} className="text-mist text-xs font-semibold hover:text-red">
                         Delete
                       </button>

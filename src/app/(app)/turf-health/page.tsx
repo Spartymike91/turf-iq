@@ -3,12 +3,14 @@
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import FertilitySection from "@/components/turf-health/FertilitySection";
-import PestWeedSection from "@/components/turf-health/PestWeedSection";
+import WeedSection from "@/components/turf-health/WeedSection";
+import InsectsSection from "@/components/turf-health/InsectsSection";
 import DiseaseRiskSection from "@/components/turf-health/DiseaseRiskSection";
 
 const SUB_TABS = [
   { slug: "fertility", label: "Fertility", icon: "🌱" },
-  { slug: "pest-weed", label: "Pest & Weed", icon: "🧪" },
+  { slug: "weed", label: "Weed", icon: "🌿" },
+  { slug: "insects", label: "Insects", icon: "🐛" },
   { slug: "disease", label: "Disease Risk", icon: "🦠" },
 ] as const;
 
@@ -34,7 +36,7 @@ function TurfHealthContent() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
           Turf Health
         </div>
-        <div className="font-serif text-2xl text-green-dark">Fertility, Pest & Weed, Disease Risk</div>
+        <div className="font-serif text-2xl text-green-dark">Fertility, Weed, Insects, Disease Risk</div>
       </div>
 
       <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1 self-start">
@@ -54,7 +56,8 @@ function TurfHealthContent() {
       </div>
 
       {activeTab === "fertility" && <FertilitySection />}
-      {activeTab === "pest-weed" && <PestWeedSection />}
+      {activeTab === "weed" && <WeedSection />}
+      {activeTab === "insects" && <InsectsSection />}
       {activeTab === "disease" && <DiseaseRiskSection />}
     </>
   );

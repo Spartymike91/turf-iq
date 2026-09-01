@@ -7,6 +7,7 @@ import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
+import { printSection } from "@/lib/printSection";
 
 interface FertilizerApplication {
   id: string;
@@ -490,21 +491,29 @@ export default function FertilitySection() {
         </div>
       )}
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+      <div id="fertility-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Application Log</div>
-          <button
-            onClick={() => setShowAddApp((v) => !v)}
-            className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
-          >
-            {showAddApp ? "Cancel" : "+ Log Application"}
-          </button>
+          <div className="flex items-center gap-2 no-print">
+            <button
+              onClick={() => printSection("fertility-application-log")}
+              className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
+            >
+              Print
+            </button>
+            <button
+              onClick={() => setShowAddApp((v) => !v)}
+              className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
+            >
+              {showAddApp ? "Cancel" : "+ Log Application"}
+            </button>
+          </div>
         </div>
 
         {showAddApp && (
           <form
             onSubmit={handleAddApplication}
-            className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk"
+            className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print"
           >
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex flex-col gap-1.5">
@@ -652,7 +661,7 @@ export default function FertilitySection() {
                 <th className="text-left px-3 py-2.5 font-medium">N (lbs/M)</th>
                 <th className="text-left px-3 py-2.5 font-medium">Cost</th>
                 <th className="text-left px-3 py-2.5 font-medium">Notes</th>
-                <th className="text-right px-5 py-2.5 font-medium">Actions</th>
+                <th className="text-right px-5 py-2.5 font-medium no-print">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -666,7 +675,7 @@ export default function FertilitySection() {
                     {app.cost != null ? `$${Number(app.cost).toFixed(2)}` : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-mist">{app.notes || "—"}</td>
-                  <td className="px-5 py-2.5 text-right">
+                  <td className="px-5 py-2.5 text-right no-print">
                     <button
                       onClick={() => handleDeleteApplication(app.id)}
                       className="text-mist text-xs font-semibold hover:text-red"

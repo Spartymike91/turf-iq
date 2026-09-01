@@ -6,6 +6,8 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
+import { isDiseaseTarget } from "@/lib/pestCategorization";
+import { printSection } from "@/lib/printSection";
 
 interface SprayApplication {
   id: string;
@@ -28,12 +30,6 @@ interface Product {
   unit: string;
   unit_cost: number | null;
   current_stock: number;
-}
-
-const DISEASE_TARGET_KEYWORDS = ["dollar spot", "pythium", "brown patch", "large patch"];
-function isDiseaseTarget(target: string) {
-  const t = target.toLowerCase();
-  return DISEASE_TARGET_KEYWORDS.some((d) => t.includes(d));
 }
 
 const emptySprayForm = { target: "", area: "", applied_at: "", notes: "" };
@@ -495,19 +491,27 @@ export default function DiseaseRiskSection() {
         </div>
       </div>
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+      <div id="disease-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Fungicide Application Log</div>
-          <button
-            onClick={() => setShowAddSpray((v) => !v)}
-            className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
-          >
-            {showAddSpray ? "Cancel" : "+ Log Application"}
-          </button>
+          <div className="flex items-center gap-2 no-print">
+            <button
+              onClick={() => printSection("disease-application-log")}
+              className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
+            >
+              Print
+            </button>
+            <button
+              onClick={() => setShowAddSpray((v) => !v)}
+              className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
+            >
+              {showAddSpray ? "Cancel" : "+ Log Application"}
+            </button>
+          </div>
         </div>
 
         {showAddSpray && (
-          <form onSubmit={handleAddSpray} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+          <form onSubmit={handleAddSpray} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
@@ -673,7 +677,7 @@ export default function DiseaseRiskSection() {
                 <th className="text-left px-3 py-2.5 font-medium">Cost</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
                 <th className="text-left px-3 py-2.5 font-medium">Notes</th>
-                <th className="text-right px-5 py-2.5 font-medium">Actions</th>
+                <th className="text-right px-5 py-2.5 font-medium no-print">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -695,7 +699,7 @@ export default function DiseaseRiskSection() {
                       </span>
                     </td>
                     <td className="px-3 py-2.5 text-mist">{s.notes || "—"}</td>
-                    <td className="px-5 py-2.5 text-right">
+                    <td className="px-5 py-2.5 text-right no-print">
                       <button onClick={() => handleDeleteSpray(s.id)} className="text-mist text-xs font-semibold hover:text-red">
                         Delete
                       </button>
