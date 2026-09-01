@@ -306,6 +306,22 @@ export default function DiseaseRiskSection() {
           >
             {dsAboveThreshold ? "ABOVE THRESHOLD" : "BELOW THRESHOLD"}
           </span>
+          <div className="flex items-center justify-center gap-1 mt-2">
+            {dollarSpot.forecast.map((f) => {
+              const above = f.probabilityPct >= dollarSpot.actionThresholdPct;
+              return (
+                <span
+                  key={f.hoursAhead}
+                  title={`${f.probabilityPct.toFixed(1)}% projected in ${f.hoursAhead}h`}
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                    above ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                  }`}
+                >
+                  +{f.hoursAhead}h
+                </span>
+              );
+            })}
+          </div>
         </div>
 
         <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
@@ -330,6 +346,19 @@ export default function DiseaseRiskSection() {
           >
             {pythium.elevated ? "CONDITIONS MET" : "NOT ELEVATED"}
           </span>
+          <div className="flex items-center justify-center gap-1 mt-2">
+            {pythium.forecast.map((f) => (
+              <span
+                key={f.hoursAhead}
+                title={`${f.elevated ? "Conditions met" : "Not elevated"} in ${f.hoursAhead}h`}
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                  f.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                }`}
+              >
+                +{f.hoursAhead}h
+              </span>
+            ))}
+          </div>
         </div>
 
         <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
@@ -354,6 +383,19 @@ export default function DiseaseRiskSection() {
           >
             {brownPatch.elevated ? "CONDITIONS MET" : "NOT ELEVATED"}
           </span>
+          <div className="flex items-center justify-center gap-1 mt-2">
+            {brownPatch.forecast.map((f) => (
+              <span
+                key={f.hoursAhead}
+                title={`${f.elevated ? "Conditions met" : "Not elevated"} in ${f.hoursAhead}h`}
+                className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                  f.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                }`}
+              >
+                +{f.hoursAhead}h
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 

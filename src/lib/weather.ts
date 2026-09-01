@@ -22,6 +22,12 @@ interface NwsObservationProps {
   textDescription: string | null;
 }
 
+interface NwsHourlyForecastPeriod {
+  startTime: string;
+  temperature: number; // °F
+  relativeHumidity: { value: number | null };
+}
+
 export interface ForecastDay {
   dow: string;
   isToday: boolean;
@@ -61,17 +67,20 @@ export interface WeatherResult {
       meanHumidity: number;
       inValidRange: boolean;
       actionThresholdPct: number;
+      forecast: { hoursAhead: number; probabilityPct: number; inValidRange: boolean }[];
     };
     pythium: {
       elevated: boolean;
       maxTempF: number;
       minTempF: number;
       hoursRhAbove90: number;
+      forecast: { hoursAhead: number; elevated: boolean }[];
     };
     brownPatch: {
       elevated: boolean;
       overnightLowF: number;
       hoursRhAbove95: number;
+      forecast: { hoursAhead: number; elevated: boolean }[];
     };
   };
   updatedAt: string;
@@ -155,10 +164,11 @@ const OBS_HISTORY_HOURS = 150;
 
 async function fetchNwsWeather(lat: number, lon: number) {
   const points = await nwsFetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`);
-  const { forecast, forecastGridData, observationStations } = points.properties;
+  const { forecast, forecastHourly, forecastGridData, observationStations } = points.properties;
 
-  const [forecastData, gridData, stationsData] = await Promise.all([
+  const [forecastData, hourlyForecastData, gridData, stationsData] = await Promise.all([
     nwsFetch(forecast),
+    nwsFetch(forecastHourly),
     nwsFetch(forecastGridData),
     nwsFetch(observationStations),
   ]);
@@ -174,6 +184,7 @@ async function fetchNwsWeather(lat: number, lon: number) {
 
   return {
     forecastPeriods: forecastData.properties.periods as NwsForecastPeriod[],
+    hourlyForecastPeriods: hourlyForecastData.properties.periods as NwsHourlyForecastPeriod[],
     grid: gridData.properties as {
       quantitativePrecipitation?: { values: Array<{ validTime: string; value: number | null }> };
     },
@@ -256,16 +267,61 @@ function computeLeafWetnessHours(obsHistory: Obs[], now: number): number {
   return count;
 }
 
+// Hours ahead the disease models project risk for — matches the "early
+// warning" framing competitors lead with, using forecast data we already
+// pull for the 7-day card but hadn't fed into these models before.
+const FORECAST_HORIZONS_HOURS = [24, 48, 72];
+
+interface HourlySample {
+  time: number; // ms epoch
+  tempC: number;
+  rh: number;
+}
+
+// One combined, time-sorted timeline of actual observations (for the past)
+// and forecast hours (for the future) — lets the same trailing-window model
+// logic below evaluate risk "as of" any timestamp, not just now. Forecast
+// periods at or before `now` are dropped so the boundary hour isn't
+// double-counted against the actual observation for that same hour.
+function buildDiseaseModelSeries(
+  obsHistory: Obs[],
+  hourlyForecastPeriods: NwsHourlyForecastPeriod[],
+  now: number
+): HourlySample[] {
+  const samples: HourlySample[] = [];
+  for (const f of obsHistory) {
+    const tempC = f.properties.temperature?.value;
+    const rh = f.properties.relativeHumidity?.value;
+    if (tempC == null || rh == null) continue;
+    samples.push({ time: new Date(f.properties.timestamp).getTime(), tempC, rh });
+  }
+  for (const p of hourlyForecastPeriods) {
+    const time = new Date(p.startTime).getTime();
+    if (time <= now) continue;
+    const rh = p.relativeHumidity?.value;
+    if (rh == null) continue;
+    samples.push({ time, tempC: ((p.temperature - 32) * 5) / 9, rh });
+  }
+  return samples.sort((a, b) => a.time - b.time);
+}
+
+function windowEndingAt(series: HourlySample[], hours: number, asOfMs: number): HourlySample[] {
+  const cutoff = asOfMs - hours * 60 * 60 * 1000;
+  return series.filter((s) => s.time >= cutoff && s.time <= asOfMs);
+}
+
 /**
  * Dollar Spot risk via the Smith, Kerns & Koch (2018) logistic model
  * (PLOS ONE, DOI 10.1371/journal.pone.0194216), independently confirmed by
  * UW-Madison Turfgrass Diagnostic Lab, Asian Turfgrass Center, and U. Delaware
- * Extension. Uses a 5-day (120h) trailing average of hourly temp/RH.
+ * Extension. Uses a 5-day (120h) trailing average of hourly temp/RH, ending
+ * at `asOfMs` — which can be in the future when `series` includes forecast
+ * hours, projecting the model forward rather than only reading current risk.
  */
-function computeDollarSpotRisk(obsHistory: Obs[], now: number) {
-  const window = trailingHours(obsHistory, 120, now);
-  const temps = window.map((f) => f.properties.temperature?.value).filter((v): v is number => v != null);
-  const rhs = window.map((f) => f.properties.relativeHumidity?.value).filter((v): v is number => v != null);
+function computeDollarSpotRisk(series: HourlySample[], asOfMs: number) {
+  const window = windowEndingAt(series, 120, asOfMs);
+  const temps = window.map((s) => s.tempC);
+  const rhs = window.map((s) => s.rh);
 
   const meanTempC = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : 0;
   const meanRH = rhs.length ? rhs.reduce((a, b) => a + b, 0) / rhs.length : 0;
@@ -287,12 +343,12 @@ function computeDollarSpotRisk(obsHistory: Obs[], now: number) {
  * trailing-24h max temp > 86°F and min temp > 68°F, with RH >= 90% sustained
  * for 14+ of those hours. A coarser boolean heuristic, not a statistical model.
  */
-function computePythiumRisk(obsHistory: Obs[], now: number) {
-  const window = trailingHours(obsHistory, 24, now);
-  const temps = window.map((f) => f.properties.temperature?.value).filter((v): v is number => v != null);
+function computePythiumRisk(series: HourlySample[], asOfMs: number) {
+  const window = windowEndingAt(series, 24, asOfMs);
+  const temps = window.map((s) => s.tempC);
   const maxTempF = temps.length ? Math.round(cToF(Math.max(...temps))) : 0;
   const minTempF = temps.length ? Math.round(cToF(Math.min(...temps))) : 0;
-  const hoursRhAbove90 = window.filter((f) => (f.properties.relativeHumidity?.value ?? 0) >= 90).length;
+  const hoursRhAbove90 = window.filter((s) => s.rh >= 90).length;
 
   return {
     elevated: maxTempF > 86 && minTempF > 68 && hoursRhAbove90 >= 14,
@@ -307,11 +363,11 @@ function computePythiumRisk(obsHistory: Obs[], now: number) {
  * exists): conditions favorable when trailing-24h low temp > 68°F and RH >= 95%
  * sustained for 6+ hours.
  */
-function computeBrownPatchRisk(obsHistory: Obs[], now: number) {
-  const window = trailingHours(obsHistory, 24, now);
-  const temps = window.map((f) => f.properties.temperature?.value).filter((v): v is number => v != null);
+function computeBrownPatchRisk(series: HourlySample[], asOfMs: number) {
+  const window = windowEndingAt(series, 24, asOfMs);
+  const temps = window.map((s) => s.tempC);
   const overnightLowF = temps.length ? Math.round(cToF(Math.min(...temps))) : 0;
-  const hoursRhAbove95 = window.filter((f) => (f.properties.relativeHumidity?.value ?? 0) >= 95).length;
+  const hoursRhAbove95 = window.filter((s) => s.rh >= 95).length;
 
   return {
     elevated: overnightLowF > 68 && hoursRhAbove95 >= 6,
@@ -633,9 +689,10 @@ async function fetchFreshWeather(
     await supabase.from("courses").update({ latitude: lat, longitude: lon }).eq("id", course.id);
   }
 
-  const { forecastPeriods, grid, latestObs, obsHistory } = await fetchNwsWeather(lat, lon);
+  const { forecastPeriods, hourlyForecastPeriods, grid, latestObs, obsHistory } = await fetchNwsWeather(lat, lon);
 
   const now = new Date();
+  const nowMs = now.getTime();
   const dayOfYear = Math.floor(
     (now.getTime() - new Date(now.getFullYear(), 0, 0).getTime()) / 86400000
   );
@@ -652,9 +709,29 @@ async function fetchFreshWeather(
   );
   const leafWetnessHours = computeLeafWetnessHours(obsHistory, now.getTime());
   const weekRainfallIn = sumWeeklyRainfallIn(grid);
-  const dollarSpot = computeDollarSpotRisk(obsHistory, now.getTime());
-  const pythium = computePythiumRisk(obsHistory, now.getTime());
-  const brownPatch = computeBrownPatchRisk(obsHistory, now.getTime());
+
+  const diseaseSeries = buildDiseaseModelSeries(obsHistory, hourlyForecastPeriods, nowMs);
+  const dollarSpot = {
+    ...computeDollarSpotRisk(diseaseSeries, nowMs),
+    forecast: FORECAST_HORIZONS_HOURS.map((hoursAhead) => {
+      const projected = computeDollarSpotRisk(diseaseSeries, nowMs + hoursAhead * 60 * 60 * 1000);
+      return { hoursAhead, probabilityPct: projected.probabilityPct, inValidRange: projected.inValidRange };
+    }),
+  };
+  const pythium = {
+    ...computePythiumRisk(diseaseSeries, nowMs),
+    forecast: FORECAST_HORIZONS_HOURS.map((hoursAhead) => ({
+      hoursAhead,
+      elevated: computePythiumRisk(diseaseSeries, nowMs + hoursAhead * 60 * 60 * 1000).elevated,
+    })),
+  };
+  const brownPatch = {
+    ...computeBrownPatchRisk(diseaseSeries, nowMs),
+    forecast: FORECAST_HORIZONS_HOURS.map((hoursAhead) => ({
+      hoursAhead,
+      elevated: computeBrownPatchRisk(diseaseSeries, nowMs + hoursAhead * 60 * 60 * 1000).elevated,
+    })),
+  };
 
   const todayStr = now.toISOString().slice(0, 10);
   await supabase
