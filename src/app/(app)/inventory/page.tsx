@@ -371,7 +371,8 @@ export default function InventoryPage() {
                 <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                   <th className="text-left px-5 py-2.5 font-medium">Name</th>
                   <th className="text-left px-3 py-2.5 font-medium">Category</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Stock</th>
+                  <th className="text-left px-3 py-2.5 font-medium">Qty on Hand</th>
+                  <th className="text-left px-3 py-2.5 font-medium">Unit</th>
                   <th className="text-left px-3 py-2.5 font-medium">Unit Cost</th>
                   <th className="text-left px-3 py-2.5 font-medium">Value</th>
                   <th className="text-right px-5 py-2.5 font-medium">Actions</th>
@@ -382,7 +383,7 @@ export default function InventoryPage() {
                   const isLow = p.reorder_threshold != null && p.current_stock <= p.reorder_threshold;
                   return editingId === p.id ? (
                     <tr key={p.id} className="border-b border-rule last:border-0 bg-chalk">
-                      <td colSpan={6} className="px-5 py-3">
+                      <td colSpan={7} className="px-5 py-3">
                         <div className="flex flex-wrap items-end gap-2">
                           <input
                             value={editForm.name}
@@ -456,7 +457,7 @@ export default function InventoryPage() {
                       <td className="px-3 py-2.5 text-mist">{CATEGORY_LABEL[p.category]}</td>
                       <td className="px-3 py-2.5">
                         <span className={`font-mono ${isLow ? "text-red font-semibold" : ""}`}>
-                          {p.current_stock} {p.unit}
+                          {p.current_stock}
                         </span>
                         {isLow && (
                           <span className="ml-1.5 text-[9px] font-bold bg-red/10 text-red px-1 py-0.5 rounded font-mono">
@@ -464,6 +465,7 @@ export default function InventoryPage() {
                           </span>
                         )}
                       </td>
+                      <td className="px-3 py-2.5 text-mist">{p.unit}</td>
                       <td className="px-3 py-2.5 font-mono text-mist">
                         {p.unit_cost != null ? `$${Number(p.unit_cost).toFixed(2)}/${p.unit}` : "—"}
                       </td>
