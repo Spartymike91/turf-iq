@@ -6,6 +6,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import TaskCompleteModal from "@/components/tasks/TaskCompleteModal";
 import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
 import type { MowDirection } from "@/lib/mowDirections";
+import type { WeatherResult } from "@/lib/weather";
 
 interface Employee {
   id: string;
@@ -43,6 +44,7 @@ export default function TaskStatusPage() {
   const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null);
 
   const [completingTask, setCompletingTask] = useState<TaskAssignment | null>(null);
+  const [weather, setWeather] = useState<WeatherResult | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -70,6 +72,13 @@ export default function TaskStatusPage() {
       setChecking(false);
     }
     load();
+
+    // Best-effort, separate from the board's core data — a weather outage
+    // shouldn't hold up (or blank out) the crew board itself.
+    fetch("/api/weather")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setWeather(data && !data.error ? data : null))
+      .catch(() => setWeather(null));
   }, []);
 
   function canManage(task: TaskAssignment) {
@@ -152,6 +161,18 @@ export default function TaskStatusPage() {
           {tasks.filter((t) => t.status === "complete").length} of {tasks.length} complete
         </div>
       </div>
+
+      {weather && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-4 flex items-center gap-4">
+          <div className="text-4xl">{weather.forecast[0]?.icon ?? "☀️"}</div>
+          <div>
+            <div className="text-lg font-semibold text-ink">
+              {weather.current.tempF}°F — {weather.current.highF}° / {weather.current.lowF}°F
+            </div>
+            <div className="text-xs text-mist">{weather.current.description}</div>
+          </div>
+        </div>
+      )}
 
       {tasks.length === 0 ? (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
