@@ -9,7 +9,7 @@ interface TaskAssignment {
   id: string;
   name: string;
   assigned_to: string | null;
-  priority: "low" | "normal" | "high";
+  priority: number;
   status: "not_started" | "in_progress" | "complete";
   scheduled_date: string;
 }

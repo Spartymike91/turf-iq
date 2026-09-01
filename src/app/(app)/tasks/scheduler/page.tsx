@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
+import { MOW_DIRECTIONS, type MowDirection } from "@/lib/mowDirections";
+import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
 
 interface TaskTemplate {
   id: string;
@@ -25,7 +27,8 @@ interface TaskAssignment {
   name: string;
   assigned_to: string | null;
   scheduled_date: string;
-  priority: "low" | "normal" | "high";
+  priority: number;
+  mow_direction: MowDirection | null;
   status: "not_started" | "in_progress" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
@@ -44,7 +47,7 @@ interface EmployeeStat {
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
-const emptyForm = { template_id: "", name: "", assigned_to: "", scheduled_date: todayStr(), priority: "normal", notes: "" };
+const emptyForm = { template_id: "", name: "", assigned_to: "", scheduled_date: todayStr(), priority: "1", mow_direction: "" as MowDirection | "", notes: "" };
 
 export default function TaskSchedulerPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -147,7 +150,8 @@ export default function TaskSchedulerPage() {
         name,
         assigned_to: addForm.assigned_to || null,
         scheduled_date: addForm.scheduled_date,
-        priority: addForm.priority,
+        priority: Number(addForm.priority) || 1,
+        mow_direction: addForm.mow_direction || null,
         estimated_minutes:
           template?.target_minutes ?? (template?.estimated_duration ? parseInt(template.estimated_duration) || null : null),
         notes: addForm.notes || null,
@@ -283,16 +287,32 @@ export default function TaskSchedulerPage() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">Priority</label>
-              <select
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Task #</label>
+              <input
+                type="number"
+                min="1"
                 value={addForm.priority}
                 onChange={(e) => setAddForm({ ...addForm, priority: e.target.value })}
-                className="px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
-              >
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-              </select>
+                className="w-16 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Mow Direction</label>
+              <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1">
+                {MOW_DIRECTIONS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    title={d.label}
+                    onClick={() => setAddForm({ ...addForm, mow_direction: addForm.mow_direction === d.value ? "" : d.value })}
+                    className={`p-1 rounded transition-colors ${
+                      addForm.mow_direction === d.value ? "bg-green-pale text-green-mid" : "text-mist hover:text-ink"
+                    }`}
+                  >
+                    <MowDirectionIcon direction={d.value} />
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex flex-col gap-1.5 flex-1 min-w-[120px]">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
@@ -378,7 +398,7 @@ export default function TaskSchedulerPage() {
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                 <th className="text-left px-5 py-2.5 font-medium">Task</th>
                 <th className="text-left px-3 py-2.5 font-medium">Assigned To</th>
-                <th className="text-left px-3 py-2.5 font-medium">Priority</th>
+                <th className="text-left px-3 py-2.5 font-medium">Task #</th>
                 <th className="text-left px-3 py-2.5 font-medium">Status</th>
                 <th className="text-right px-5 py-2.5 font-medium">Actions</th>
               </tr>
@@ -386,15 +406,16 @@ export default function TaskSchedulerPage() {
             <tbody>
               {filtered.map((a) => (
                 <tr key={a.id} className="border-b border-rule last:border-0">
-                  <td className="px-5 py-2.5 font-medium">{a.name}</td>
+                  <td className="px-5 py-2.5 font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      {a.name}
+                      <MowDirectionIcon direction={a.mow_direction} />
+                    </span>
+                  </td>
                   <td className="px-3 py-2.5 text-mist">{employees.find((e) => e.id === a.assigned_to)?.name ?? "Unassigned"}</td>
                   <td className="px-3 py-2.5">
-                    <span
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
-                        a.priority === "high" ? "bg-red/10 text-red" : a.priority === "low" ? "bg-blue/10 text-blue" : "bg-green-pale text-green-mid"
-                      }`}
-                    >
-                      {a.priority.toUpperCase()}
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded font-mono bg-green-pale text-green-mid">
+                      TASK {a.priority}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-mist">{a.status.replace("_", " ")}</td>

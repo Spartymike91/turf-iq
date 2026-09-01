@@ -21,7 +21,7 @@ interface TimeEntry {
 
 interface TaskAssignment {
   id: string;
-  priority: "low" | "normal" | "high";
+  priority: number;
   status: "not_started" | "in_progress" | "complete";
 }
 
@@ -91,7 +91,7 @@ export default function TasksDashboardPage() {
   const clockedIn = entries.filter((e) => e.clock_out === null).length;
   const completeCount = tasksToday.filter((t) => t.status === "complete").length;
   const inProgressCount = tasksToday.filter((t) => t.status === "in_progress").length;
-  const highPriorityOpen = tasksToday.filter((t) => t.priority === "high" && t.status !== "complete").length;
+  const highPriorityOpen = tasksToday.filter((t) => t.priority === 1 && t.status !== "complete").length;
   const progressPct = tasksToday.length > 0 ? Math.round((completeCount / tasksToday.length) * 100) : 0;
   const hoursToday_ = hoursToday(entries, null, now);
   const payroll = useMemo(() => computeWeeklyPayroll(employees, entries, weekStart, now), [employees, entries, weekStart, now]);
@@ -198,7 +198,7 @@ export default function TasksDashboardPage() {
           tagColor={clockedIn > 0 ? "ok" : "blue"}
         />
         <StatChip
-          label="High Priority"
+          label="Task 1s Open"
           value={String(highPriorityOpen)}
           unit="tasks"
           sub="Open, not yet complete"

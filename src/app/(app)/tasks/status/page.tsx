@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import TaskCompleteModal from "@/components/tasks/TaskCompleteModal";
+import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
+import type { MowDirection } from "@/lib/mowDirections";
 
 interface Employee {
   id: string;
@@ -15,7 +17,8 @@ interface TaskAssignment {
   id: string;
   name: string;
   assigned_to: string | null;
-  priority: "low" | "normal" | "high";
+  priority: number;
+  mow_direction: MowDirection | null;
   status: "not_started" | "in_progress" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
@@ -96,6 +99,33 @@ export default function TaskStatusPage() {
     setCompletingTask(task);
   }
 
+  // Group today's tasks by crew member — each employee gets a card listing
+  // their jobs in order, rather than one global board split by status.
+  // Tasks with no assignee collect into a trailing "Unassigned" card.
+  const crewCards = useMemo(() => {
+    const byEmployee = new Map<string, TaskAssignment[]>();
+    const unassigned: TaskAssignment[] = [];
+    for (const t of tasks) {
+      if (!t.assigned_to) {
+        unassigned.push(t);
+        continue;
+      }
+      if (!byEmployee.has(t.assigned_to)) byEmployee.set(t.assigned_to, []);
+      byEmployee.get(t.assigned_to)!.push(t);
+    }
+    const cards = Array.from(byEmployee.entries())
+      .map(([employeeId, employeeTasks]) => ({
+        employeeId,
+        name: employees.find((e) => e.id === employeeId)?.name ?? "Unknown",
+        tasks: [...employeeTasks].sort((a, b) => a.priority - b.priority),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (unassigned.length > 0) {
+      cards.push({ employeeId: "unassigned", name: "Unassigned", tasks: [...unassigned].sort((a, b) => a.priority - b.priority) });
+    }
+    return cards;
+  }, [tasks, employees]);
+
   if (checking) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -113,13 +143,11 @@ export default function TaskStatusPage() {
     );
   }
 
-  const columns: TaskAssignment["status"][] = ["not_started", "in_progress", "complete"];
-
   return (
     <>
       <div>
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Live Status</div>
-        <div className="font-serif text-2xl text-green-dark">Today&apos;s Task Board</div>
+        <div className="font-serif text-2xl text-green-dark">Today&apos;s Crew Board</div>
         <div className="text-[13px] text-mist mt-1">
           {tasks.filter((t) => t.status === "complete").length} of {tasks.length} complete
         </div>
@@ -131,38 +159,35 @@ export default function TaskStatusPage() {
           <div className="text-sm text-mist">No tasks scheduled for today. Add some in the Scheduler.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {columns.map((col) => (
-            <div key={col} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {crewCards.map((card) => (
+            <div key={card.employeeId} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
               <div className="px-4 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">
-                {STATUS_LABEL[col]} ({tasks.filter((t) => t.status === col).length})
+                {card.name} ({card.tasks.filter((t) => t.status === "complete").length}/{card.tasks.length})
               </div>
-              <div className="p-3 flex flex-col gap-2 min-h-[100px]">
-                {tasks
-                  .filter((t) => t.status === col)
-                  .map((t) => (
-                    <div key={t.id} className="border-[1.5px] border-rule rounded-lg p-2.5 text-xs">
-                      <div className="flex items-center justify-between gap-1.5 mb-1">
-                        <span className="font-semibold text-ink">{t.name}</span>
-                        <span
-                          className={`text-[8px] font-bold px-1 py-0.5 rounded font-mono ${
-                            t.priority === "high" ? "bg-red/10 text-red" : t.priority === "low" ? "bg-blue/10 text-blue" : "bg-green-pale text-green-mid"
-                          }`}
-                        >
-                          {t.priority.toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="text-mist mb-2">{employees.find((e) => e.id === t.assigned_to)?.name ?? "Unassigned"}</div>
-                      {col !== "complete" && canManage(t) && (
-                        <button
-                          onClick={() => (col === "not_started" ? advanceStatus(t) : openCompleteDialog(t))}
-                          className="text-green-mid font-semibold hover:text-green-dark"
-                        >
-                          {col === "not_started" ? "Start →" : "Complete →"}
-                        </button>
-                      )}
+              <div className="p-3 flex flex-col gap-2">
+                {card.tasks.map((t, i) => (
+                  <div key={t.id} className="border-[1.5px] border-rule rounded-lg p-2.5 text-xs">
+                    <div className="flex items-center justify-between gap-1.5 mb-1">
+                      <span className="font-semibold text-ink flex items-center gap-1.5">
+                        <span className="text-mist font-mono">{i + 1}.</span>
+                        {t.name}
+                        <MowDirectionIcon direction={t.mow_direction} />
+                      </span>
+                      <span className="text-[8px] font-bold px-1 py-0.5 rounded font-mono bg-chalk text-mist shrink-0">
+                        {STATUS_LABEL[t.status].toUpperCase()}
+                      </span>
                     </div>
-                  ))}
+                    {t.status !== "complete" && canManage(t) && (
+                      <button
+                        onClick={() => (t.status === "not_started" ? advanceStatus(t) : openCompleteDialog(t))}
+                        className="text-green-mid font-semibold hover:text-green-dark"
+                      >
+                        {t.status === "not_started" ? "Start →" : "Complete →"}
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           ))}

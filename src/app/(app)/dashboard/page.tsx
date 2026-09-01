@@ -13,7 +13,7 @@ const CREW_ROLES = ["crew", "crew_lead"];
 interface TaskToday {
   id: string;
   name: string;
-  priority: "low" | "normal" | "high";
+  priority: number;
   status: "not_started" | "in_progress" | "complete";
   assigned_to: string | null;
   estimated_minutes: number | null;
@@ -211,7 +211,7 @@ export default function DashboardPage() {
   const dollarSpot = weather?.diseaseRisk.dollarSpot;
   const dollarSpotAboveThreshold = dollarSpot ? dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct : false;
   const diseaseElevated = weather ? weather.diseaseRisk.pythium.elevated || weather.diseaseRisk.brownPatch.elevated : false;
-  const highPriorityOpen = tasks.some((t) => t.priority === "high" && t.status !== "complete");
+  const highPriorityOpen = tasks.some((t) => t.priority === 1 && t.status !== "complete");
 
   let bannerVariant: "red" | "amber" | "blue" = "blue";
   if (anyOverdueEquipment || dollarSpotAboveThreshold) {
@@ -355,16 +355,8 @@ export default function DashboardPage() {
                   <span className="text-xs text-mist">
                     {employees.find((e) => e.id === t.assigned_to)?.name ?? "Unassigned"}
                   </span>
-                  <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
-                      t.priority === "high"
-                        ? "bg-red/10 text-red"
-                        : t.priority === "low"
-                        ? "bg-blue/10 text-blue"
-                        : "bg-green-pale text-green-mid"
-                    }`}
-                  >
-                    {t.priority.toUpperCase()}
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded font-mono bg-green-pale text-green-mid">
+                    TASK {t.priority}
                   </span>
                 </label>
               );

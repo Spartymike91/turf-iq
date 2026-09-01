@@ -1492,3 +1492,30 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS pest_application_id UUID REFERENCE
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_source_check;
 ALTER TABLE expenses ADD CONSTRAINT expenses_source_check
   CHECK (source IN ('manual', 'task_labor', 'task_materials', 'application_fertilizer', 'application_pest'));
+
+-- ============================================
+-- MOW DIRECTION + TASK ORDER NUMBERING
+-- ============================================
+-- Crew asked for mow direction using the clock-hour convention turf crews
+-- already use (12-6 straight, 2-8 left-to-right, 3-9 across, 4-10
+-- right-to-left) plus a crosscut pattern. It's a per-task field, not a
+-- course-wide setting, since different mow jobs on the same day can call
+-- for different directions. task_templates.category is free text (no
+-- enum), so this can't be gated to "mowing" tasks specifically — it's just
+-- optional on every task assignment, left blank when irrelevant.
+--
+-- priority also changes from a low/normal/high severity enum to a plain
+-- ordinal (Task 1, Task 2, Task 3...) so crew cards can list a person's
+-- jobs in the order they should do them, matching how the reference
+-- crew-board design numbers each employee's task list. Existing high/
+-- normal/low rows map to 1/2/3 so "high" (do first) becomes "Task 1".
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS mow_direction TEXT
+  CHECK (mow_direction IN ('straight', 'diagonal_lr', 'across', 'diagonal_rl', 'crosscut'));
+
+ALTER TABLE task_assignments DROP CONSTRAINT IF EXISTS task_assignments_priority_check;
+ALTER TABLE task_assignments ALTER COLUMN priority DROP DEFAULT;
+ALTER TABLE task_assignments ALTER COLUMN priority TYPE INTEGER USING (
+  CASE priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 ELSE 1 END
+);
+ALTER TABLE task_assignments ALTER COLUMN priority SET DEFAULT 1;
+ALTER TABLE task_assignments ADD CONSTRAINT task_assignments_priority_check CHECK (priority >= 1);

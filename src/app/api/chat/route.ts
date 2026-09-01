@@ -261,15 +261,15 @@ ${issues.length > 0 ? issues.map((i) => `- ${i}`).join("\n") : "- No overdue or 
     const payroll = computeWeeklyPayroll(allEmployees ?? [], weekEntries ?? [], weekStart);
     const otRisk = payroll.filter((p) => p.regularHours + p.otHours >= 35);
     const complete = (tasksToday ?? []).filter((t) => t.status === "complete").length;
-    const highPriorityOpen = (tasksToday ?? []).filter((t) => t.priority === "high" && t.status !== "complete");
+    const task1sOpen = (tasksToday ?? []).filter((t) => t.priority === 1 && t.status !== "complete");
 
     const lines = [
       `TASKS & LABOR OPS (today, ${today}):`,
       `- Tasks: ${complete} of ${(tasksToday ?? []).length} complete today`,
       `- Clocked in right now: ${clockedInNow} of ${(allEmployees ?? []).filter((e) => e.is_active).length} active staff`,
     ];
-    if (highPriorityOpen.length > 0) {
-      lines.push(`- High priority open tasks: ${highPriorityOpen.map((t) => t.name).join(", ")}`);
+    if (task1sOpen.length > 0) {
+      lines.push(`- Task 1 (do-first) open tasks: ${task1sOpen.map((t) => t.name).join(", ")}`);
     }
     if (otRisk.length > 0) {
       lines.push(`- OT risk this week (≥35h): ${otRisk.map((p) => `${p.name} (${(p.regularHours + p.otHours).toFixed(1)}h)`).join(", ")}`);

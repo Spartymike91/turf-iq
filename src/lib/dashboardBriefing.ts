@@ -6,7 +6,7 @@ import { getDueStatus } from "@/lib/equipmentModels";
 export interface TaskToday {
   id: string;
   name: string;
-  priority: "low" | "normal" | "high";
+  priority: number;
   status: "not_started" | "in_progress" | "complete";
   assigned_to: string | null;
   estimated_minutes: number | null;
@@ -146,7 +146,7 @@ DISEASE RISK: Dollar Spot ${dollarSpot.probabilityPct.toFixed(1)}% (action thres
 
   if (tasksToday.length > 0) {
     promptSections.push(
-      `TODAY'S TASKS: ${tasksToday.map((t) => `"${t.name}" (${t.priority}, ${t.status})`).join("; ")}`
+      `TODAY'S TASKS: ${tasksToday.map((t) => `"${t.name}" (task ${t.priority}, ${t.status})`).join("; ")}`
     );
   } else {
     promptSections.push("TODAY'S TASKS: none scheduled.");
