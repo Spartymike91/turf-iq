@@ -1519,3 +1519,23 @@ ALTER TABLE task_assignments ALTER COLUMN priority TYPE INTEGER USING (
 );
 ALTER TABLE task_assignments ALTER COLUMN priority SET DEFAULT 1;
 ALTER TABLE task_assignments ADD CONSTRAINT task_assignments_priority_check CHECK (priority >= 1);
+
+-- ============================================
+-- MERGE FERTILITY / PEST & WEED / DISEASE RISK -> TURF HEALTH
+-- ============================================
+-- The three separate nav tabs became one "Turf Health" tab with internal
+-- sub-tabs (src/app/(app)/turf-health/page.tsx) — same three pages'
+-- worth of functionality, just one nav entry and one module-permission
+-- slug instead of three. course_members.allowed_modules stores per-crew
+-- permission slugs pulled from src/lib/planAccess.ts's ALL_MODULES list,
+-- so a crew member previously granted any of the three old slugs needs
+-- them replaced with the new one, or they'd silently lose access.
+UPDATE course_members
+SET allowed_modules = (
+  SELECT ARRAY(
+    SELECT DISTINCT unnest(
+      array_replace(array_replace(array_replace(allowed_modules, 'disease', 'turf-health'), 'fertility', 'turf-health'), 'pest-weed', 'turf-health')
+    )
+  )
+)
+WHERE allowed_modules && ARRAY['disease', 'fertility', 'pest-weed'];

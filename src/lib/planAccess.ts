@@ -7,8 +7,7 @@ export const TIER_RANK: Record<PlanTier, number> = {
 };
 
 // Route prefix -> minimum tier required. Anything not listed here (dashboard,
-// weather, disease, fertility, pest-weed, course, admin, ...) is unrestricted
-// on every tier.
+// weather, turf-health, course, admin, ...) is unrestricted on every tier.
 const ROUTE_TIER: { prefix: string; requiredTier: PlanTier }[] = [
   { prefix: "/irrigation", requiredTier: "superintendent" },
   { prefix: "/equipment", requiredTier: "superintendent" },
@@ -54,10 +53,8 @@ export function hasModuleAccess(courseTier: PlanTier | null, pathname: string): 
 // keeping one canonical list avoids the two drifting apart.
 export const ALL_MODULES: { slug: string; href: string; icon: string; label: string }[] = [
   { slug: "weather", href: "/weather", icon: "🌤", label: "Weather" },
-  { slug: "disease", href: "/disease", icon: "🦠", label: "Disease Risk" },
-  { slug: "fertility", href: "/fertility", icon: "🌱", label: "Fertility" },
+  { slug: "turf-health", href: "/turf-health", icon: "🌱", label: "Turf Health" },
   { slug: "irrigation", href: "/irrigation", icon: "💧", label: "Irrigation" },
-  { slug: "pest-weed", href: "/pest-weed", icon: "🧪", label: "Pest & Weed" },
   { slug: "equipment", href: "/equipment", icon: "🔧", label: "Equipment" },
   { slug: "inventory", href: "/inventory", icon: "📦", label: "Inventory" },
   { slug: "budget", href: "/budget", icon: "📊", label: "Budget" },
