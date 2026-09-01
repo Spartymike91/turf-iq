@@ -5,7 +5,16 @@
 // the catch-all remainder — anything that isn't a weed or disease match
 // still needs somewhere to show up rather than silently disappearing.
 
-export const DISEASE_TARGET_KEYWORDS = ["dollar spot", "pythium", "brown patch", "large patch", "anthracnose"];
+export const DISEASE_TARGET_KEYWORDS = [
+  "dollar spot",
+  "pythium",
+  "brown patch",
+  "large patch",
+  "anthracnose",
+  "fusarium patch",
+  "microdochium",
+  "spring dead spot",
+];
 
 export function isDiseaseTarget(target: string) {
   const t = target.toLowerCase();

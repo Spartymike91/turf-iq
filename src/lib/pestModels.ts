@@ -102,3 +102,12 @@ export function isCoolSeasonGrass(grassType: string | null | undefined): boolean
   if (!grassType) return false;
   return COOL_SEASON_GRASSES.includes(grassType.toLowerCase());
 }
+
+// Spring Dead Spot documented hosts (APS Journal, Bugwoodwiki) — bermudagrass
+// is the primary host; zoysiagrass is a documented secondary host.
+const SPRING_DEAD_SPOT_HOSTS = ["bermudagrass", "zoysiagrass"];
+
+export function isSpringDeadSpotHost(grassType: string | null | undefined): boolean {
+  if (!grassType) return false;
+  return SPRING_DEAD_SPOT_HOSTS.includes(grassType.toLowerCase());
+}

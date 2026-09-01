@@ -7,7 +7,7 @@ import type { WeatherResult } from "@/lib/weather";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
 import { isDiseaseTarget } from "@/lib/pestCategorization";
-import { isCoolSeasonGrass } from "@/lib/pestModels";
+import { isCoolSeasonGrass, isSpringDeadSpotHost } from "@/lib/pestModels";
 import { printSection } from "@/lib/printSection";
 import QuantityInput from "@/components/ui/QuantityInput";
 
@@ -44,6 +44,8 @@ export default function DiseaseRiskSection() {
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [nAppliedYtd, setNAppliedYtd] = useState<number | null>(null);
   const [nTarget, setNTarget] = useState<number | null>(null);
+  const [lastNAppDate, setLastNAppDate] = useState<string | null>(null);
+  const [latestSoilTest, setLatestSoilTest] = useState<{ ph: number | null; potassium_ppm: number | null } | null>(null);
   const [sprays, setSprays] = useState<SprayApplication[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export default function DiseaseRiskSection() {
       setGrassType(course?.grass_type ?? "");
 
       const fiscalYear = new Date().getFullYear();
-      const [{ data: program }, { data: apps }, { data: sprayRows }, { data: prods }] = await Promise.all([
+      const [{ data: program }, { data: apps }, { data: sprayRows }, { data: prods }, { data: soilTest }] = await Promise.all([
         supabase
           .from("fertility_programs")
           .select("annual_n_target")
@@ -86,7 +88,7 @@ export default function DiseaseRiskSection() {
           .maybeSingle(),
         supabase
           .from("fertilizer_applications")
-          .select("n_lbs_per_1000")
+          .select("n_lbs_per_1000, application_date")
           .eq("course_id", context.courseId)
           .gte("application_date", `${fiscalYear}-01-01`),
         supabase
@@ -101,11 +103,22 @@ export default function DiseaseRiskSection() {
           .eq("is_active", true)
           .in("category", ["fungicide", "other"])
           .order("name"),
+        supabase
+          .from("soil_tests")
+          .select("ph, potassium_ppm")
+          .eq("course_id", context.courseId)
+          .order("test_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
       setNTarget(program ? Number(program.annual_n_target) : null);
       setNAppliedYtd((apps ?? []).reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0));
+      setLastNAppDate(
+        (apps ?? []).reduce((latest: string | null, a) => (!latest || a.application_date > latest ? a.application_date : latest), null)
+      );
       setSprays((sprayRows ?? []).filter((s) => isDiseaseTarget(s.target)));
       setProducts(prods ?? []);
+      setLatestSoilTest(soilTest ?? null);
 
       try {
         const res = await fetch("/api/weather");
@@ -252,9 +265,24 @@ export default function DiseaseRiskSection() {
     );
   }
 
-  const { dollarSpot, pythium, brownPatch, anthracnose } = weather.diseaseRisk;
+  const { dollarSpot, pythium, brownPatch, anthracnose, fusariumPatch, springDeadSpot } = weather.diseaseRisk;
   const dsAboveThreshold = dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct;
-  const showAnthracnose = isCoolSeasonGrass(grassType);
+  const showCoolSeasonDiseases = isCoolSeasonGrass(grassType);
+  const showSpringDeadSpot = isSpringDeadSpotHost(grassType);
+
+  // Fall N applied while soil temp is in the SDS infection window — a
+  // documented risk factor (delays dormancy, reduces cold hardiness), not a
+  // hard rule. "Fall" here just means "an N application logged within the
+  // last 90 days while inFallWindow is true," since the app has no separate
+  // concept of calendar season.
+  const fallNRisk =
+    springDeadSpot.inFallWindow &&
+    lastNAppDate != null &&
+    now - new Date(lastNAppDate).getTime() < 90 * 24 * 60 * 60 * 1000;
+  const soilPhRisk = latestSoilTest?.ph != null && latestSoilTest.ph > 7.0;
+  const soilKRisk = latestSoilTest?.potassium_ppm != null && latestSoilTest.potassium_ppm < 100;
+  const sdsRiskFactorCount = [fallNRisk, soilPhRisk, soilKRisk].filter(Boolean).length;
+
   const updated = new Date(weather.updatedAt);
   const circumference = 2 * Math.PI * 36;
   const dashOffset = circumference * (1 - Math.min(dollarSpot.probabilityPct, 100) / 100);
@@ -400,7 +428,7 @@ export default function DiseaseRiskSection() {
           </div>
         </div>
 
-        {showAnthracnose && (
+        {showCoolSeasonDiseases && (
           <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
             <div className="flex items-center justify-center gap-1.5 mb-1.5">
               <span className="text-[11px] font-semibold text-ink">Anthracnose</span>
@@ -436,6 +464,76 @@ export default function DiseaseRiskSection() {
                 </span>
               ))}
             </div>
+          </div>
+        )}
+
+        {showCoolSeasonDiseases && (
+          <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-1.5">
+              <span className="text-[11px] font-semibold text-ink">Fusarium Patch</span>
+              <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber text-white font-mono">
+                HEURISTIC
+              </span>
+            </div>
+            <div
+              className={`font-mono text-xl font-semibold leading-none mb-1.5 ${
+                fusariumPatch.elevated ? "text-red" : "text-green-mid"
+              }`}
+            >
+              {fusariumPatch.wetHours}
+              <span className="text-xs font-normal text-mist">hrs</span>
+            </div>
+            <span
+              className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                fusariumPatch.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+              }`}
+            >
+              {fusariumPatch.elevated ? "CONDITIONS MET" : "NOT ELEVATED"}
+            </span>
+            <div className="flex items-center justify-center gap-1 mt-2">
+              {fusariumPatch.forecast.map((f) => (
+                <span
+                  key={f.hoursAhead}
+                  title={`${f.elevated ? "Conditions met" : "Not elevated"} in ${f.hoursAhead}h`}
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                    f.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                  }`}
+                >
+                  +{f.hoursAhead}h
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showSpringDeadSpot && (
+          <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-1.5">
+              <span className="text-[11px] font-semibold text-ink">Spring Dead Spot</span>
+              <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber text-white font-mono">
+                RISK FACTORS
+              </span>
+            </div>
+            <div
+              className={`font-mono text-xl font-semibold leading-none mb-1.5 ${
+                springDeadSpot.inFallWindow ? "text-red" : "text-green-mid"
+              }`}
+            >
+              {springDeadSpot.soilTempF != null ? springDeadSpot.soilTempF.toFixed(0) : "—"}
+              <span className="text-xs font-normal text-mist">°F soil</span>
+            </div>
+            <span
+              className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                springDeadSpot.inFallWindow ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+              }`}
+            >
+              {springDeadSpot.inFallWindow ? "IN FALL WINDOW" : "OUT OF WINDOW"}
+            </span>
+            {springDeadSpot.inFallWindow && (
+              <div className="mt-2 text-[9px] text-mist">
+                {sdsRiskFactorCount} risk factor{sdsRiskFactorCount === 1 ? "" : "s"} flagged below
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -545,7 +643,7 @@ export default function DiseaseRiskSection() {
         </div>
       </div>
 
-      {showAnthracnose && (
+      {showCoolSeasonDiseases && (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
           <div className="bg-green-dark p-5 grid grid-cols-[1fr_auto] gap-4 items-center">
             <div>
@@ -615,7 +713,7 @@ export default function DiseaseRiskSection() {
         </div>
       )}
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5 grid grid-cols-2 gap-5">
+      <div className={`bg-white border-[1.5px] border-rule rounded-[10px] p-5 grid gap-5 ${showCoolSeasonDiseases ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}>
         <div>
           <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
             Pythium Blight — trailing 24h
@@ -642,7 +740,84 @@ export default function DiseaseRiskSection() {
             </div>
           </div>
         </div>
+        {showCoolSeasonDiseases && (
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+              Fusarium Patch — trailing 24h
+            </div>
+            <div className="text-xs text-mist leading-relaxed">
+              Mean temp <strong className="text-ink">{fusariumPatch.meanTempF}°F</strong> · Leaf wetness{" "}
+              <strong className="text-ink">{fusariumPatch.wetHours} hrs</strong>
+              <div className="mt-1.5 text-[10px]">
+                Elevated when: mean temp 32–59°F and leaf wetness ≥10 hrs (qualitative extension
+                heuristic drawn from turf pathology literature — no formally validated numeric model
+                exists for Fusarium/Microdochium Patch).
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {showSpringDeadSpot && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+          <div className="bg-green-dark p-5">
+            <div className="font-serif text-xl text-white mb-1">Spring Dead Spot</div>
+            <div className="text-[11px] text-white/50 italic mb-2.5">Ophiosphaerella spp.</div>
+            <div className="text-[10px] text-white/40 font-mono">
+              Fall soil-temp infection window · risk-factor tracking, not an acute spray model
+            </div>
+          </div>
+          <div className="p-5 grid grid-cols-2 gap-5">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+                Fall Infection Window
+              </div>
+              <div className="flex items-center justify-between px-2.5 py-1.5 bg-chalk rounded mb-1.5 text-xs gap-2">
+                <span className="text-ink flex-1">Soil Temp (6cm)</span>
+                <span className="font-mono font-semibold text-green-mid">
+                  {springDeadSpot.soilTempF != null ? `${springDeadSpot.soilTempF.toFixed(1)}°F` : "Unavailable"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-2.5 py-1.5 bg-chalk rounded mb-1.5 text-xs gap-2">
+                <span className="text-ink flex-1">Status</span>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${springDeadSpot.inFallWindow ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
+                  {springDeadSpot.inFallWindow ? "IN FALL WINDOW" : "OUT OF WINDOW"}
+                </span>
+              </div>
+              <div className="mt-2 text-[10px] text-mist">
+                Infection-conducive when soil temp is 50–70°F and cooling (declining through fall) —
+                not just any time soil temp happens to pass through this band, since it also occurs
+                during spring warm-up when infection risk has already passed for the season.
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+                Risk Factors
+              </div>
+              {[
+                { name: "Fall N Applied", flagged: fallNRisk, detail: fallNRisk ? "Logged within 90 days, in-window" : "None flagged" },
+                { name: "Soil pH (alkaline)", flagged: soilPhRisk, detail: latestSoilTest?.ph != null ? `${latestSoilTest.ph.toFixed(1)}` : "Not tested" },
+                { name: "Potassium (low)", flagged: soilKRisk, detail: latestSoilTest?.potassium_ppm != null ? `${latestSoilTest.potassium_ppm} ppm` : "Not tested" },
+              ].map((f) => (
+                <div key={f.name} className="flex items-center justify-between px-2.5 py-1.5 bg-chalk rounded mb-1.5 text-xs gap-2">
+                  <span className="text-ink flex-1">{f.name}</span>
+                  <span className="font-mono text-mist">{f.detail}</span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${f.flagged ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
+                    {f.flagged ? "⚠️" : "✓"}
+                  </span>
+                </div>
+              ))}
+              <div className="mt-2 text-[10px] text-mist">
+                Excess/late fall nitrogen, potassium deficiency, and alkaline soil pH are documented
+                risk factors (thatch is another, but isn&apos;t tracked in Turf IQ). Control is
+                fall-preventive (cultural practice + fungicide timed to the infection window above) —
+                there&apos;s no rescue treatment once infected, and symptoms visible in spring reflect
+                last fall&apos;s conditions, not anything actionable today.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div id="disease-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
@@ -682,7 +857,9 @@ export default function DiseaseRiskSection() {
                   <option value="Pythium Blight" />
                   <option value="Brown Patch" />
                   <option value="Large Patch" />
-                  {showAnthracnose && <option value="Anthracnose" />}
+                  {showCoolSeasonDiseases && <option value="Anthracnose" />}
+                  {showCoolSeasonDiseases && <option value="Fusarium Patch" />}
+                  {showSpringDeadSpot && <option value="Spring Dead Spot" />}
                 </datalist>
               </div>
               <div className="flex flex-col gap-1.5">

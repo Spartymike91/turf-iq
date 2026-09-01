@@ -1019,6 +1019,9 @@ CREATE TABLE IF NOT EXISTS disease_risk_daily_log (
   brown_patch_elevated BOOLEAN NOT NULL,
   anthracnose_asi NUMERIC(6,2),
   anthracnose_above_threshold BOOLEAN,
+  fusarium_elevated BOOLEAN,
+  spring_dead_spot_soil_temp_f NUMERIC(5,1),
+  spring_dead_spot_in_window BOOLEAN,
   created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(course_id, log_date)
 );
@@ -1656,3 +1659,15 @@ CREATE POLICY "Owners and supers can delete expenses"
 -- Anthracnose data to backfill.
 ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS anthracnose_asi NUMERIC(6,2);
 ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS anthracnose_above_threshold BOOLEAN;
+
+-- ============================================
+-- MIGRATION: Fusarium Patch + Spring Dead Spot
+-- ============================================
+-- Fusarium Patch: qualitative heuristic (no published numeric regression
+-- exists), same tier as Brown Patch. Spring Dead Spot: risk-factor tracking
+-- (fall soil-temp window), not an acute spray-trigger model — see weather.ts
+-- for why it doesn't get a +24/48/72h forecast like the other five. Nullable
+-- since existing rows have no historical data for either.
+ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS fusarium_elevated BOOLEAN;
+ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS spring_dead_spot_soil_temp_f NUMERIC(5,1);
+ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS spring_dead_spot_in_window BOOLEAN;

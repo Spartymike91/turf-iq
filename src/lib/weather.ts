@@ -90,6 +90,16 @@ export interface WeatherResult {
       actionThreshold: number;
       forecast: { hoursAhead: number; asi: number; elevated: boolean }[];
     };
+    fusariumPatch: {
+      elevated: boolean;
+      meanTempF: number;
+      wetHours: number;
+      forecast: { hoursAhead: number; elevated: boolean }[];
+    };
+    springDeadSpot: {
+      soilTempF: number | null;
+      inFallWindow: boolean;
+    };
   };
   updatedAt: string;
 }
@@ -463,6 +473,28 @@ function computeAnthracnoseRisk(series: HourlySample[], asOfMs: number) {
   };
 }
 
+/**
+ * Fusarium Patch (Microdochium Patch, Microdochium nivale) — no publicly
+ * published numeric regression exists (unlike Dollar Spot/Anthracnose); this
+ * is a qualitative extension heuristic, same honesty tier as Brown Patch.
+ * Consistently corroborated across independent sources (Penn State, UGA, UC
+ * IPM, turf pathology literature): infection favored by 0-15C (32-59F) with
+ * leaf wetness >=10 hours/day.
+ */
+function computeFusariumPatchRisk(series: HourlySample[], asOfMs: number) {
+  const window = windowEndingAt(series, 24, asOfMs);
+  const temps = window.map((s) => s.tempC);
+  const meanTempC = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : 0;
+  const meanTempF = Math.round(cToF(meanTempC));
+  const wetHours = window.filter((s) => s.wet).length;
+
+  return {
+    elevated: meanTempF >= 32 && meanTempF <= 59 && wetHours >= 10,
+    meanTempF,
+    wetHours,
+  };
+}
+
 function sumWeeklyRainfallIn(grid: {
   quantitativePrecipitation?: { values: Array<{ validTime: string; value: number | null }> };
 }): number {
@@ -478,6 +510,49 @@ function sumWeeklyRainfallIn(grid: {
     }
   }
   return totalMm / 25.4;
+}
+
+/**
+ * Soil temp (6cm depth) via Open-Meteo — same endpoint/params already used
+ * client-side by the Weather page's soil temp card (SoilTempMap.tsx), fetched
+ * here too so Spring Dead Spot's number always matches what's shown there
+ * rather than risking two independently-computed soil temps disagreeing.
+ * `inFallWindow` isn't just "50-70F right now" — that band also occurs during
+ * spring warm-up, which is the wrong season entirely (by spring, any SDS
+ * infection already happened last fall). Requires the 5-day trailing average
+ * to be warmer than the last 24h average too, i.e. actually cooling.
+ */
+async function fetchSoilTemp(lat: number, lon: number): Promise<{ soilTempF: number | null; inFallWindow: boolean }> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=soil_temperature_6cm&temperature_unit=fahrenheit&timezone=auto&past_days=14&forecast_days=1`;
+  const res = await fetch(url);
+  if (!res.ok) return { soilTempF: null, inFallWindow: false };
+  const data = await res.json();
+  const times: string[] = data?.hourly?.time ?? [];
+  const values: Array<number | null> = data?.hourly?.soil_temperature_6cm ?? [];
+
+  const nowMs = Date.now();
+  let idx = -1;
+  for (let i = 0; i < times.length; i++) {
+    if (new Date(times[i]).getTime() <= nowMs) idx = i;
+    else break;
+  }
+  if (idx < 0) idx = values.length - 1;
+  const soilTempF = values[idx] ?? null;
+  if (idx < 0 || soilTempF == null) return { soilTempF: null, inFallWindow: false };
+
+  const averageOverLast = (hours: number): number | null => {
+    const slice = values.slice(Math.max(0, idx - hours + 1), idx + 1).filter((v): v is number => v != null);
+    if (!slice.length) return null;
+    return slice.reduce((sum, v) => sum + v, 0) / slice.length;
+  };
+  const avg24h = averageOverLast(24);
+  const avg5d = averageOverLast(24 * 5);
+  const cooling = avg24h != null && avg5d != null && avg5d > avg24h;
+
+  return {
+    soilTempF: Math.round(soilTempF * 10) / 10,
+    inFallWindow: soilTempF >= 50 && soilTempF <= 70 && cooling,
+  };
 }
 
 /**
@@ -776,7 +851,10 @@ async function fetchFreshWeather(
     await supabase.from("courses").update({ latitude: lat, longitude: lon }).eq("id", course.id);
   }
 
-  const { forecastPeriods, hourlyForecastPeriods, grid, latestObs, obsHistory } = await fetchNwsWeather(lat, lon);
+  const [{ forecastPeriods, hourlyForecastPeriods, grid, latestObs, obsHistory }, soilTemp] = await Promise.all([
+    fetchNwsWeather(lat, lon),
+    fetchSoilTemp(lat, lon),
+  ]);
 
   const now = new Date();
   const nowMs = now.getTime();
@@ -826,6 +904,14 @@ async function fetchFreshWeather(
       return { hoursAhead, asi: projected.asi, elevated: projected.elevated };
     }),
   };
+  const fusariumPatch = {
+    ...computeFusariumPatchRisk(diseaseSeries, nowMs),
+    forecast: FORECAST_HORIZONS_HOURS.map((hoursAhead) => ({
+      hoursAhead,
+      elevated: computeFusariumPatchRisk(diseaseSeries, nowMs + hoursAhead * 60 * 60 * 1000).elevated,
+    })),
+  };
+  const springDeadSpot = soilTemp;
 
   const todayStr = now.toISOString().slice(0, 10);
   await supabase
@@ -847,6 +933,9 @@ async function fetchFreshWeather(
         brown_patch_elevated: brownPatch.elevated,
         anthracnose_asi: anthracnose.asi,
         anthracnose_above_threshold: anthracnose.elevated,
+        fusarium_elevated: fusariumPatch.elevated,
+        spring_dead_spot_soil_temp_f: springDeadSpot.soilTempF,
+        spring_dead_spot_in_window: springDeadSpot.inFallWindow,
       },
       { onConflict: "course_id,log_date", ignoreDuplicates: true }
     );
@@ -925,6 +1014,8 @@ async function fetchFreshWeather(
       pythium,
       brownPatch,
       anthracnose,
+      fusariumPatch,
+      springDeadSpot,
     },
     updatedAt: now.toISOString(),
   };
