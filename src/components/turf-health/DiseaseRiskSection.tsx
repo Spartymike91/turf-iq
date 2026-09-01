@@ -206,8 +206,7 @@ export default function DiseaseRiskSection() {
       for (const row of data) {
         if (row.cost) {
           try {
-            await recordApplicationExpense(supabase, {
-              courseId,
+            await recordApplicationExpense({
               categoryName: "Fungicides",
               amount: Number(row.cost),
               description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,

@@ -190,9 +190,8 @@ export default function InsectsSection() {
       for (const row of data) {
         if (row.cost) {
           try {
-            await recordApplicationExpense(supabase, {
-              courseId,
-              categoryName: "Herbicides & Insecticides",
+            await recordApplicationExpense({
+              categoryName: "Insecticides",
               amount: Number(row.cost),
               description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
               expenseDate: row.applied_at.slice(0, 10),

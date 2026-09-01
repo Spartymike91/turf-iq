@@ -298,8 +298,7 @@ export default function FertilitySection() {
       for (const row of data) {
         if (row.cost) {
           try {
-            await recordApplicationExpense(supabase, {
-              courseId,
+            await recordApplicationExpense({
               categoryName: "Fertilizer",
               amount: Number(row.cost),
               description: `${row.product} — ${row.zone}`,

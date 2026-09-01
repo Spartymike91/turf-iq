@@ -1539,3 +1539,108 @@ SET allowed_modules = (
   )
 )
 WHERE allowed_modules && ARRAY['disease', 'fertility', 'pest-weed'];
+
+-- ============================================
+-- FIX: budget_categories/expenses writes incorrectly PIN-gated
+-- ============================================
+-- The Budget/Labor sensitive-data PIN feature (~line 1249) was meant to
+-- gate only *viewing* budget_categories/expenses, via `ALTER POLICY
+-- "Members can view ..."` — the comment there explicitly says "Write
+-- permissions (owner/superintendent only) are unchanged." But the live
+-- INSERT/UPDATE/DELETE policies on these two tables ended up requiring
+-- is_sensitive_data_elevated() too, diverging from both this file's text
+-- and the stated intent (confirmed by direct testing: an owner who has
+-- never unlocked the PIN gets a 42501 RLS error on insert; unlocking it
+-- immediately fixes it, with no other change).
+--
+-- This silently broke every client-side "log an application -> auto-post
+-- an expense" flow (Fertility/Weed/Insects/Disease Risk) for any owner/
+-- superintendent who hadn't separately opened Budget and entered their
+-- PIN first — the application itself still saved fine, only the
+-- best-effort budget-posting follow-up failed. It was misdiagnosed
+-- earlier in this project's history as "transient RLS, resolves on
+-- retry" because retrying only ever appeared to work when a Budget-page
+-- visit (which requires the PIN) happened in between.
+--
+-- This re-asserts the original, documented, PIN-independent write
+-- policies. Safe to re-run.
+DROP POLICY IF EXISTS "Owners and supers can insert budget categories" ON budget_categories;
+CREATE POLICY "Owners and supers can insert budget categories"
+  ON budget_categories FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = budget_categories.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update budget categories" ON budget_categories;
+CREATE POLICY "Owners and supers can update budget categories"
+  ON budget_categories FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = budget_categories.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete budget categories" ON budget_categories;
+CREATE POLICY "Owners and supers can delete budget categories"
+  ON budget_categories FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = budget_categories.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+DROP POLICY IF EXISTS "Owners and supers can insert expenses" ON expenses;
+CREATE POLICY "Owners and supers can insert expenses"
+  ON expenses FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = expenses.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update expenses" ON expenses;
+CREATE POLICY "Owners and supers can update expenses"
+  ON expenses FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = expenses.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete expenses" ON expenses;
+CREATE POLICY "Owners and supers can delete expenses"
+  ON expenses FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = expenses.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+
+-- ============================================
+-- FOLLOW-UP: the raw-subquery rewrite above didn't fix it either
+-- ============================================
+-- Confirmed via pg_policies that the rewritten policy text above is
+-- exactly correct (byte-for-byte the intended condition, no PIN check,
+-- no hidden restrictive policy anywhere on either table) — yet a
+-- brand-new owner with zero PIN history still gets the RLS error on
+-- every attempt, no caching delay, while the *identical* EXISTS-against-
+-- course_members predicate keeps working fine on task_assignments and
+-- products. Since is_course_member()/is_course_owner() above are
+-- deliberately SECURITY DEFINER specifically to let cross-table RLS
+-- checks against course_members avoid recursion/visibility edge cases
+-- (see the comment above their definitions), moving budget_categories'
+-- and expenses' write checks onto the same proven helper-function
+-- pattern — instead of a raw inline subquery — sidesteps whatever this
+-- is rather than continuing to guess at it blind.
+CREATE OR REPLACE FUNCTION public.can_manage_course_finances(target_course_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM course_members
+    WHERE course_id = target_course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent')
+  );
+$$;
+
+DROP POLICY IF EXISTS "Owners and supers can insert budget categories" ON budget_categories;
+CREATE POLICY "Owners and supers can insert budget categories"
+  ON budget_categories FOR INSERT WITH CHECK (public.can_manage_course_finances(course_id));
+DROP POLICY IF EXISTS "Owners and supers can update budget categories" ON budget_categories;
+CREATE POLICY "Owners and supers can update budget categories"
+  ON budget_categories FOR UPDATE USING (public.can_manage_course_finances(course_id));
+DROP POLICY IF EXISTS "Owners and supers can delete budget categories" ON budget_categories;
+CREATE POLICY "Owners and supers can delete budget categories"
+  ON budget_categories FOR DELETE USING (public.can_manage_course_finances(course_id));
+
+DROP POLICY IF EXISTS "Owners and supers can insert expenses" ON expenses;
+CREATE POLICY "Owners and supers can insert expenses"
+  ON expenses FOR INSERT WITH CHECK (public.can_manage_course_finances(course_id));
+DROP POLICY IF EXISTS "Owners and supers can update expenses" ON expenses;
+CREATE POLICY "Owners and supers can update expenses"
+  ON expenses FOR UPDATE USING (public.can_manage_course_finances(course_id));
+DROP POLICY IF EXISTS "Owners and supers can delete expenses" ON expenses;
+CREATE POLICY "Owners and supers can delete expenses"
+  ON expenses FOR DELETE USING (public.can_manage_course_finances(course_id));
