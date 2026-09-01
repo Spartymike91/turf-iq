@@ -82,6 +82,14 @@ export interface WeatherResult {
       hoursRhAbove95: number;
       forecast: { hoursAhead: number; elevated: boolean }[];
     };
+    anthracnose: {
+      asi: number;
+      meanTempF: number;
+      leafWetnessHours: number;
+      elevated: boolean;
+      actionThreshold: number;
+      forecast: { hoursAhead: number; asi: number; elevated: boolean }[];
+    };
   };
   updatedAt: string;
 }
@@ -162,6 +170,44 @@ async function nwsFetch(url: string) {
 // Pythium/Brown Patch 24h + overnight windows.
 const OBS_HISTORY_HOURS = 150;
 
+// A single /observations request caps at limit=500. Basic hourly-reporting
+// stations never come close to that in a 150h window, but higher-frequency
+// stations (some ASOS/AWOS report every 5 min) fill 500 slots in under two
+// days — silently truncating the Dollar Spot model's 5-day trailing window
+// to whatever fraction of it the first page happened to cover, with no
+// error. Page back via NWS's cursor-based pagination until the oldest
+// fetched observation reaches `start`, capped at 6 pages (~1800 samples,
+// comfortably covering 150h even at 5-min cadence) as a safety bound.
+async function fetchAllObservations(stationUrl: string, start: string) {
+  const startMs = new Date(start).getTime();
+  let url = `${stationUrl}/observations?start=${start}&limit=500`;
+  const features: Array<{ properties: NwsObservationProps }> = [];
+  for (let page = 0; page < 6 && url; page++) {
+    const data = await nwsFetch(url);
+    features.push(...data.features);
+    const oldest = data.features[data.features.length - 1]?.properties?.timestamp;
+    if (!oldest || new Date(oldest).getTime() <= startMs) break;
+    url = data.pagination?.next ?? "";
+  }
+  return features;
+}
+
+// Raw station observations can arrive far more often than hourly (see
+// fetchAllObservations above) — the disease models' "hours" counts (e.g.
+// hoursRhAbove90) assume roughly one sample per hour, so a 5-min-cadence
+// station would otherwise inflate every "hours" count ~12x. Bucket to one
+// observation per calendar hour (keeping the most recent within each hour,
+// since NWS returns newest-first) so "number of qualifying samples" means
+// what the models assume it means, regardless of station reporting cadence.
+function dedupeToHourly(obsHistory: Array<{ properties: NwsObservationProps }>) {
+  const byHour = new Map<number, { properties: NwsObservationProps }>();
+  for (const obs of obsHistory) {
+    const hourKey = Math.floor(new Date(obs.properties.timestamp).getTime() / (60 * 60 * 1000));
+    if (!byHour.has(hourKey)) byHour.set(hourKey, obs);
+  }
+  return Array.from(byHour.values());
+}
+
 async function fetchNwsWeather(lat: number, lon: number) {
   const points = await nwsFetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`);
   const { forecast, forecastHourly, forecastGridData, observationStations } = points.properties;
@@ -177,9 +223,9 @@ async function fetchNwsWeather(lat: number, lon: number) {
   if (!stationUrl) throw new Error("No observation station found near this location");
 
   const start = new Date(Date.now() - OBS_HISTORY_HOURS * 60 * 60 * 1000).toISOString();
-  const [latestObs, obsHistory] = await Promise.all([
+  const [latestObs, rawObsHistory] = await Promise.all([
     nwsFetch(`${stationUrl}/observations/latest`),
-    nwsFetch(`${stationUrl}/observations?start=${start}&limit=500`),
+    fetchAllObservations(stationUrl, start),
   ]);
 
   return {
@@ -189,7 +235,7 @@ async function fetchNwsWeather(lat: number, lon: number) {
       quantitativePrecipitation?: { values: Array<{ validTime: string; value: number | null }> };
     },
     latestObs: latestObs.properties as NwsObservationProps,
-    obsHistory: obsHistory.features as Array<{ properties: NwsObservationProps }>,
+    obsHistory: dedupeToHourly(rawObsHistory) as Array<{ properties: NwsObservationProps }>,
   };
 }
 
@@ -276,6 +322,12 @@ interface HourlySample {
   time: number; // ms epoch
   tempC: number;
   rh: number;
+  // Leaf wetness estimate for this hour. Actual observations use the real
+  // temp/dewpoint spread test (see computeLeafWetnessHours); forecast hours
+  // have no dewpoint field from NWS, so they fall back to the RH>=90% proxy
+  // already used elsewhere (e.g. the Pythium model) as a wetness signal.
+  // This makes `wet` a blended methodology, not a uniform measurement.
+  wet: boolean;
 }
 
 // One combined, time-sorted timeline of actual observations (for the past)
@@ -292,15 +344,17 @@ function buildDiseaseModelSeries(
   for (const f of obsHistory) {
     const tempC = f.properties.temperature?.value;
     const rh = f.properties.relativeHumidity?.value;
+    const dewC = f.properties.dewpoint?.value;
     if (tempC == null || rh == null) continue;
-    samples.push({ time: new Date(f.properties.timestamp).getTime(), tempC, rh });
+    const wet = dewC != null ? tempC - dewC <= 1.67 : rh >= 90;
+    samples.push({ time: new Date(f.properties.timestamp).getTime(), tempC, rh, wet });
   }
   for (const p of hourlyForecastPeriods) {
     const time = new Date(p.startTime).getTime();
     if (time <= now) continue;
     const rh = p.relativeHumidity?.value;
     if (rh == null) continue;
-    samples.push({ time, tempC: ((p.temperature - 32) * 5) / 9, rh });
+    samples.push({ time, tempC: ((p.temperature - 32) * 5) / 9, rh, wet: rh >= 90 });
   }
   return samples.sort((a, b) => a.time - b.time);
 }
@@ -373,6 +427,39 @@ function computeBrownPatchRisk(series: HourlySample[], asOfMs: number) {
     elevated: overnightLowF > 68 && hoursRhAbove95 >= 6,
     overnightLowF,
     hoursRhAbove95,
+  };
+}
+
+/**
+ * Anthracnose — Danneberger, Vargas & Jones (1984) Anthracnose Severity
+ * Index (Phytopathology 74:448-451), as republished by University of
+ * Kentucky Extension's turf disease forecasting page. Developed/validated
+ * for foliar anthracnose on annual bluegrass (Poa annua); not evaluated for
+ * creeping bentgrass and doesn't cover the more destructive crown-rot phase.
+ * ASI = 4.0233 - 0.2283*LW - 0.5308*T - 0.0013*LW^2 + 0.0197*T^2 + 0.0155*LW*T,
+ * T = mean daily temp (C), LW = daily hours of leaf wetness. Source states
+ * infection is possible (on sites with disease history) whenever ASI > 2.
+ */
+function computeAnthracnoseRisk(series: HourlySample[], asOfMs: number) {
+  const window = windowEndingAt(series, 24, asOfMs);
+  const temps = window.map((s) => s.tempC);
+  const meanTempC = temps.length ? temps.reduce((a, b) => a + b, 0) / temps.length : 0;
+  const leafWetnessHours = window.filter((s) => s.wet).length;
+
+  const asi =
+    4.0233 -
+    0.2283 * leafWetnessHours -
+    0.5308 * meanTempC -
+    0.0013 * leafWetnessHours ** 2 +
+    0.0197 * meanTempC ** 2 +
+    0.0155 * leafWetnessHours * meanTempC;
+
+  return {
+    asi: Math.round(asi * 100) / 100,
+    meanTempF: Math.round(cToF(meanTempC)),
+    leafWetnessHours,
+    elevated: asi > 2,
+    actionThreshold: 2,
   };
 }
 
@@ -732,6 +819,13 @@ async function fetchFreshWeather(
       elevated: computeBrownPatchRisk(diseaseSeries, nowMs + hoursAhead * 60 * 60 * 1000).elevated,
     })),
   };
+  const anthracnose = {
+    ...computeAnthracnoseRisk(diseaseSeries, nowMs),
+    forecast: FORECAST_HORIZONS_HOURS.map((hoursAhead) => {
+      const projected = computeAnthracnoseRisk(diseaseSeries, nowMs + hoursAhead * 60 * 60 * 1000);
+      return { hoursAhead, asi: projected.asi, elevated: projected.elevated };
+    }),
+  };
 
   const todayStr = now.toISOString().slice(0, 10);
   await supabase
@@ -751,6 +845,8 @@ async function fetchFreshWeather(
         dollar_spot_above_threshold: dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct,
         pythium_elevated: pythium.elevated,
         brown_patch_elevated: brownPatch.elevated,
+        anthracnose_asi: anthracnose.asi,
+        anthracnose_above_threshold: anthracnose.elevated,
       },
       { onConflict: "course_id,log_date", ignoreDuplicates: true }
     );
@@ -828,6 +924,7 @@ async function fetchFreshWeather(
       dollarSpot,
       pythium,
       brownPatch,
+      anthracnose,
     },
     updatedAt: now.toISOString(),
   };

@@ -1017,6 +1017,8 @@ CREATE TABLE IF NOT EXISTS disease_risk_daily_log (
   dollar_spot_above_threshold BOOLEAN NOT NULL,
   pythium_elevated BOOLEAN NOT NULL,
   brown_patch_elevated BOOLEAN NOT NULL,
+  anthracnose_asi NUMERIC(6,2),
+  anthracnose_above_threshold BOOLEAN,
   created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(course_id, log_date)
 );
@@ -1644,3 +1646,13 @@ CREATE POLICY "Owners and supers can update expenses"
 DROP POLICY IF EXISTS "Owners and supers can delete expenses" ON expenses;
 CREATE POLICY "Owners and supers can delete expenses"
   ON expenses FOR DELETE USING (public.can_manage_course_finances(course_id));
+
+-- ============================================
+-- MIGRATION: Anthracnose disease risk model
+-- ============================================
+-- Adds the 4th disease model (Danneberger/Vargas/Jones 1984 Anthracnose
+-- Severity Index) alongside Dollar Spot/Pythium/Brown Patch. Nullable
+-- since existing disease_risk_daily_log rows have no historical
+-- Anthracnose data to backfill.
+ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS anthracnose_asi NUMERIC(6,2);
+ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS anthracnose_above_threshold BOOLEAN;

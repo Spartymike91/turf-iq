@@ -7,6 +7,7 @@ import type { WeatherResult } from "@/lib/weather";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
 import { isDiseaseTarget } from "@/lib/pestCategorization";
+import { isCoolSeasonGrass } from "@/lib/pestModels";
 import { printSection } from "@/lib/printSection";
 import QuantityInput from "@/components/ui/QuantityInput";
 
@@ -251,8 +252,9 @@ export default function DiseaseRiskSection() {
     );
   }
 
-  const { dollarSpot, pythium, brownPatch } = weather.diseaseRisk;
+  const { dollarSpot, pythium, brownPatch, anthracnose } = weather.diseaseRisk;
   const dsAboveThreshold = dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct;
+  const showAnthracnose = isCoolSeasonGrass(grassType);
   const updated = new Date(weather.updatedAt);
   const circumference = 2 * Math.PI * 36;
   const dashOffset = circumference * (1 - Math.min(dollarSpot.probabilityPct, 100) / 100);
@@ -397,6 +399,45 @@ export default function DiseaseRiskSection() {
             ))}
           </div>
         </div>
+
+        {showAnthracnose && (
+          <div className="bg-white border-[1.5px] border-rule rounded-lg p-3.5 text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-1.5">
+              <span className="text-[11px] font-semibold text-ink">Anthracnose</span>
+              <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-mid text-white font-mono">
+                MODEL
+              </span>
+            </div>
+            <div
+              className={`font-mono text-xl font-semibold leading-none mb-1.5 ${
+                anthracnose.elevated ? "text-red" : "text-green-mid"
+              }`}
+            >
+              {anthracnose.asi.toFixed(1)}
+              <span className="text-xs font-normal text-mist"> ASI</span>
+            </div>
+            <span
+              className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded font-mono ${
+                anthracnose.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+              }`}
+            >
+              {anthracnose.elevated ? "ABOVE THRESHOLD" : "BELOW THRESHOLD"}
+            </span>
+            <div className="flex items-center justify-center gap-1 mt-2">
+              {anthracnose.forecast.map((f) => (
+                <span
+                  key={f.hoursAhead}
+                  title={`ASI ${f.asi.toFixed(1)} projected in ${f.hoursAhead}h`}
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                    f.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                  }`}
+                >
+                  +{f.hoursAhead}h
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dollar Spot Detail Card */}
@@ -504,6 +545,76 @@ export default function DiseaseRiskSection() {
         </div>
       </div>
 
+      {showAnthracnose && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+          <div className="bg-green-dark p-5 grid grid-cols-[1fr_auto] gap-4 items-center">
+            <div>
+              <div className="font-serif text-xl text-white mb-1">Anthracnose</div>
+              <div className="text-[11px] text-white/50 italic mb-2.5">Colletotrichum cereale</div>
+              <div className="text-[10px] text-white/40 font-mono">
+                Danneberger, Vargas &amp; Jones (1984) severity index · course-level weather station
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="font-mono text-3xl font-bold text-white leading-none">
+                {anthracnose.asi.toFixed(1)}
+              </div>
+              <div className="text-[9px] text-white/45 uppercase tracking-wide mt-0.5">Severity Index</div>
+              <div
+                className={`text-[10px] font-bold mt-2 font-mono ${
+                  anthracnose.elevated ? "text-red" : "text-green-bright"
+                }`}
+              >
+                ● {anthracnose.elevated ? "ABOVE" : "BELOW"} {anthracnose.actionThreshold} THRESHOLD
+              </div>
+            </div>
+          </div>
+          <div className="p-5 grid grid-cols-2 gap-5">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+                Model Inputs (trailing 24h)
+              </div>
+              {[
+                { name: "Mean Air Temp", val: `${anthracnose.meanTempF}°F` },
+                { name: "Leaf Wetness Hours", val: `${anthracnose.leafWetnessHours} hrs` },
+              ].map((f) => (
+                <div
+                  key={f.name}
+                  className="flex items-center justify-between px-2.5 py-1.5 bg-chalk rounded mb-1.5 text-xs gap-2"
+                >
+                  <span className="text-ink flex-1">{f.name}</span>
+                  <span className="font-mono font-semibold text-green-mid">{f.val}</span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
+                Guidance
+              </div>
+              <div className="border-[1.5px] border-rule rounded-[7px] overflow-hidden">
+                <div
+                  className={`px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${
+                    anthracnose.elevated ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"
+                  }`}
+                >
+                  {anthracnose.elevated ? `⚠️ Above the ASI > ${anthracnose.actionThreshold} threshold` : `✓ Below the ASI > ${anthracnose.actionThreshold} threshold`}
+                </div>
+                <div className="p-3 text-xs text-ink leading-relaxed">
+                  {anthracnose.elevated
+                    ? "On sites with a history of anthracnose, infection is considered possible above this threshold. Consider a preventive fungicide application, and reduce plant stress (raise mowing height, avoid N deficiency) where practical."
+                    : "Model output is below the infection-conducive threshold. No immediate fungicide action indicated — continue monitoring as conditions change."}
+                  <div className="mt-2 text-[10px] text-mist">
+                    Developed and validated for foliar anthracnose on annual bluegrass (Poa annua); not
+                    separately validated for creeping bentgrass, and doesn&apos;t cover the more
+                    destructive crown-rot phase.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-5 grid grid-cols-2 gap-5">
         <div>
           <div className="text-[10px] font-bold uppercase tracking-wider text-mist font-mono mb-2.5">
@@ -571,6 +682,7 @@ export default function DiseaseRiskSection() {
                   <option value="Pythium Blight" />
                   <option value="Brown Patch" />
                   <option value="Large Patch" />
+                  {showAnthracnose && <option value="Anthracnose" />}
                 </datalist>
               </div>
               <div className="flex flex-col gap-1.5">
