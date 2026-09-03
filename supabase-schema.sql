@@ -1816,3 +1816,15 @@ CREATE POLICY "Owners and supers can update expenses"
 DROP POLICY IF EXISTS "Owners and supers can delete expenses" ON expenses;
 CREATE POLICY "Owners and supers can delete expenses"
   ON expenses FOR DELETE USING (public.can_manage_course_finances(course_id));
+
+-- ============================================
+-- CLEANUP LAP DIRECTION
+-- ============================================
+-- Same shape as mow_direction above: a per-task, optional field (not gated
+-- to a specific task category, since task_templates.category is free text)
+-- for the direction of the final perimeter "cleanup lap" pass on greens/
+-- tees/fairways/approaches, distinct from the interior mow_direction
+-- pattern. Shown on the assignment form right after Mow Direction, and on
+-- the crew task board next to the mow direction icon.
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS cleanup_lap_direction TEXT
+  CHECK (cleanup_lap_direction IN ('clockwise', 'counterclockwise'));

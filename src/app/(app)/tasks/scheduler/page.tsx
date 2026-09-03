@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import { MOW_DIRECTIONS, type MowDirection } from "@/lib/mowDirections";
 import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
+import { CLEANUP_LAP_DIRECTIONS, type CleanupLapDirection } from "@/lib/cleanupLapDirections";
+import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon";
 
 interface TaskTemplate {
   id: string;
@@ -29,6 +31,7 @@ interface TaskAssignment {
   scheduled_date: string;
   priority: number;
   mow_direction: MowDirection | null;
+  cleanup_lap_direction: CleanupLapDirection | null;
   status: "not_started" | "in_progress" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
@@ -47,7 +50,16 @@ interface EmployeeStat {
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
-const emptyForm = { template_id: "", name: "", assigned_to: "", scheduled_date: todayStr(), priority: "1", mow_direction: "" as MowDirection | "", notes: "" };
+const emptyForm = {
+  template_id: "",
+  name: "",
+  assigned_to: "",
+  scheduled_date: todayStr(),
+  priority: "1",
+  mow_direction: "" as MowDirection | "",
+  cleanup_lap_direction: "" as CleanupLapDirection | "",
+  notes: "",
+};
 
 export default function TaskSchedulerPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -152,6 +164,7 @@ export default function TaskSchedulerPage() {
         scheduled_date: addForm.scheduled_date,
         priority: Number(addForm.priority) || 1,
         mow_direction: addForm.mow_direction || null,
+        cleanup_lap_direction: addForm.cleanup_lap_direction || null,
         estimated_minutes:
           template?.target_minutes ?? (template?.estimated_duration ? parseInt(template.estimated_duration) || null : null),
         notes: addForm.notes || null,
@@ -314,6 +327,29 @@ export default function TaskSchedulerPage() {
                 ))}
               </div>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Cleanup Lap</label>
+              <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1">
+                {CLEANUP_LAP_DIRECTIONS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    title={d.label}
+                    onClick={() =>
+                      setAddForm({
+                        ...addForm,
+                        cleanup_lap_direction: addForm.cleanup_lap_direction === d.value ? "" : d.value,
+                      })
+                    }
+                    className={`p-1 rounded transition-colors ${
+                      addForm.cleanup_lap_direction === d.value ? "bg-green-pale text-green-mid" : "text-mist hover:text-ink"
+                    }`}
+                  >
+                    <CleanupLapDirectionIcon direction={d.value} />
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex flex-col gap-1.5 flex-1 min-w-[120px]">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
               <input
@@ -410,6 +446,7 @@ export default function TaskSchedulerPage() {
                     <span className="inline-flex items-center gap-1.5">
                       {a.name}
                       <MowDirectionIcon direction={a.mow_direction} />
+                      <CleanupLapDirectionIcon direction={a.cleanup_lap_direction} />
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-mist">{employees.find((e) => e.id === a.assigned_to)?.name ?? "Unassigned"}</td>

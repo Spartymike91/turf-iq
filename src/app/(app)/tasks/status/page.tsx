@@ -6,6 +6,8 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import TaskCompleteModal from "@/components/tasks/TaskCompleteModal";
 import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
 import type { MowDirection } from "@/lib/mowDirections";
+import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon";
+import type { CleanupLapDirection } from "@/lib/cleanupLapDirections";
 import type { WeatherResult } from "@/lib/weather";
 
 interface Employee {
@@ -20,6 +22,7 @@ interface TaskAssignment {
   assigned_to: string | null;
   priority: number;
   mow_direction: MowDirection | null;
+  cleanup_lap_direction: CleanupLapDirection | null;
   status: "not_started" | "in_progress" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
@@ -194,6 +197,7 @@ export default function TaskStatusPage() {
                         <span className="text-mist font-mono">{i + 1}.</span>
                         {t.name}
                         <MowDirectionIcon direction={t.mow_direction} />
+                        <CleanupLapDirectionIcon direction={t.cleanup_lap_direction} />
                       </span>
                       <span className="text-[8px] font-bold px-1 py-0.5 rounded font-mono bg-chalk text-mist shrink-0">
                         {STATUS_LABEL[t.status].toUpperCase()}
