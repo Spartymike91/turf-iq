@@ -45,23 +45,23 @@ export default function MowDirectionIcon({ direction, size = 20 }: { direction: 
     const uy = dy / len;
     const nx = -uy;
     const ny = ux;
-    const backX = head.x - ux * 3;
-    const backY = head.y - uy * 3;
-    return `${head.x},${head.y} ${backX + nx * 1.8},${backY + ny * 1.8} ${backX - nx * 1.8},${backY - ny * 1.8}`;
+    const backX = head.x - ux * 4.5;
+    const backY = head.y - uy * 4.5;
+    return `${head.x},${head.y} ${backX + nx * 2.8},${backY + ny * 2.8} ${backX - nx * 2.8},${backY - ny * 2.8}`;
   };
 
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+      <circle cx={c} cy={c} r={r} fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
       {ticks.map((t, i) => (
-        <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="currentColor" strokeWidth="1" opacity="0.4" />
+        <line key={i} x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="currentColor" strokeWidth="1" opacity="0.3" />
       ))}
       {linesByDirection[direction].map(([a, b], i) => {
         const p1 = toPoint(a);
         const p2 = toPoint(b);
         return (
           <g key={i}>
-            <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+            <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
             <polygon points={arrowhead(a, b)} fill="currentColor" />
           </g>
         );
