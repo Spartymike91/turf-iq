@@ -85,7 +85,7 @@ async function buildSystemPrompt(
             .map((a) => {
               const clearAt = new Date(a.applied_at).getTime() + a.rei_hours * 60 * 60 * 1000;
               const status = nowMs < clearAt ? "RESTRICTED (REI active)" : "clear";
-              return `${a.target} (${a.product}) on ${new Date(a.applied_at).toLocaleDateString()} — ${status}`;
+              return `${a.target ? `${a.target} (${a.product})` : a.product} on ${new Date(a.applied_at).toLocaleDateString()} — ${status}`;
             })
             .join("; ")}`
         );

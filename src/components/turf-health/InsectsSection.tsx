@@ -5,25 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
-import { COURSE_AREAS } from "@/lib/areas";
-import { recordApplicationExpense } from "@/lib/applicationExpenses";
-import { isWeedApplication, isDiseaseTarget, isGrowthRegulatorApplication } from "@/lib/pestCategorization";
+import { isWeedApplication, isDiseaseTarget, isGrowthRegulatorApplication, type ProductCategory } from "@/lib/pestCategorization";
 import { printSection } from "@/lib/printSection";
-import QuantityInput from "@/components/ui/QuantityInput";
-
-interface PestApplication {
-  id: string;
-  course_id: string;
-  applied_at: string;
-  target: string;
-  area: string | null;
-  product: string;
-  product_id: string | null;
-  rei_hours: number;
-  cost: number | null;
-  quantity_used: number | null;
-  notes: string | null;
-}
+import PestApplicationEditRow, { type PestApplicationRow } from "@/components/turf-health/PestApplicationEditRow";
 
 interface Product {
   id: string;
@@ -34,33 +18,15 @@ interface Product {
   current_stock: number;
 }
 
-const emptyForm = { target: "", area: "", applied_at: "", notes: "" };
-const emptyLine = { productId: "", customName: "", rei_hours: "", cost: "", quantity_used: "" };
-
-function toLocalDatetimeInput(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
 export default function InsectsSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [grassType, setGrassType] = useState("");
   const [weather, setWeather] = useState<WeatherResult | null>(null);
-  const [applications, setApplications] = useState<PestApplication[]>([]);
+  const [applications, setApplications] = useState<PestApplicationRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  // Every active product, regardless of category — needed for the exclusion
-  // filter below, since a weed/disease/growth-regulator application here may
-  // link to a product whose category isn't insecticide/other (the only
-  // categories `products` itself is restricted to for the Add Application
-  // form's own picker).
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [checking, setChecking] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState(emptyForm);
-  const [lines, setLines] = useState([{ ...emptyLine }]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -94,22 +60,16 @@ export default function InsectsSection() {
         .order("applied_at", { ascending: false });
       setApplications(apps ?? []);
 
-      const [{ data: prods }, { data: allProds }] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, name, category, unit, unit_cost, current_stock")
-          .eq("course_id", context.courseId)
-          .eq("is_active", true)
-          .in("category", ["insecticide", "other"])
-          .order("name"),
-        supabase
-          .from("products")
-          .select("id, name, category, unit, unit_cost, current_stock")
-          .eq("course_id", context.courseId)
-          .eq("is_active", true),
-      ]);
+      // Unrestricted (any category) — needed both because there's no
+      // add-form picker to restrict for anymore, and for the exclusion
+      // filter below to correctly resolve any legacy row's linked product.
+      const { data: prods } = await supabase
+        .from("products")
+        .select("id, name, category, unit, unit_cost, current_stock")
+        .eq("course_id", context.courseId)
+        .eq("is_active", true)
+        .order("name");
       setProducts(prods ?? []);
-      setAllProducts(allProds ?? []);
 
       try {
         const res = await fetch("/api/weather");
@@ -125,106 +85,12 @@ export default function InsectsSection() {
   }, []);
 
   // Insects is the catch-all remainder of pest_applications — anything not
-  // claimed by Weed's keyword/category match or Disease's keyword match.
-  const insectApplications = applications.filter(
-    (a) => !isWeedApplication(a, allProducts) && !isDiseaseTarget(a.target) && !isGrowthRegulatorApplication(a, allProducts)
-  );
-
-  function updateLine(index: number, patch: Partial<typeof emptyLine>) {
-    setLines((prev) =>
-      prev.map((l, i) => {
-        if (i !== index) return l;
-        const next = { ...l, ...patch };
-        if ("productId" in patch || "quantity_used" in patch) {
-          const product = products.find((p) => p.id === next.productId);
-          const qty = parseFloat(next.quantity_used);
-          if (product?.unit_cost != null && !Number.isNaN(qty)) {
-            next.cost = (Number(product.unit_cost) * qty).toFixed(2);
-          }
-        }
-        return next;
-      })
-    );
-  }
-
-  function addLine() {
-    setLines((prev) => [...prev, { ...emptyLine }]);
-  }
-
-  function removeLine(index: number) {
-    setLines((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
-  }
-
-  async function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    const validLines = lines.filter((l) => l.productId || l.customName);
-    if (!courseId || !addForm.target || !addForm.area || validLines.length === 0) return;
-    setSaving(true);
-    setError(null);
-    const supabase = createClient();
-    const appliedAt = addForm.applied_at ? new Date(addForm.applied_at).toISOString() : new Date().toISOString();
-
-    const rows = validLines.map((l) => {
-      const product = products.find((p) => p.id === l.productId);
-      return {
-        course_id: courseId,
-        applied_at: appliedAt,
-        target: addForm.target,
-        area: addForm.area,
-        product: product ? product.name : l.customName,
-        product_id: product ? product.id : null,
-        rei_hours: l.rei_hours ? parseInt(l.rei_hours) : 0,
-        cost: l.cost ? parseFloat(l.cost) : null,
-        quantity_used: product && l.quantity_used ? parseFloat(l.quantity_used) : null,
-        notes: addForm.notes || null,
-      };
-    });
-
-    const { data, error: insertError } = await supabase.from("pest_applications").insert(rows).select();
-
-    if (insertError) {
-      setError(insertError.message);
-    } else if (data) {
-      setApplications((prev) => [...prev, ...data].sort((a, b) => b.applied_at.localeCompare(a.applied_at)));
-
-      for (const line of validLines) {
-        const product = products.find((p) => p.id === line.productId);
-        if (product && line.quantity_used) {
-          const newStock = Number(product.current_stock) - parseFloat(line.quantity_used);
-          const { error: stockError } = await supabase
-            .from("products")
-            .update({ current_stock: newStock })
-            .eq("id", product.id);
-          if (!stockError) {
-            setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
-          }
-        }
-      }
-
-      for (const row of data) {
-        if (row.cost) {
-          try {
-            await recordApplicationExpense({
-              categoryName: "Insecticides",
-              amount: Number(row.cost),
-              description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
-              expenseDate: row.applied_at.slice(0, 10),
-              source: "application_pest",
-              pestApplicationId: row.id,
-            });
-          } catch (expenseError) {
-            console.error("Failed to record insect application expense:", expenseError);
-          }
-        }
-      }
-
-      setAddForm(emptyForm);
-      setLines([{ ...emptyLine }]);
-      setShowAdd(false);
-      setNow(Date.now());
-    }
-    setSaving(false);
-  }
+  // explicitly categorized (or, for legacy rows with no category, not
+  // claimed by Weed/Disease/Growth Regulator's keyword/product-category match).
+  const insectApplications = applications.filter((a) => {
+    if (a.category != null) return a.category === "insecticide" || a.category === "other";
+    return !isWeedApplication(a, products) && !isDiseaseTarget(a.target) && !isGrowthRegulatorApplication(a, products);
+  });
 
   async function handleDelete(id: string) {
     const supabase = createClient();
@@ -297,172 +163,21 @@ export default function InsectsSection() {
         </div>
       )}
 
-      {error && (
-        <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-2 text-xs text-red">{error}</div>
-      )}
-
       <div id="insect-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Application Log — REI Compliance</div>
-          <div className="flex items-center gap-2 no-print">
-            <button
-              onClick={() => printSection("insect-application-log")}
-              className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
-            >
-              Print
-            </button>
-            <button
-              onClick={() => setShowAdd((v) => !v)}
-              className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
-            >
-              {showAdd ? "Cancel" : "+ Log Application"}
-            </button>
-          </div>
+          <button
+            onClick={() => printSection("insect-application-log")}
+            className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors no-print"
+          >
+            Print
+          </button>
         </div>
-
-        {showAdd && (
-          <form onSubmit={handleAdd} className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Target</label>
-                <input
-                  type="text"
-                  required
-                  value={addForm.target}
-                  onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
-                  placeholder="White Grub"
-                  className="w-32 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Area</label>
-                <select
-                  required
-                  value={addForm.area}
-                  onChange={(e) => setAddForm({ ...addForm, area: e.target.value })}
-                  className="w-36 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-                >
-                  <option value="" disabled>
-                    Select area
-                  </option>
-                  {COURSE_AREAS.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
-                <input
-                  type="datetime-local"
-                  value={addForm.applied_at}
-                  onChange={(e) => setAddForm({ ...addForm, applied_at: e.target.value })}
-                  placeholder={toLocalDatetimeInput(new Date())}
-                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
-                <input
-                  type="text"
-                  value={addForm.notes}
-                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
-                  placeholder="Post-mow"
-                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">
-                Products <span className="text-mist font-normal normal-case">— log a tank mix in one pass</span>
-              </label>
-              {lines.map((line, i) => {
-                const linkedProduct = products.find((p) => p.id === line.productId);
-                return (
-                  <div key={i} className="flex flex-wrap items-end gap-2">
-                    <select
-                      value={line.productId}
-                      onChange={(e) => updateLine(i, { productId: e.target.value })}
-                      className="w-40 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                    >
-                      <option value="">— Custom / not in directory —</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    {!line.productId && (
-                      <input
-                        required
-                        value={line.customName}
-                        onChange={(e) => updateLine(i, { customName: e.target.value })}
-                        placeholder="Dylox 6.2"
-                        className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                      />
-                    )}
-                    <input
-                      type="number"
-                      value={line.rei_hours}
-                      onChange={(e) => updateLine(i, { rei_hours: e.target.value })}
-                      placeholder="REI hrs"
-                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                    />
-                    {linkedProduct && (
-                      <QuantityInput
-                        value={line.quantity_used}
-                        onChange={(v) => updateLine(i, { quantity_used: v })}
-                        unit={linkedProduct.unit}
-                        title={`Deducted from stock (currently ${linkedProduct.current_stock} ${linkedProduct.unit})`}
-                        className="w-32"
-                      />
-                    )}
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={line.cost}
-                      onChange={(e) => updateLine(i, { cost: e.target.value })}
-                      placeholder="Cost"
-                      title={linkedProduct ? "Auto-filled from unit cost × quantity used — editable" : "Cost"}
-                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                    />
-                    {lines.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeLine(i)}
-                        className="text-mist text-xs font-semibold hover:text-red"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              <button
-                type="button"
-                onClick={addLine}
-                className="self-start text-xs font-semibold text-green-mid hover:text-green-dark"
-              >
-                + Add Product
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="self-start px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
-          </form>
-        )}
 
         {insectApplications.length === 0 ? (
           <div className="p-10 text-center">
             <div className="text-4xl mb-3">🐛</div>
-            <div className="text-sm text-mist">No insect applications logged yet. Add your first one above.</div>
+            <div className="text-sm text-mist">No insect applications logged yet. Log one from the button above the tabs.</div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -481,32 +196,50 @@ export default function InsectsSection() {
               </tr>
             </thead>
             <tbody>
-              {insectApplications.map((a) => {
-                const appliedMs = new Date(a.applied_at).getTime();
-                const clearAt = appliedMs + a.rei_hours * 60 * 60 * 1000;
-                const restricted = now < clearAt;
-                return (
+              {insectApplications.map((a) =>
+                editingId === a.id ? (
+                  <PestApplicationEditRow
+                    key={a.id}
+                    app={a}
+                    resolvedCategory={(a.category as ProductCategory) ?? "insecticide"}
+                    products={products}
+                    colSpan={9}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={(updated) => {
+                      setApplications((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                      setEditingId(null);
+                    }}
+                  />
+                ) : (
                   <tr key={a.id} className="border-b border-rule last:border-0">
                     <td className="px-5 py-2.5 text-mist">{new Date(a.applied_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td>
-                    <td className="px-3 py-2.5 font-medium">{a.target}</td>
+                    <td className="px-3 py-2.5 font-medium">{a.target || "—"}</td>
                     <td className="px-3 py-2.5 text-mist">{a.area || "—"}</td>
                     <td className="px-3 py-2.5">{a.product}</td>
                     <td className="px-3 py-2.5 font-mono">{a.rei_hours}h</td>
                     <td className="px-3 py-2.5 font-mono">{a.cost != null ? `$${Number(a.cost).toFixed(2)}` : "—"}</td>
                     <td className="px-3 py-2.5">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
-                        {restricted ? "RESTRICTED" : "CLEAR"}
-                      </span>
+                      {(() => {
+                        const restricted = now < new Date(a.applied_at).getTime() + a.rei_hours * 60 * 60 * 1000;
+                        return (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
+                            {restricted ? "RESTRICTED" : "CLEAR"}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-2.5 text-mist">{a.notes || "—"}</td>
-                    <td className="px-5 py-2.5 text-right no-print">
+                    <td className="px-5 py-2.5 text-right no-print whitespace-nowrap">
+                      <button onClick={() => setEditingId(a.id)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
+                        Edit
+                      </button>
                       <button onClick={() => handleDelete(a.id)} className="text-mist text-xs font-semibold hover:text-red">
                         Delete
                       </button>
                     </td>
                   </tr>
-                );
-              })}
+                )
+              )}
             </tbody>
           </table>
           </div>

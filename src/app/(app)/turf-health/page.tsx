@@ -7,6 +7,7 @@ import WeedSection from "@/components/turf-health/WeedSection";
 import InsectsSection from "@/components/turf-health/InsectsSection";
 import DiseaseRiskSection from "@/components/turf-health/DiseaseRiskSection";
 import GrowthRegulatorSection from "@/components/turf-health/GrowthRegulatorSection";
+import LogApplicationForm from "@/components/turf-health/LogApplicationForm";
 
 const SUB_TABS = [
   { slug: "fertility", label: "Fertility", icon: "🌱" },
@@ -40,6 +41,8 @@ function TurfHealthContent() {
         </div>
         <div className="font-serif text-2xl text-green-dark">Fertility, Weed, Insects, Disease Risk, Growth Regulators</div>
       </div>
+
+      <LogApplicationForm />
 
       <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1 self-start">
         {SUB_TABS.map((tab) => (

@@ -5,23 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
-import { COURSE_AREAS } from "@/lib/areas";
-import { recordApplicationExpense } from "@/lib/applicationExpenses";
 import { printSection } from "@/lib/printSection";
-import QuantityInput from "@/components/ui/QuantityInput";
-
-interface FertilizerApplication {
-  id: string;
-  course_id: string;
-  zone: string;
-  product: string;
-  product_id: string | null;
-  n_lbs_per_1000: number;
-  cost: number | null;
-  quantity_used: number | null;
-  application_date: string;
-  notes: string | null;
-}
+import FertilizerApplicationEditRow, { type FertilizerApplicationRow } from "@/components/turf-health/FertilizerApplicationEditRow";
 
 interface Product {
   id: string;
@@ -52,20 +37,6 @@ const RANGES = {
   iron_ppm: { min: 80, max: 120, label: "Iron (Fe)" },
 } as const;
 
-const emptyAppForm = {
-  zone: "",
-  application_date: "",
-  notes: "",
-};
-
-const emptyAppLine = {
-  productId: "",
-  customName: "",
-  n_lbs_per_1000: "",
-  cost: "",
-  quantity_used: "",
-};
-
 const emptyTestForm = {
   zone: "",
   test_date: "",
@@ -90,16 +61,14 @@ export default function FertilitySection() {
   const [annualTarget, setAnnualTarget] = useState<number>(0);
   const [targetInput, setTargetInput] = useState("");
   const [editingTarget, setEditingTarget] = useState(false);
-  const [applications, setApplications] = useState<FertilizerApplication[]>([]);
+  const [applications, setApplications] = useState<FertilizerApplicationRow[]>([]);
   const [soilTests, setSoilTests] = useState<SoilTest[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [showAddApp, setShowAddApp] = useState(false);
-  const [addAppForm, setAddAppForm] = useState(emptyAppForm);
-  const [appLines, setAppLines] = useState([{ ...emptyAppLine }]);
   const [showAddTest, setShowAddTest] = useState(false);
   const [addTestForm, setAddTestForm] = useState(emptyTestForm);
 
@@ -214,107 +183,6 @@ export default function FertilitySection() {
     } else if (data) {
       setAnnualTarget(Number(data.annual_n_target));
       setEditingTarget(false);
-    }
-    setSaving(false);
-  }
-
-  function updateAppLine(index: number, patch: Partial<typeof emptyAppLine>) {
-    setAppLines((prev) =>
-      prev.map((l, i) => {
-        if (i !== index) return l;
-        const next = { ...l, ...patch };
-        // Auto-compute cost from the directory product's unit cost whenever
-        // the product or quantity changes — still editable afterward, but a
-        // later edit to either will recompute and overwrite a manual value.
-        if ("productId" in patch || "quantity_used" in patch) {
-          const product = products.find((p) => p.id === next.productId);
-          const qty = parseFloat(next.quantity_used);
-          if (product?.unit_cost != null && !Number.isNaN(qty)) {
-            next.cost = (Number(product.unit_cost) * qty).toFixed(2);
-          }
-        }
-        return next;
-      })
-    );
-  }
-
-  function addAppLine() {
-    setAppLines((prev) => [...prev, { ...emptyAppLine }]);
-  }
-
-  function removeAppLine(index: number) {
-    setAppLines((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
-  }
-
-  async function handleAddApplication(e: React.FormEvent) {
-    e.preventDefault();
-    const validLines = appLines.filter((l) => (l.productId || l.customName) && l.n_lbs_per_1000);
-    if (!courseId || !addAppForm.zone || validLines.length === 0) return;
-    setSaving(true);
-    setError(null);
-    const supabase = createClient();
-    const dateStr = addAppForm.application_date || new Date().toISOString().slice(0, 10);
-
-    const rows = validLines.map((l) => {
-      const product = products.find((p) => p.id === l.productId);
-      return {
-        course_id: courseId,
-        zone: addAppForm.zone,
-        product: product ? product.name : l.customName,
-        product_id: product ? product.id : null,
-        n_lbs_per_1000: parseFloat(l.n_lbs_per_1000),
-        cost: l.cost ? parseFloat(l.cost) : null,
-        quantity_used: product && l.quantity_used ? parseFloat(l.quantity_used) : null,
-        application_date: dateStr,
-        notes: addAppForm.notes || null,
-      };
-    });
-
-    const { data, error: insertError } = await supabase.from("fertilizer_applications").insert(rows).select();
-
-    if (insertError) {
-      setError(insertError.message);
-    } else if (data) {
-      setApplications((prev) =>
-        [...prev, ...data].sort((a, b) => b.application_date.localeCompare(a.application_date))
-      );
-
-      // Best-effort stock decrement for directory-linked lines with a used quantity.
-      for (const line of validLines) {
-        const product = products.find((p) => p.id === line.productId);
-        if (product && line.quantity_used) {
-          const newStock = Number(product.current_stock) - parseFloat(line.quantity_used);
-          const { error: stockError } = await supabase
-            .from("products")
-            .update({ current_stock: newStock })
-            .eq("id", product.id);
-          if (!stockError) {
-            setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, current_stock: newStock } : p)));
-          }
-        }
-      }
-
-      // Best-effort: record a matching budget expense for any line with a cost.
-      for (const row of data) {
-        if (row.cost) {
-          try {
-            await recordApplicationExpense({
-              categoryName: "Fertilizer",
-              amount: Number(row.cost),
-              description: `${row.product} — ${row.zone}`,
-              expenseDate: row.application_date,
-              source: "application_fertilizer",
-              fertilizerApplicationId: row.id,
-            });
-          } catch (expenseError) {
-            console.error("Failed to record fertilizer application expense:", expenseError);
-          }
-        }
-      }
-
-      setAddAppForm(emptyAppForm);
-      setAppLines([{ ...emptyAppLine }]);
-      setShowAddApp(false);
     }
     setSaving(false);
   }
@@ -494,158 +362,19 @@ export default function FertilitySection() {
       <div id="fertility-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Application Log</div>
-          <div className="flex items-center gap-2 no-print">
-            <button
-              onClick={() => printSection("fertility-application-log")}
-              className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
-            >
-              Print
-            </button>
-            <button
-              onClick={() => setShowAddApp((v) => !v)}
-              className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
-            >
-              {showAddApp ? "Cancel" : "+ Log Application"}
-            </button>
-          </div>
-        </div>
-
-        {showAddApp && (
-          <form
-            onSubmit={handleAddApplication}
-            className="flex flex-col gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print"
+          <button
+            onClick={() => printSection("fertility-application-log")}
+            className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors no-print"
           >
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Area</label>
-                <select
-                  required
-                  value={addAppForm.zone}
-                  onChange={(e) => setAddAppForm({ ...addAppForm, zone: e.target.value })}
-                  className="w-36 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-                >
-                  <option value="" disabled>
-                    Select area
-                  </option>
-                  {COURSE_AREAS.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Date</label>
-                <input
-                  type="date"
-                  value={addAppForm.application_date}
-                  onChange={(e) => setAddAppForm({ ...addAppForm, application_date: e.target.value })}
-                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
-                <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
-                <input
-                  type="text"
-                  value={addAppForm.notes}
-                  onChange={(e) => setAddAppForm({ ...addAppForm, notes: e.target.value })}
-                  placeholder="Spoon-feed, low mow height"
-                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-semibold uppercase tracking-wide">
-                Products <span className="text-mist font-normal normal-case">— log a tank mix in one pass</span>
-              </label>
-              {appLines.map((line, i) => {
-                const linkedProduct = products.find((p) => p.id === line.productId);
-                return (
-                  <div key={i} className="flex flex-wrap items-end gap-2">
-                    <select
-                      value={line.productId}
-                      onChange={(e) => updateAppLine(i, { productId: e.target.value })}
-                      className="w-40 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                    >
-                      <option value="">— Custom / not in directory —</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                    {!line.productId && (
-                      <input
-                        required
-                        value={line.customName}
-                        onChange={(e) => updateAppLine(i, { customName: e.target.value })}
-                        placeholder="Urea 46-0-0"
-                        className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                      />
-                    )}
-                    <input
-                      type="number"
-                      step="0.001"
-                      required
-                      value={line.n_lbs_per_1000}
-                      onChange={(e) => updateAppLine(i, { n_lbs_per_1000: e.target.value })}
-                      placeholder="N lbs/M"
-                      className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                    />
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={line.cost}
-                      onChange={(e) => updateAppLine(i, { cost: e.target.value })}
-                      placeholder="Cost"
-                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                    />
-                    {linkedProduct && (
-                      <QuantityInput
-                        value={line.quantity_used}
-                        onChange={(v) => updateAppLine(i, { quantity_used: v })}
-                        unit={linkedProduct.unit}
-                        title={`Deducted from stock (currently ${linkedProduct.current_stock} ${linkedProduct.unit})`}
-                        className="w-32"
-                      />
-                    )}
-                    {appLines.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeAppLine(i)}
-                        className="text-mist text-xs font-semibold hover:text-red"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-              <button
-                type="button"
-                onClick={addAppLine}
-                className="self-start text-xs font-semibold text-green-mid hover:text-green-dark"
-              >
-                + Add Product
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={saving}
-              className="self-start px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save"}
-            </button>
-          </form>
-        )}
+            Print
+          </button>
+        </div>
 
         {applications.length === 0 ? (
           <div className="p-10 text-center">
             <div className="text-4xl mb-3">🌱</div>
             <div className="text-sm text-mist">
-              No applications logged yet for {fiscalYear}. Add your first one above.
+              No applications logged yet for {fiscalYear}. Log one from the button above the tabs.
             </div>
           </div>
         ) : (
@@ -663,26 +392,43 @@ export default function FertilitySection() {
               </tr>
             </thead>
             <tbody>
-              {applications.map((app) => (
-                <tr key={app.id} className="border-b border-rule last:border-0">
-                  <td className="px-5 py-2.5 text-mist">{app.application_date}</td>
-                  <td className="px-3 py-2.5 font-medium">{app.zone}</td>
-                  <td className="px-3 py-2.5">{app.product}</td>
-                  <td className="px-3 py-2.5 font-mono">{Number(app.n_lbs_per_1000).toFixed(3)}</td>
-                  <td className="px-3 py-2.5 font-mono">
-                    {app.cost != null ? `$${Number(app.cost).toFixed(2)}` : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 text-mist">{app.notes || "—"}</td>
-                  <td className="px-5 py-2.5 text-right no-print">
-                    <button
-                      onClick={() => handleDeleteApplication(app.id)}
-                      className="text-mist text-xs font-semibold hover:text-red"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {applications.map((app) =>
+                editingId === app.id ? (
+                  <FertilizerApplicationEditRow
+                    key={app.id}
+                    app={app}
+                    products={products}
+                    colSpan={7}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={(updated) => {
+                      setApplications((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                      setEditingId(null);
+                    }}
+                  />
+                ) : (
+                  <tr key={app.id} className="border-b border-rule last:border-0">
+                    <td className="px-5 py-2.5 text-mist">{app.application_date}</td>
+                    <td className="px-3 py-2.5 font-medium">{app.zone}</td>
+                    <td className="px-3 py-2.5">{app.product}</td>
+                    <td className="px-3 py-2.5 font-mono">{Number(app.n_lbs_per_1000).toFixed(3)}</td>
+                    <td className="px-3 py-2.5 font-mono">
+                      {app.cost != null ? `$${Number(app.cost).toFixed(2)}` : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-mist">{app.notes || "—"}</td>
+                    <td className="px-5 py-2.5 text-right no-print whitespace-nowrap">
+                      <button onClick={() => setEditingId(app.id)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteApplication(app.id)}
+                        className="text-mist text-xs font-semibold hover:text-red"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                )
+              )}
             </tbody>
           </table>
           </div>

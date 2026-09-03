@@ -6,8 +6,9 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import CurrencyInput from "@/components/ui/CurrencyInput";
+import { PRODUCT_CATEGORIES, CATEGORY_LABEL, type ProductCategory } from "@/lib/pestCategorization";
 
-type Category = "fertilizer" | "fungicide" | "herbicide" | "insecticide" | "growth_regulator" | "other";
+type Category = ProductCategory;
 
 interface Product {
   id: string;
@@ -22,15 +23,7 @@ interface Product {
   is_active: boolean;
 }
 
-const CATEGORY_LABEL: Record<Category, string> = {
-  fertilizer: "Fertilizer",
-  fungicide: "Fungicide",
-  herbicide: "Herbicide",
-  insecticide: "Insecticide",
-  growth_regulator: "Growth Regulator",
-  other: "Other",
-};
-const CATEGORIES: Category[] = ["fertilizer", "fungicide", "herbicide", "insecticide", "growth_regulator", "other"];
+const CATEGORIES: Category[] = [...PRODUCT_CATEGORIES];
 
 const emptyForm = {
   name: "",

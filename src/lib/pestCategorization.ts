@@ -17,7 +17,8 @@ export const DISEASE_TARGET_KEYWORDS = [
   "spring dead spot",
 ];
 
-export function isDiseaseTarget(target: string) {
+export function isDiseaseTarget(target: string | null) {
+  if (!target) return false;
   const t = target.toLowerCase();
   return DISEASE_TARGET_KEYWORDS.some((d) => t.includes(d));
 }
@@ -42,7 +43,8 @@ export const WEED_TARGET_KEYWORDS = [
   "spurweed",
 ];
 
-function isWeedTarget(target: string) {
+function isWeedTarget(target: string | null) {
+  if (!target) return false;
   const t = target.toLowerCase();
   // "Annual Bluegrass Weevil" contains "annual bluegrass" — guard against
   // the insect model's name being misread as the Poa annua weed.
@@ -51,7 +53,7 @@ function isWeedTarget(target: string) {
 }
 
 export function isWeedApplication(
-  app: { target: string; product_id: string | null },
+  app: { target: string | null; product_id: string | null },
   products: { id: string; category: string }[]
 ) {
   if (isWeedTarget(app.target)) return true;
@@ -74,16 +76,45 @@ export const GROWTH_REGULATOR_TARGET_KEYWORDS = [
   "legacy",
 ];
 
-function isGrowthRegulatorTarget(target: string) {
+function isGrowthRegulatorTarget(target: string | null) {
+  if (!target) return false;
   const t = target.toLowerCase();
   return GROWTH_REGULATOR_TARGET_KEYWORDS.some((k) => t.includes(k));
 }
 
 export function isGrowthRegulatorApplication(
-  app: { target: string; product_id: string | null },
+  app: { target: string | null; product_id: string | null },
   products: { id: string; category: string }[]
 ) {
   if (isGrowthRegulatorTarget(app.target)) return true;
   const product = products.find((p) => p.id === app.product_id);
   return product?.category === "growth_regulator";
 }
+
+// The full set of product/application categories, shared by the Inventory
+// product form and the unified Log Application form's per-line category
+// picker (for custom, not-in-directory lines) — one source of truth so the
+// two never drift apart.
+export const PRODUCT_CATEGORIES = ["fertilizer", "fungicide", "herbicide", "insecticide", "growth_regulator", "other"] as const;
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+
+export const CATEGORY_LABEL: Record<ProductCategory, string> = {
+  fertilizer: "Fertilizer",
+  fungicide: "Fungicide",
+  herbicide: "Herbicide",
+  insecticide: "Insecticide",
+  growth_regulator: "Growth Regulator",
+  other: "Other",
+};
+
+// Maps a product/line category to the budget category name
+// recordApplicationExpense expects. Centralized here so the unified log form
+// and any future caller stay in sync with the budget category names.
+export const CATEGORY_TO_BUDGET_NAME: Record<ProductCategory, "Fertilizer" | "Fungicides" | "Herbicides" | "Insecticides" | "Growth Regulators" | "Other"> = {
+  fertilizer: "Fertilizer",
+  fungicide: "Fungicides",
+  herbicide: "Herbicides",
+  insecticide: "Insecticides",
+  growth_regulator: "Growth Regulators",
+  other: "Other",
+};

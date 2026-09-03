@@ -95,3 +95,58 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ success: true });
 }
+
+// Removes the expense(s) linked to a logged application, so it can be
+// re-recorded with an updated amount when a superintendent edits the
+// application (see reconcileExpenseForEdit in src/lib/applicationEdits.ts).
+// Routed server-side for the same reason as the POST handler above: Postgres
+// requires a row to also satisfy the table's SELECT policy for DELETE to
+// affect it, not just the DELETE policy — so a direct client-side delete
+// silently affects 0 rows for any owner/superintendent who hasn't separately
+// unlocked the sensitive-data PIN on the Budget page.
+export async function DELETE(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const context = await resolveCourseIdServer(supabase, user);
+  if (!context) {
+    return NextResponse.json({ error: "No course found for this user." }, { status: 404 });
+  }
+  const courseId = context.courseId;
+
+  const { fertilizerApplicationId, pestApplicationId } = (await request.json()) as {
+    fertilizerApplicationId?: string;
+    pestApplicationId?: string;
+  };
+  if (!fertilizerApplicationId && !pestApplicationId) {
+    return NextResponse.json({ error: "Missing fertilizerApplicationId or pestApplicationId." }, { status: 400 });
+  }
+
+  if (!context.isAdminView) {
+    const { data: membership } = await supabase
+      .from("course_members")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("course_id", courseId)
+      .single();
+    if (!membership || (membership.role !== "owner" && membership.role !== "superintendent")) {
+      return NextResponse.json({ error: "You don't have permission to delete expenses." }, { status: 403 });
+    }
+  }
+
+  const adminClient = createAdminClient();
+  let query = adminClient.from("expenses").delete().eq("course_id", courseId);
+  query = fertilizerApplicationId
+    ? query.eq("fertilizer_application_id", fertilizerApplicationId)
+    : query.eq("pest_application_id", pestApplicationId as string);
+
+  const { error: deleteError } = await query;
+  if (deleteError) {
+    return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}

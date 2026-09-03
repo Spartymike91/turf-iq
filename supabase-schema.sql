@@ -1762,3 +1762,57 @@ CREATE POLICY "Owners and supers can delete maintenance log"
 ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_check;
 ALTER TABLE products ADD CONSTRAINT products_category_check
   CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'growth_regulator', 'other'));
+
+-- ============================================
+-- MIGRATION: Unified "Log Application" entry point
+-- ============================================
+-- Lets a single tank-mix submission (fertilizer + pest/weed/disease/PGR
+-- products together) store each line's category explicitly rather than
+-- re-guessing it later from target-keyword matching. Existing rows keep
+-- working via the existing keyword-fallback classifiers in
+-- src/lib/pestCategorization.ts (category IS NULL there). target moving to
+-- nullable supports lines with no natural "target" (e.g. a fertilizer or
+-- growth-regulator line in a mixed tank).
+--
+-- NOTE: a planned products.n_pct (%N) field for auto-calculating a
+-- fertilizer line's N-rate was dropped during implementation — %N x
+-- quantity used only yields a valid lbs-per-1000-sqft rate if the treated
+-- area's square footage is also known, and that isn't tracked anywhere
+-- (Area is a location name like "Greens", not a number). N-rate stays
+-- manual entry, exactly as it already works today. Revisit only if course
+-- areas ever get a tracked square footage.
+ALTER TABLE pest_applications ALTER COLUMN target DROP NOT NULL;
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS category TEXT;
+
+-- ============================================
+-- MIGRATION: Fix missing UPDATE policies for the new per-row Edit feature
+-- ============================================
+-- Neither pest_applications nor fertilizer_applications ever had a
+-- course-member UPDATE policy (only SELECT/INSERT/DELETE existed for
+-- owners/superintendents — UPDATE only existed for platform admins).
+-- Editing a logged application therefore silently affected 0 rows under
+-- RLS: Postgrest reports no error when an .update()/.delete() matches 0
+-- RLS-visible rows, it just returns an empty result, so this went
+-- unnoticed until live-tested. Confirmed live via can_manage_course_finances()
+-- RPC call, which correctly returns true for a plain test owner — so that
+-- helper is trustworthy; reusing it here rather than a fresh raw subquery.
+--
+-- Also reasserting expenses' UPDATE/DELETE policies through the same
+-- helper: testing the edit-and-reconcile-expense flow reproduced the exact
+-- "brand-new owner still gets 0 rows" symptom this project already hit
+-- once and thought it fixed further up in this file — that fix evidently
+-- never made it to the live database. Safe to re-run.
+DROP POLICY IF EXISTS "Owners and supers can update pest_applications" ON pest_applications;
+CREATE POLICY "Owners and supers can update pest_applications"
+  ON pest_applications FOR UPDATE USING (public.can_manage_course_finances(course_id));
+
+DROP POLICY IF EXISTS "Owners and supers can update fertilizer_applications" ON fertilizer_applications;
+CREATE POLICY "Owners and supers can update fertilizer_applications"
+  ON fertilizer_applications FOR UPDATE USING (public.can_manage_course_finances(course_id));
+
+DROP POLICY IF EXISTS "Owners and supers can update expenses" ON expenses;
+CREATE POLICY "Owners and supers can update expenses"
+  ON expenses FOR UPDATE USING (public.can_manage_course_finances(course_id));
+DROP POLICY IF EXISTS "Owners and supers can delete expenses" ON expenses;
+CREATE POLICY "Owners and supers can delete expenses"
+  ON expenses FOR DELETE USING (public.can_manage_course_finances(course_id));

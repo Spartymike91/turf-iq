@@ -24,7 +24,7 @@ export interface ReportData {
     daysPythiumElevated: number;
     daysBrownPatchElevated: number;
   };
-  pestApplications: { applied_at: string; target: string; product: string }[];
+  pestApplications: { applied_at: string; target: string | null; product: string }[];
   fertilizerApplications: { application_date: string; product: string; n_lbs_per_1000: number }[];
   equipment: {
     completedMaintenance: { equipmentName: string; task: string; performed_at: string; cost: number | null }[];
@@ -185,7 +185,7 @@ export async function generateReportData(
       : `DISEASE RISK: ${disease.daysLogged} days logged. Dollar Spot above action threshold on ${disease.daysAboveDollarSpotThreshold} of those days (avg ${disease.avgDollarSpotPct?.toFixed(1)}%). Pythium elevated ${disease.daysPythiumElevated} days. Brown Patch elevated ${disease.daysBrownPatchElevated} days.`,
     `PEST/HERBICIDE APPLICATIONS: ${
       reportData.pestApplications.length > 0
-        ? reportData.pestApplications.map((a) => `${a.target} (${a.product}) on ${new Date(a.applied_at).toLocaleDateString()}`).join("; ")
+        ? reportData.pestApplications.map((a) => `${a.target ? `${a.target} (${a.product})` : a.product} on ${new Date(a.applied_at).toLocaleDateString()}`).join("; ")
         : "none logged during this period"
     }`,
     `FERTILIZER APPLICATIONS: ${

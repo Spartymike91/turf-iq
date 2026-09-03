@@ -31,7 +31,7 @@ interface CourseRow {
 
 interface DashboardData {
   weather: WeatherResult | null;
-  pestApps: { applied_at: string; target: string; product: string }[];
+  pestApps: { applied_at: string; target: string | null; product: string }[];
   tasksToday: TaskToday[];
   equipmentIssues: EquipmentIssue[];
 }
@@ -138,7 +138,7 @@ DISEASE RISK: Dollar Spot ${dollarSpot.probabilityPct.toFixed(1)}% (action thres
 
   if (pestApps.length > 0) {
     promptSections.push(
-      `RECENT APPLICATIONS: ${pestApps.map((a) => `${a.target} (${a.product}) on ${new Date(a.applied_at).toLocaleDateString()}`).join("; ")}`
+      `RECENT APPLICATIONS: ${pestApps.map((a) => `${a.target ? `${a.target} (${a.product})` : a.product} on ${new Date(a.applied_at).toLocaleDateString()}`).join("; ")}`
     );
   } else {
     promptSections.push("RECENT APPLICATIONS: none logged.");
