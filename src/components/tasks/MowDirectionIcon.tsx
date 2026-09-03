@@ -1,8 +1,9 @@
 import type { MowDirection } from "@/lib/mowDirections";
 
-// Clock face with a real arrow (or two, for crosscut) showing which way to
-// mow — the same clock-hour shorthand crews already use. Each line points
-// toward the first hour in its label (e.g. "2-8" points to the 2).
+// Clock face with a double-headed arrow (or two, for crosscut) showing
+// which way to mow — the same clock-hour shorthand crews already use.
+// Arrowheads point both ways since a mow pass covers the line in both
+// directions (up one way, back the other).
 export default function MowDirectionIcon({ direction, size = 20 }: { direction: MowDirection | null; size?: number }) {
   if (!direction) return null;
 
@@ -17,8 +18,7 @@ export default function MowDirectionIcon({ direction, size = 20 }: { direction: 
     return { x1, y1, x2, y2 };
   });
 
-  // Line endpoints per pattern, expressed as clock-hour angle pairs — the
-  // arrowhead points toward the first angle in each pair.
+  // Line endpoints per pattern, expressed as clock-hour angle pairs.
   const linesByDirection: Record<MowDirection, [number, number][]> = {
     straight: [[0, 180]],
     diagonal_lr: [[60, 240]],
@@ -63,6 +63,7 @@ export default function MowDirectionIcon({ direction, size = 20 }: { direction: 
           <g key={i}>
             <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
             <polygon points={arrowhead(a, b)} fill="currentColor" />
+            <polygon points={arrowhead(b, a)} fill="currentColor" />
           </g>
         );
       })}
