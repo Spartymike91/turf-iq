@@ -1,8 +1,9 @@
 // Shared keyword/category heuristics for splitting the shared
-// pest_applications table into Weed / Insects / Disease Risk sub-tabs.
-// Disease Risk was the first carve-out (matches disease-related target
-// text); Weed is the same idea for weed control. Insects is deliberately
-// the catch-all remainder — anything that isn't a weed or disease match
+// pest_applications table into Weed / Insects / Disease Risk / Growth
+// Regulator sub-tabs. Disease Risk was the first carve-out (matches
+// disease-related target text); Weed and Growth Regulator are the same idea
+// for their respective categories. Insects is deliberately the catch-all
+// remainder — anything that isn't a weed, disease, or growth regulator match
 // still needs somewhere to show up rather than silently disappearing.
 
 export const DISEASE_TARGET_KEYWORDS = [
@@ -56,4 +57,33 @@ export function isWeedApplication(
   if (isWeedTarget(app.target)) return true;
   const product = products.find((p) => p.id === app.product_id);
   return product?.category === "herbicide";
+}
+
+export const GROWTH_REGULATOR_TARGET_KEYWORDS = [
+  "growth regulator",
+  "pgr",
+  "trinexapac",
+  "primo",
+  "paclobutrazol",
+  "trimmit",
+  "flurprimidol",
+  "cutless",
+  "prohexadione",
+  "anuew",
+  "proxy",
+  "legacy",
+];
+
+function isGrowthRegulatorTarget(target: string) {
+  const t = target.toLowerCase();
+  return GROWTH_REGULATOR_TARGET_KEYWORDS.some((k) => t.includes(k));
+}
+
+export function isGrowthRegulatorApplication(
+  app: { target: string; product_id: string | null },
+  products: { id: string; category: string }[]
+) {
+  if (isGrowthRegulatorTarget(app.target)) return true;
+  const product = products.find((p) => p.id === app.product_id);
+  return product?.category === "growth_regulator";
 }

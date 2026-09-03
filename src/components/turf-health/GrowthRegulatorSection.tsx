@@ -3,11 +3,9 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
-import type { WeatherResult } from "@/lib/weather";
-import { getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
 import { COURSE_AREAS } from "@/lib/areas";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
-import { isWeedApplication, isDiseaseTarget, isGrowthRegulatorApplication } from "@/lib/pestCategorization";
+import { isGrowthRegulatorApplication } from "@/lib/pestCategorization";
 import { printSection } from "@/lib/printSection";
 import QuantityInput from "@/components/ui/QuantityInput";
 
@@ -42,19 +40,12 @@ function toLocalDatetimeInput(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function InsectsSection() {
+export default function GrowthRegulatorSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [grassType, setGrassType] = useState("");
-  const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [applications, setApplications] = useState<PestApplication[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  // Every active product, regardless of category — needed for the exclusion
-  // filter below, since a weed/disease/growth-regulator application here may
-  // link to a product whose category isn't insecticide/other (the only
-  // categories `products` itself is restricted to for the Add Application
-  // form's own picker).
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -94,41 +85,21 @@ export default function InsectsSection() {
         .order("applied_at", { ascending: false });
       setApplications(apps ?? []);
 
-      const [{ data: prods }, { data: allProds }] = await Promise.all([
-        supabase
-          .from("products")
-          .select("id, name, category, unit, unit_cost, current_stock")
-          .eq("course_id", context.courseId)
-          .eq("is_active", true)
-          .in("category", ["insecticide", "other"])
-          .order("name"),
-        supabase
-          .from("products")
-          .select("id, name, category, unit, unit_cost, current_stock")
-          .eq("course_id", context.courseId)
-          .eq("is_active", true),
-      ]);
+      const { data: prods } = await supabase
+        .from("products")
+        .select("id, name, category, unit, unit_cost, current_stock")
+        .eq("course_id", context.courseId)
+        .eq("is_active", true)
+        .in("category", ["growth_regulator", "other"])
+        .order("name");
       setProducts(prods ?? []);
-      setAllProducts(allProds ?? []);
-
-      try {
-        const res = await fetch("/api/weather");
-        const data = await res.json();
-        if (res.ok) setWeather(data);
-      } catch {
-        // insect page still works without weather (spray log is independent)
-      }
 
       setChecking(false);
     }
     load();
   }, []);
 
-  // Insects is the catch-all remainder of pest_applications — anything not
-  // claimed by Weed's keyword/category match or Disease's keyword match.
-  const insectApplications = applications.filter(
-    (a) => !isWeedApplication(a, allProducts) && !isDiseaseTarget(a.target) && !isGrowthRegulatorApplication(a, allProducts)
-  );
+  const growthRegulatorApplications = applications.filter((a) => isGrowthRegulatorApplication(a, products));
 
   function updateLine(index: number, patch: Partial<typeof emptyLine>) {
     setLines((prev) =>
@@ -205,7 +176,7 @@ export default function InsectsSection() {
         if (row.cost) {
           try {
             await recordApplicationExpense({
-              categoryName: "Insecticides",
+              categoryName: "Growth Regulators",
               amount: Number(row.cost),
               description: `${row.product} — ${row.target}${row.area ? ` (${row.area})` : ""}`,
               expenseDate: row.applied_at.slice(0, 10),
@@ -213,7 +184,7 @@ export default function InsectsSection() {
               pestApplicationId: row.id,
             });
           } catch (expenseError) {
-            console.error("Failed to record insect application expense:", expenseError);
+            console.error("Failed to record growth regulator application expense:", expenseError);
           }
         }
       }
@@ -244,69 +215,31 @@ export default function InsectsSection() {
     return (
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
         <div className="font-serif text-xl text-green-dark mb-2">No course found</div>
-        <div className="text-sm text-mist">Set up your course profile before tracking insect timing.</div>
+        <div className="text-sm text-mist">Set up your course profile before tracking growth regulator applications.</div>
       </div>
     );
   }
 
-  const gdd = weather?.agronomics.gddSeasonToDate ?? null;
-  const whiteGrub = gdd != null ? getWhiteGrubStatus(gdd) : null;
-  const showAbw = isCoolSeasonGrass(grassType);
-  const abw = showAbw && gdd != null ? getAbwStatus(gdd) : null;
-
-  const cards = [
-    whiteGrub && { name: "White Grub", badge: "GUIDANCE RANGE", badgeColor: "bg-amber", status: whiteGrub },
-    abw && { name: "Annual Bluegrass Weevil", badge: "MODEL", badgeColor: "bg-green-mid", status: abw },
-  ].filter((c): c is { name: string; badge: string; badgeColor: string; status: NonNullable<typeof whiteGrub> } => Boolean(c));
-
   return (
     <>
       <div>
-        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Insect Control</div>
-        <div className="font-serif text-2xl text-green-dark">Insect Management</div>
+        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Growth Regulation</div>
+        <div className="font-serif text-2xl text-green-dark">Plant Growth Regulator Applications</div>
         <div className="text-[13px] text-mist mt-1">
-          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {grassType || "—"} · {courseName}
+          {grassType || "—"} · {courseName}
         </div>
       </div>
-
-      {!weather && (
-        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
-          <div className="text-sm text-mist">GDD-based insect timing needs live weather data, which is unavailable right now.</div>
-        </div>
-      )}
-
-      {cards.length > 0 && (
-        <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))` }}>
-          {cards.map((c) => (
-            <div
-              key={c.name}
-              className={`bg-white border-[1.5px] rounded-lg p-3.5 ${c.status.elevated ? "border-amber" : "border-rule"}`}
-            >
-              <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                <span className="text-[11px] font-semibold text-ink">{c.name}</span>
-                <span className={`text-[8px] font-bold px-1 py-0.5 rounded text-white font-mono ${c.badgeColor}`}>
-                  {c.badge}
-                </span>
-              </div>
-              <div className={`text-sm font-semibold mb-1 ${c.status.elevated ? "text-amber" : "text-green-mid"}`}>
-                {c.status.stage}
-              </div>
-              <div className="text-[11px] text-mist leading-relaxed">{c.status.detail}</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {error && (
         <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-4 py-2 text-xs text-red">{error}</div>
       )}
 
-      <div id="insect-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+      <div id="growth-regulator-application-log" className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule">
           <div className="font-serif text-lg text-green-dark">Application Log — REI Compliance</div>
           <div className="flex items-center gap-2 no-print">
             <button
-              onClick={() => printSection("insect-application-log")}
+              onClick={() => printSection("growth-regulator-application-log")}
               className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
             >
               Print
@@ -330,8 +263,8 @@ export default function InsectsSection() {
                   required
                   value={addForm.target}
                   onChange={(e) => setAddForm({ ...addForm, target: e.target.value })}
-                  placeholder="White Grub"
-                  className="w-32 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+                  placeholder="Growth Regulator"
+                  className="w-40 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -368,7 +301,7 @@ export default function InsectsSection() {
                   type="text"
                   value={addForm.notes}
                   onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
-                  placeholder="Post-mow"
+                  placeholder="Fairways, growth suppression"
                   className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
                 />
               </div>
@@ -399,7 +332,7 @@ export default function InsectsSection() {
                         required
                         value={line.customName}
                         onChange={(e) => updateLine(i, { customName: e.target.value })}
-                        placeholder="Dylox 6.2"
+                        placeholder="Primo Maxx"
                         className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                       />
                     )}
@@ -459,10 +392,10 @@ export default function InsectsSection() {
           </form>
         )}
 
-        {insectApplications.length === 0 ? (
+        {growthRegulatorApplications.length === 0 ? (
           <div className="p-10 text-center">
-            <div className="text-4xl mb-3">🐛</div>
-            <div className="text-sm text-mist">No insect applications logged yet. Add your first one above.</div>
+            <div className="text-4xl mb-3">🌾</div>
+            <div className="text-sm text-mist">No growth regulator applications logged yet. Add your first one above.</div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -481,7 +414,7 @@ export default function InsectsSection() {
               </tr>
             </thead>
             <tbody>
-              {insectApplications.map((a) => {
+              {growthRegulatorApplications.map((a) => {
                 const appliedMs = new Date(a.applied_at).getTime();
                 const clearAt = appliedMs + a.rei_hours * 60 * 60 * 1000;
                 const restricted = now < clearAt;

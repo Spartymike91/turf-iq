@@ -1419,7 +1419,7 @@ CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'other')),
+  category TEXT NOT NULL CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'growth_regulator', 'other')),
   unit TEXT NOT NULL,
   unit_cost NUMERIC(10,2),
   current_stock NUMERIC(10,2) NOT NULL DEFAULT 0,
@@ -1750,3 +1750,15 @@ CREATE POLICY "Owners and supers can delete maintenance log"
   ON maintenance_log FOR DELETE USING (
     EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_log.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent', 'equipment_manager'))
   );
+
+-- ============================================
+-- MIGRATION: Growth Regulator application tab
+-- ============================================
+-- New pest_applications sub-category (Growth Regulator) carved out of the
+-- Insects catch-all, same pattern as the earlier Weed/Disease splits — see
+-- src/lib/pestCategorization.ts. Only the products.category CHECK
+-- constraint needs a DB change; pest_applications/budget_categories are
+-- plain TEXT with no constraint to widen.
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_check;
+ALTER TABLE products ADD CONSTRAINT products_category_check
+  CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'growth_regulator', 'other'));

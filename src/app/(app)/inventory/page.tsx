@@ -7,7 +7,7 @@ import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import CurrencyInput from "@/components/ui/CurrencyInput";
 
-type Category = "fertilizer" | "fungicide" | "herbicide" | "insecticide" | "other";
+type Category = "fertilizer" | "fungicide" | "herbicide" | "insecticide" | "growth_regulator" | "other";
 
 interface Product {
   id: string;
@@ -27,9 +27,10 @@ const CATEGORY_LABEL: Record<Category, string> = {
   fungicide: "Fungicide",
   herbicide: "Herbicide",
   insecticide: "Insecticide",
+  growth_regulator: "Growth Regulator",
   other: "Other",
 };
-const CATEGORIES: Category[] = ["fertilizer", "fungicide", "herbicide", "insecticide", "other"];
+const CATEGORIES: Category[] = ["fertilizer", "fungicide", "herbicide", "insecticide", "growth_regulator", "other"];
 
 const emptyForm = {
   name: "",

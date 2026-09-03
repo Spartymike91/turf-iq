@@ -6,12 +6,14 @@ import FertilitySection from "@/components/turf-health/FertilitySection";
 import WeedSection from "@/components/turf-health/WeedSection";
 import InsectsSection from "@/components/turf-health/InsectsSection";
 import DiseaseRiskSection from "@/components/turf-health/DiseaseRiskSection";
+import GrowthRegulatorSection from "@/components/turf-health/GrowthRegulatorSection";
 
 const SUB_TABS = [
   { slug: "fertility", label: "Fertility", icon: "🌱" },
   { slug: "weed", label: "Weed", icon: "🌿" },
   { slug: "insects", label: "Insects", icon: "🐛" },
   { slug: "disease", label: "Disease Risk", icon: "🦠" },
+  { slug: "growth-regulator", label: "Growth Regulators", icon: "🌾" },
 ] as const;
 
 type SubTab = (typeof SUB_TABS)[number]["slug"];
@@ -36,7 +38,7 @@ function TurfHealthContent() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
           Turf Health
         </div>
-        <div className="font-serif text-2xl text-green-dark">Fertility, Weed, Insects, Disease Risk</div>
+        <div className="font-serif text-2xl text-green-dark">Fertility, Weed, Insects, Disease Risk, Growth Regulators</div>
       </div>
 
       <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1 self-start">
@@ -59,6 +61,7 @@ function TurfHealthContent() {
       {activeTab === "weed" && <WeedSection />}
       {activeTab === "insects" && <InsectsSection />}
       {activeTab === "disease" && <DiseaseRiskSection />}
+      {activeTab === "growth-regulator" && <GrowthRegulatorSection />}
     </>
   );
 }

@@ -1,7 +1,8 @@
 /**
  * Records a budget expense for a logged product application. "Fertilizer"
  * for fertilizer_applications; pest_applications route to "Fungicides"
- * (Disease Risk), "Herbicides" (Weed), or "Insecticides" (Insects).
+ * (Disease Risk), "Herbicides" (Weed), "Insecticides" (Insects), or
+ * "Growth Regulators" (Growth Regulator).
  *
  * Goes through /api/applications/record-expense (service-role client)
  * rather than a direct client-side insert — budget_categories/expenses'
@@ -16,7 +17,7 @@
  * application log entry, which already saved successfully.
  */
 export async function recordApplicationExpense(params: {
-  categoryName: "Fertilizer" | "Fungicides" | "Herbicides" | "Insecticides";
+  categoryName: "Fertilizer" | "Fungicides" | "Herbicides" | "Insecticides" | "Growth Regulators";
   amount: number;
   description: string;
   expenseDate: string; // YYYY-MM-DD
