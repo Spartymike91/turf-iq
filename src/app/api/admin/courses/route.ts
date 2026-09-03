@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPlatformAdminSession } from "@/lib/supabase/platform-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DEFAULT_TASK_LIBRARY } from "@/lib/defaultTaskLibrary";
+import { sendEmail, inviteEmailHtml } from "@/lib/email";
 
 export async function GET() {
   const { user, isPlatformAdmin } = await getPlatformAdminSession();
@@ -125,21 +126,51 @@ export async function POST(request: NextRequest) {
   }
 
   const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(owner_email, {
-    redirectTo: `${origin}/accept-invite`,
-    data: owner_full_name ? { full_name: owner_full_name } : undefined,
+  // Supabase's own SMTP dispatch to Resend was confirmed broken (see
+  // src/lib/email.ts) — generateLink creates the user + link without
+  // emailing anything, so we send it ourselves via Resend's API instead,
+  // same as api/team/invite/route.ts.
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: "invite",
+    email: owner_email,
+    options: {
+      redirectTo: `${origin}/accept-invite`,
+      data: owner_full_name ? { full_name: owner_full_name } : undefined,
+    },
   });
 
-  if (inviteError || !invited?.user) {
-    return NextResponse.json({ error: inviteError?.message ?? "Failed to send invite." }, { status: 400 });
+  if (linkError || !linkData?.user) {
+    return NextResponse.json({ error: linkError?.message ?? "Failed to create invite." }, { status: 400 });
   }
 
+  // Create the membership before attempting to email — a notification
+  // failure shouldn't leave a created course with no owner attached; the
+  // invite link is still valid and usable even if this email never arrives.
   const { error: memberError } = await adminClient.from("course_members").insert({
     course_id: courseId,
-    user_id: invited.user.id,
+    user_id: linkData.user.id,
     role: "owner",
   });
   if (memberError) return NextResponse.json({ error: memberError.message }, { status: 500 });
+
+  try {
+    await sendEmail({
+      to: owner_email,
+      subject: `You're invited to join ${name} on TurfIQ`,
+      html: inviteEmailHtml({
+        courseName: name,
+        role: "owner",
+        actionLink: linkData.properties.action_link,
+      }),
+    });
+  } catch (error) {
+    console.error("New-course owner invite email send failed:", error);
+    return NextResponse.json({
+      mode: "invited_new",
+      course_id: courseId,
+      warning: "Course created, but the invite email failed to send. Share the sign-up link with the owner directly, or ask them to use 'Forgot password' with their email.",
+    });
+  }
 
   return NextResponse.json({ mode: "invited_new", course_id: courseId });
 }

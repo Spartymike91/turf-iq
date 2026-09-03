@@ -77,9 +77,10 @@ export default function AdminCoursesPage() {
         setError(data.error ?? "Failed to create course.");
       } else {
         setNotice(
-          data.mode === "invited_new"
-            ? `${addForm.name} created — invite email sent to ${addForm.owner_email}.`
-            : `${addForm.name} created — ${addForm.owner_email} already had an account and was made owner directly.`
+          data.warning ??
+            (data.mode === "invited_new"
+              ? `${addForm.name} created — invite email sent to ${addForm.owner_email}.`
+              : `${addForm.name} created — ${addForm.owner_email} already had an account and was made owner directly.`)
         );
         setAddForm(emptyForm);
         setShowAddForm(false);
