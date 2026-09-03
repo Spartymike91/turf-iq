@@ -1671,3 +1671,82 @@ ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS anthracnose_above_th
 ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS fusarium_elevated BOOLEAN;
 ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS spring_dead_spot_soil_temp_f NUMERIC(5,1);
 ALTER TABLE disease_risk_daily_log ADD COLUMN IF NOT EXISTS spring_dead_spot_in_window BOOLEAN;
+
+-- ============================================
+-- MIGRATION: Equipment Manager role
+-- ============================================
+-- New permission-level role alongside owner/superintendent/assistant/
+-- crew_lead/crew. Unlike every other junior role, this one gets real RLS
+-- write access (equipment + maintenance tables only) rather than just the
+-- allowed_modules visibility layer — see src/lib/roles.ts for the full
+-- rationale. Budget, fertility, irrigation, tasks, payroll, products, etc.
+-- are deliberately left untouched; scope stays to the equipment domain.
+ALTER TABLE course_members DROP CONSTRAINT IF EXISTS course_members_role_check;
+ALTER TABLE course_members ADD CONSTRAINT course_members_role_check
+  CHECK (role IN ('owner', 'superintendent', 'assistant', 'crew_lead', 'equipment_manager', 'crew'));
+
+-- Let a superintendent assign the new role, same as assistant/crew_lead/crew today.
+DROP POLICY IF EXISTS "course_members_insert_v2" ON course_members;
+CREATE POLICY "course_members_insert_v2" ON course_members FOR INSERT WITH CHECK (
+  auth.uid() IS NOT NULL AND (
+    role = 'owner'
+    OR public.is_course_owner(course_id)
+    OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'equipment_manager', 'crew'))
+  )
+);
+
+DROP POLICY IF EXISTS "course_members_update_v1" ON course_members;
+CREATE POLICY "course_members_update_v1" ON course_members FOR UPDATE
+  USING (
+    public.is_course_owner(course_id)
+    OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'equipment_manager', 'crew'))
+  )
+  WITH CHECK (
+    public.is_course_owner(course_id)
+    OR (public.is_course_superintendent(course_id) AND role IN ('assistant', 'crew_lead', 'equipment_manager', 'crew'))
+  );
+
+-- Real write access to the equipment domain — the part that makes this role
+-- functionally meaningful, not just a label.
+DROP POLICY IF EXISTS "Owners and supers can insert equipment" ON equipment;
+CREATE POLICY "Owners and supers can insert equipment"
+  ON equipment FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = equipment.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update equipment" ON equipment;
+CREATE POLICY "Owners and supers can update equipment"
+  ON equipment FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = equipment.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete equipment" ON equipment;
+CREATE POLICY "Owners and supers can delete equipment"
+  ON equipment FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = equipment.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+
+DROP POLICY IF EXISTS "Owners and supers can insert maintenance schedule items" ON maintenance_schedule_items;
+CREATE POLICY "Owners and supers can insert maintenance schedule items"
+  ON maintenance_schedule_items FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_schedule_items.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update maintenance schedule items" ON maintenance_schedule_items;
+CREATE POLICY "Owners and supers can update maintenance schedule items"
+  ON maintenance_schedule_items FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_schedule_items.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete maintenance schedule items" ON maintenance_schedule_items;
+CREATE POLICY "Owners and supers can delete maintenance schedule items"
+  ON maintenance_schedule_items FOR DELETE USING (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_schedule_items.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+
+DROP POLICY IF EXISTS "Owners and supers can insert maintenance log" ON maintenance_log;
+CREATE POLICY "Owners and supers can insert maintenance log"
+  ON maintenance_log FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_log.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent', 'equipment_manager'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete maintenance log" ON maintenance_log;
+CREATE POLICY "Owners and supers can delete maintenance log"
+  ON maintenance_log FOR DELETE USING (
+    EXISTS (SELECT 1 FROM equipment e JOIN course_members cm ON cm.course_id = e.course_id WHERE e.id = maintenance_log.equipment_id AND cm.user_id = auth.uid() AND cm.role IN ('owner', 'superintendent', 'equipment_manager'))
+  );

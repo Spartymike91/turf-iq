@@ -5,8 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import { ALL_MODULES } from "@/lib/planAccess";
-
-type Role = "owner" | "superintendent" | "assistant" | "crew_lead" | "crew";
+import { type Role, ALL_ROLES, JUNIOR_ROLES, ROLE_LABEL } from "@/lib/roles";
 
 interface Member {
   id: string;
@@ -19,17 +18,6 @@ interface Member {
 }
 
 const ALL_MODULE_SLUGS = ALL_MODULES.map((m) => m.slug);
-
-const ROLE_LABEL: Record<Role, string> = {
-  owner: "Owner",
-  superintendent: "Superintendent",
-  assistant: "Assistant",
-  crew_lead: "Crew Lead",
-  crew: "Crew",
-};
-
-const ALL_ROLES: Role[] = ["owner", "superintendent", "assistant", "crew_lead", "crew"];
-const JUNIOR_ROLES: Role[] = ["assistant", "crew_lead", "crew"];
 
 export default function TeamPage() {
   const [courseId, setCourseId] = useState<string | null>(null);

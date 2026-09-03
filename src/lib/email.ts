@@ -4,6 +4,8 @@
 // the same key/domain succeeds instantly; Supabase's relay to it does not,
 // on both port 465 and 587), while Resend's own API works reliably.
 
+import { type Role, ROLE_LABEL } from "@/lib/roles";
+
 const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_ADDRESS = "TurfIQ <noreply@turfiq.club>";
 
@@ -34,24 +36,16 @@ export async function sendEmail({
   }
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  owner: "Owner",
-  superintendent: "Superintendent",
-  assistant: "Assistant",
-  crew_lead: "Crew Lead",
-  crew: "Crew",
-};
-
 export function inviteEmailHtml({
   courseName,
   role,
   actionLink,
 }: {
   courseName: string;
-  role: string;
+  role: Role;
   actionLink: string;
 }): string {
-  const roleLabel = ROLE_LABEL[role] ?? role;
+  const roleLabel = ROLE_LABEL[role];
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto;">
       <div style="background: #1a3a2a; padding: 24px; border-radius: 10px 10px 0 0;">

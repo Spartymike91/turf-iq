@@ -3,9 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { sendEmail, inviteEmailHtml } from "@/lib/email";
-
-type Role = "owner" | "superintendent" | "assistant" | "crew_lead" | "crew";
-const JUNIOR_ROLES: Role[] = ["assistant", "crew_lead", "crew"];
+import { type Role, JUNIOR_ROLES } from "@/lib/roles";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
