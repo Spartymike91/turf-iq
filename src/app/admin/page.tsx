@@ -38,21 +38,26 @@ export default function AdminCoursesPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-
-  async function load() {
-    const res = await fetch("/api/admin/courses");
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error ?? "Failed to load courses.");
-    } else {
-      setCourses(data.courses ?? []);
-    }
-    setLoading(false);
-  }
+  // Bumped after adding a course to re-run the effect below — the fetch/
+  // setState logic has to live inside the effect itself (not called by
+  // reference from an outer function) for react-hooks/set-state-in-effect
+  // to verify it's effect-local.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    async function load() {
+      const res = await fetch("/api/admin/courses");
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load courses.");
+      } else {
+        setCourses(data.courses ?? []);
+      }
+      setLoading(false);
+    }
+
     load();
-  }, []);
+  }, [reloadKey]);
 
   async function handleAddCourse(e: React.FormEvent) {
     e.preventDefault();
@@ -78,7 +83,7 @@ export default function AdminCoursesPage() {
         );
         setAddForm(emptyForm);
         setShowAddForm(false);
-        await load();
+        setReloadKey((k) => k + 1);
       }
     } catch {
       setError("Something went wrong creating the course.");

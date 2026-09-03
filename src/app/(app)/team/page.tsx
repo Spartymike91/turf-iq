@@ -42,67 +42,73 @@ export default function TeamPage() {
   const [editAccessModules, setEditAccessModules] = useState<string[]>(ALL_MODULE_SLUGS);
   const [editTitle, setEditTitle] = useState("");
   const [savingAccess, setSavingAccess] = useState(false);
-
-  async function load() {
-    const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-    setMyUserId(user.id);
-
-    const context = await resolveCourseIdClient(supabase, user);
-    if (!context) {
-      setChecking(false);
-      return;
-    }
-
-    setCourseId(context.courseId);
-    setIsAdminView(context.isAdminView);
-
-    // These three only depend on context.courseId/user.id, not on each
-    // other — fetch concurrently.
-    const [{ data: course }, membershipResult, { data: memberRows }] = await Promise.all([
-      supabase.from("courses").select("name").eq("id", context.courseId).single(),
-      context.isAdminView
-        ? Promise.resolve({ data: null as { role: string } | null })
-        : supabase
-            .from("course_members")
-            .select("role")
-            .eq("user_id", user.id)
-            .eq("course_id", context.courseId)
-            .single(),
-      supabase.from("course_members").select("id, user_id, role, allowed_modules, title").eq("course_id", context.courseId),
-    ]);
-    setCourseName(course?.name ?? "");
-    if (!context.isAdminView) {
-      setMyRole((membershipResult.data?.role as Role) ?? null);
-    }
-
-    const userIds = (memberRows ?? []).map((m) => m.user_id);
-    const { data: profileRows } = userIds.length
-      ? await supabase.from("profiles").select("id, email, full_name").in("id", userIds)
-      : { data: [] };
-
-    const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
-    const merged: Member[] = (memberRows ?? []).map((m) => ({
-      id: m.id,
-      user_id: m.user_id,
-      role: m.role as Role,
-      email: profileById.get(m.user_id)?.email ?? null,
-      full_name: profileById.get(m.user_id)?.full_name ?? null,
-      allowed_modules: m.allowed_modules,
-      title: m.title,
-    }));
-    merged.sort((a, b) => ALL_ROLES.indexOf(a.role) - ALL_ROLES.indexOf(b.role));
-
-    setMembers(merged);
-    setChecking(false);
-  }
+  // Bumped after a successful invite to re-run the effect below and refetch
+  // the roster — the fetch-and-setState logic has to live inside the effect
+  // itself (not called by reference from an outer function) for react-hooks/
+  // set-state-in-effect to be able to verify it's effect-local; see the
+  // load() nesting pattern already used in DiseaseRiskSection.tsx.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    async function load() {
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      setMyUserId(user.id);
+
+      const context = await resolveCourseIdClient(supabase, user);
+      if (!context) {
+        setChecking(false);
+        return;
+      }
+
+      setCourseId(context.courseId);
+      setIsAdminView(context.isAdminView);
+
+      // These three only depend on context.courseId/user.id, not on each
+      // other — fetch concurrently.
+      const [{ data: course }, membershipResult, { data: memberRows }] = await Promise.all([
+        supabase.from("courses").select("name").eq("id", context.courseId).single(),
+        context.isAdminView
+          ? Promise.resolve({ data: null as { role: string } | null })
+          : supabase
+              .from("course_members")
+              .select("role")
+              .eq("user_id", user.id)
+              .eq("course_id", context.courseId)
+              .single(),
+        supabase.from("course_members").select("id, user_id, role, allowed_modules, title").eq("course_id", context.courseId),
+      ]);
+      setCourseName(course?.name ?? "");
+      if (!context.isAdminView) {
+        setMyRole((membershipResult.data?.role as Role) ?? null);
+      }
+
+      const userIds = (memberRows ?? []).map((m) => m.user_id);
+      const { data: profileRows } = userIds.length
+        ? await supabase.from("profiles").select("id, email, full_name").in("id", userIds)
+        : { data: [] };
+
+      const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
+      const merged: Member[] = (memberRows ?? []).map((m) => ({
+        id: m.id,
+        user_id: m.user_id,
+        role: m.role as Role,
+        email: profileById.get(m.user_id)?.email ?? null,
+        full_name: profileById.get(m.user_id)?.full_name ?? null,
+        allowed_modules: m.allowed_modules,
+        title: m.title,
+      }));
+      merged.sort((a, b) => ALL_ROLES.indexOf(a.role) - ALL_ROLES.indexOf(b.role));
+
+      setMembers(merged);
+      setChecking(false);
+    }
+
     load();
-  }, []);
+  }, [reloadKey]);
 
   const canManage = isAdminView || myRole === "owner" || myRole === "superintendent";
   const assignableRoles = isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES;
@@ -156,7 +162,7 @@ export default function TeamPage() {
         setInviteTitle("");
         setInviteAllowedModules(ALL_MODULE_SLUGS);
         setShowInviteForm(false);
-        await load();
+        setReloadKey((k) => k + 1);
       }
     } catch {
       setError("Something went wrong sending the invite.");

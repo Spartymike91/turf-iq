@@ -93,24 +93,29 @@ export default function AdminCourseDetailPage() {
     }
   }
 
-  async function load() {
-    const res = await fetch(`/api/admin/courses/${id}`);
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error ?? "Failed to load course.");
-    } else {
-      setCourse(data.course);
-      setRoster(data.roster ?? []);
-      setEmployeeCount(data.employee_count ?? 0);
-      setTaskCount(data.task_count ?? 0);
-    }
-    setLoading(false);
-  }
+  // Bumped after waiving/clearing billing to re-run the effect below — the
+  // fetch/setState logic has to live inside the effect itself (not called by
+  // reference from an outer function) for react-hooks/set-state-in-effect to
+  // verify it's effect-local.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    async function load() {
+      const res = await fetch(`/api/admin/courses/${id}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load course.");
+      } else {
+        setCourse(data.course);
+        setRoster(data.roster ?? []);
+        setEmployeeCount(data.employee_count ?? 0);
+        setTaskCount(data.task_count ?? 0);
+      }
+      setLoading(false);
+    }
+
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, reloadKey]);
 
   async function handleWaive() {
     setWaiving(true);
@@ -123,7 +128,7 @@ export default function AdminCourseDetailPage() {
     const data = await res.json();
     if (res.ok) {
       setBillingNotice(`Fee waived until ${new Date(data.billing_waived_until).toLocaleDateString()}.`);
-      await load();
+      setReloadKey((k) => k + 1);
     } else {
       setBillingNotice(data.error ?? "Could not waive fee.");
     }
@@ -134,7 +139,7 @@ export default function AdminCourseDetailPage() {
     setWaiving(true);
     setBillingNotice(null);
     await fetch(`/api/admin/courses/${id}/waive-billing`, { method: "DELETE" });
-    await load();
+    setReloadKey((k) => k + 1);
     setWaiving(false);
   }
 
