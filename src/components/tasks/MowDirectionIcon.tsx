@@ -1,7 +1,8 @@
 import type { MowDirection } from "@/lib/mowDirections";
 
-// Clock face with an arrow (or crosshatch, for crosscut) overlay showing
-// which way to mow — the same clock-hour shorthand crews already use.
+// Clock face with a real arrow (or two, for crosscut) showing which way to
+// mow — the same clock-hour shorthand crews already use. Each line points
+// toward the first hour in its label (e.g. "2-8" points to the 2).
 export default function MowDirectionIcon({ direction, size = 20 }: { direction: MowDirection | null; size?: number }) {
   if (!direction) return null;
 
@@ -16,7 +17,8 @@ export default function MowDirectionIcon({ direction, size = 20 }: { direction: 
     return { x1, y1, x2, y2 };
   });
 
-  // Arrow endpoints per pattern, expressed as clock-hour angle pairs.
+  // Line endpoints per pattern, expressed as clock-hour angle pairs — the
+  // arrowhead points toward the first angle in each pair.
   const linesByDirection: Record<MowDirection, [number, number][]> = {
     straight: [[0, 180]],
     diagonal_lr: [[60, 240]],
@@ -28,9 +30,24 @@ export default function MowDirectionIcon({ direction, size = 20 }: { direction: 
     ],
   };
 
-  const toPoint = (hourAngleDeg: number) => {
+  const toPoint = (hourAngleDeg: number, radius = r - 1.5) => {
     const rad = (hourAngleDeg * Math.PI) / 180;
-    return { x: c + Math.sin(rad) * (r - 1.5), y: c - Math.cos(rad) * (r - 1.5) };
+    return { x: c + Math.sin(rad) * radius, y: c - Math.cos(rad) * radius };
+  };
+
+  const arrowhead = (headDeg: number, tailDeg: number) => {
+    const head = toPoint(headDeg);
+    const tail = toPoint(tailDeg);
+    const dx = head.x - tail.x;
+    const dy = head.y - tail.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const nx = -uy;
+    const ny = ux;
+    const backX = head.x - ux * 3;
+    const backY = head.y - uy * 3;
+    return `${head.x},${head.y} ${backX + nx * 1.8},${backY + ny * 1.8} ${backX - nx * 1.8},${backY - ny * 1.8}`;
   };
 
   return (
@@ -42,7 +59,12 @@ export default function MowDirectionIcon({ direction, size = 20 }: { direction: 
       {linesByDirection[direction].map(([a, b], i) => {
         const p1 = toPoint(a);
         const p2 = toPoint(b);
-        return <line key={i} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />;
+        return (
+          <g key={i}>
+            <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+            <polygon points={arrowhead(a, b)} fill="currentColor" />
+          </g>
+        );
       })}
     </svg>
   );
