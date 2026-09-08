@@ -96,7 +96,7 @@ export function getAbwStatus(gdd: number): PestStatus {
   };
 }
 
-const COOL_SEASON_GRASSES = ["bentgrass", "poa annua", "mixed"];
+const COOL_SEASON_GRASSES = ["bentgrass", "poa annua", "fescue", "mixed"];
 
 // An area can carry more than one grass type (e.g. bentgrass greens with a
 // natural Poa annua population, or bermudagrass fairways overseeded with

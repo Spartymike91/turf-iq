@@ -6,7 +6,7 @@
 // multi-select toggle group rather than a single dropdown. No "Mixed"
 // option here: that was only ever a stand-in for "more than one," which
 // multi-select now answers directly.
-export const GRASS_TYPES = ["Bermudagrass", "Bentgrass", "Zoysiagrass", "Paspalum", "Poa annua"] as const;
+export const GRASS_TYPES = ["Bermudagrass", "Bentgrass", "Zoysiagrass", "Paspalum", "Poa annua", "Fescue"] as const;
 export type GrassType = (typeof GRASS_TYPES)[number];
 
 export const GRASS_TYPE_AREAS = ["greens", "tees", "fairways", "rough"] as const;
