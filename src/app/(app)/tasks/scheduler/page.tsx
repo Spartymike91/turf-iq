@@ -22,6 +22,12 @@ interface Employee {
   is_active: boolean;
 }
 
+interface TimeOffEvent {
+  employee_id: string;
+  start_date: string;
+  end_date: string;
+}
+
 interface TaskAssignment {
   id: string;
   course_id: string;
@@ -65,6 +71,7 @@ export default function TaskSchedulerPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [timeOff, setTimeOff] = useState<TimeOffEvent[]>([]);
   const [assignments, setAssignments] = useState<TaskAssignment[]>([]);
   const [dateFilter, setDateFilter] = useState(todayStr());
   const [checking, setChecking] = useState(true);
@@ -85,20 +92,30 @@ export default function TaskSchedulerPage() {
       }
       setCourseId(context.courseId);
 
-      const [{ data: tpl }, { data: emp }, { data: assign }] = await Promise.all([
+      const [{ data: tpl }, { data: emp }, { data: assign }, { data: off }] = await Promise.all([
         supabase.from("task_templates").select("id, name, category, estimated_duration, target_minutes").eq("course_id", context.courseId).order("name"),
         supabase.from("employees").select("id, name, is_active").eq("course_id", context.courseId).eq("is_active", true).order("name"),
         supabase.from("task_assignments").select("*").eq("course_id", context.courseId).order("scheduled_date", { ascending: false }),
+        supabase
+          .from("calendar_events")
+          .select("employee_id, start_date, end_date")
+          .eq("course_id", context.courseId)
+          .eq("event_type", "time_off"),
       ]);
       setTemplates(tpl ?? []);
       setEmployees(emp ?? []);
       setAssignments(assign ?? []);
+      setTimeOff((off ?? []) as TimeOffEvent[]);
       setChecking(false);
     }
     load();
   }, []);
 
   const filtered = assignments.filter((a) => a.scheduled_date === dateFilter);
+
+  function isEmployeeOff(employeeId: string, date: string) {
+    return timeOff.some((t) => t.employee_id === employeeId && t.start_date <= date && date <= t.end_date);
+  }
 
   // Real history for this specific recurring task, per employee — the raw
   // averages are shown alongside their sample size deliberately (rather than
@@ -149,6 +166,12 @@ export default function TaskSchedulerPage() {
     const name = template ? template.name : addForm.name;
     if (!name) {
       setError("Pick a template or enter a task name.");
+      return;
+    }
+    if (addForm.assigned_to && isEmployeeOff(addForm.assigned_to, addForm.scheduled_date)) {
+      setError(
+        `${employees.find((e) => e.id === addForm.assigned_to)?.name ?? "This employee"} is scheduled off on ${addForm.scheduled_date} — pick another date or employee, or remove the time off first.`
+      );
       return;
     }
     setSaving(true);
@@ -283,11 +306,15 @@ export default function TaskSchedulerPage() {
                 className="w-36 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
               >
                 <option value="">Unassigned</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
+                {employees.map((e) => {
+                  const off = isEmployeeOff(e.id, addForm.scheduled_date);
+                  return (
+                    <option key={e.id} value={e.id} disabled={off}>
+                      {e.name}
+                      {off ? " (Off)" : ""}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
