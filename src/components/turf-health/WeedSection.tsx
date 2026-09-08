@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { getCrabgrassStatus } from "@/lib/pestModels";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import { isWeedApplication } from "@/lib/pestCategorization";
 import { printSection } from "@/lib/printSection";
 import PestApplicationEditRow, { type PestApplicationRow } from "@/components/turf-health/PestApplicationEditRow";
@@ -21,7 +22,7 @@ interface Product {
 export default function WeedSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
-  const [grassType, setGrassType] = useState("");
+  const [grassType, setGrassType] = useState<string[]>([]);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [applications, setApplications] = useState<PestApplicationRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -51,7 +52,7 @@ export default function WeedSection() {
         .eq("id", context.courseId)
         .single();
       setCourseName(course?.name ?? "");
-      setGrassType(course?.grass_type_greens || course?.grass_type || "");
+      setGrassType(resolveGrassTypes(course?.grass_type_greens, course?.grass_type));
 
       const { data: apps } = await supabase
         .from("pest_applications")
@@ -120,7 +121,7 @@ export default function WeedSection() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Weed Control</div>
         <div className="font-serif text-2xl text-green-dark">Weed Management</div>
         <div className="text-[13px] text-mist mt-1">
-          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {grassType || "—"} · {courseName}
+          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {grassType.join("/") || "—"} · {courseName}
         </div>
       </div>
 

@@ -98,16 +98,20 @@ export function getAbwStatus(gdd: number): PestStatus {
 
 const COOL_SEASON_GRASSES = ["bentgrass", "poa annua", "mixed"];
 
-export function isCoolSeasonGrass(grassType: string | null | undefined): boolean {
-  if (!grassType) return false;
-  return COOL_SEASON_GRASSES.includes(grassType.toLowerCase());
+// An area can carry more than one grass type (e.g. bentgrass greens with a
+// natural Poa annua population, or bermudagrass fairways overseeded with
+// ryegrass) — these gates trigger if ANY of the area's grass types match,
+// since that's enough for the relevant pressure/pest to be present.
+export function isCoolSeasonGrass(grassType: string | string[] | null | undefined): boolean {
+  const types = Array.isArray(grassType) ? grassType : grassType ? [grassType] : [];
+  return types.some((g) => COOL_SEASON_GRASSES.includes(g.toLowerCase()));
 }
 
 // Spring Dead Spot documented hosts (APS Journal, Bugwoodwiki) — bermudagrass
 // is the primary host; zoysiagrass is a documented secondary host.
 const SPRING_DEAD_SPOT_HOSTS = ["bermudagrass", "zoysiagrass"];
 
-export function isSpringDeadSpotHost(grassType: string | null | undefined): boolean {
-  if (!grassType) return false;
-  return SPRING_DEAD_SPOT_HOSTS.includes(grassType.toLowerCase());
+export function isSpringDeadSpotHost(grassType: string | string[] | null | undefined): boolean {
+  const types = Array.isArray(grassType) ? grassType : grassType ? [grassType] : [];
+  return types.some((g) => SPRING_DEAD_SPOT_HOSTS.includes(g.toLowerCase()));
 }

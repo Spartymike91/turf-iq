@@ -1914,3 +1914,21 @@ SET
 WHERE grass_type IS NOT NULL
   AND grass_type <> 'Mixed'
   AND grass_type_greens IS NULL;
+
+-- ============================================
+-- MULTI-SELECT GRASS TYPE PER AREA
+-- ============================================
+-- Mike/Robert: most areas actually carry more than one grass type in
+-- practice (bentgrass greens with a natural Poa annua population,
+-- bermudagrass fairways overseeded with ryegrass), so a single value per
+-- area was still one guess too few. Converts each grass_type_x column from
+-- TEXT to TEXT[] — USING wraps any existing single value in a one-element
+-- array, so last week's per-area backfill isn't lost.
+ALTER TABLE courses ALTER COLUMN grass_type_greens TYPE TEXT[]
+  USING (CASE WHEN grass_type_greens IS NULL THEN NULL ELSE ARRAY[grass_type_greens] END);
+ALTER TABLE courses ALTER COLUMN grass_type_tees TYPE TEXT[]
+  USING (CASE WHEN grass_type_tees IS NULL THEN NULL ELSE ARRAY[grass_type_tees] END);
+ALTER TABLE courses ALTER COLUMN grass_type_fairways TYPE TEXT[]
+  USING (CASE WHEN grass_type_fairways IS NULL THEN NULL ELSE ARRAY[grass_type_fairways] END);
+ALTER TABLE courses ALTER COLUMN grass_type_rough TYPE TEXT[]
+  USING (CASE WHEN grass_type_rough IS NULL THEN NULL ELSE ARRAY[grass_type_rough] END);

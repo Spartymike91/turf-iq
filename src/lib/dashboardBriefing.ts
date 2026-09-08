@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getWeatherForCourse, type WeatherResult } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import { getDueStatus } from "@/lib/equipmentModels";
 
 export interface TaskToday {
@@ -25,7 +26,7 @@ interface CourseRow {
   city: string | null;
   state: string | null;
   grass_type: string | null;
-  grass_type_fairways: string | null;
+  grass_type_fairways: string[] | null;
   latitude: number | null;
   longitude: number | null;
 }
@@ -128,7 +129,7 @@ DISEASE RISK: Dollar Spot ${dollarSpot.probabilityPct.toFixed(1)}% (action thres
     const crabgrass = getCrabgrassStatus(gdd);
     const whiteGrub = getWhiteGrubStatus(gdd);
     const pestLines = [`PEST/WEED (GDD ${gdd.toFixed(1)}): Crabgrass — ${crabgrass.stage}. White Grub — ${whiteGrub.stage}.`];
-    if (isCoolSeasonGrass(course.grass_type_fairways || course.grass_type)) {
+    if (isCoolSeasonGrass(resolveGrassTypes(course.grass_type_fairways, course.grass_type))) {
       const abw = getAbwStatus(gdd);
       pestLines.push(`Annual Bluegrass Weevil — ${abw.stage}.`);
     }

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { getWeatherForCourse } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import { getDueStatus } from "@/lib/equipmentModels";
 import { computeWeeklyPayroll, getWeekStart } from "@/lib/payroll";
 
@@ -23,10 +24,14 @@ async function buildSystemPrompt(
   const sections: string[] = [];
 
   if (course) {
+    const greens = resolveGrassTypes(course.grass_type_greens, course.grass_type);
+    const tees = resolveGrassTypes(course.grass_type_tees, course.grass_type);
+    const fairways = resolveGrassTypes(course.grass_type_fairways, course.grass_type);
+    const rough = resolveGrassTypes(course.grass_type_rough, course.grass_type);
     const grassTypeLine =
-      course.grass_type_greens || course.grass_type_tees || course.grass_type_fairways || course.grass_type_rough
-        ? `Greens ${course.grass_type_greens || "—"} · Tees ${course.grass_type_tees || "—"} · Fairways ${course.grass_type_fairways || "—"} · Rough ${course.grass_type_rough || "—"}`
-        : course.grass_type ?? "not set";
+      greens.length > 0 || tees.length > 0 || fairways.length > 0 || rough.length > 0
+        ? `Greens ${greens.join("/") || "—"} · Tees ${tees.join("/") || "—"} · Fairways ${fairways.join("/") || "—"} · Rough ${rough.join("/") || "—"}`
+        : "not set";
     sections.push(
       `COURSE PROFILE:
 - ${course.name}, ${course.city ?? "—"}, ${course.state ?? "—"}
@@ -66,6 +71,7 @@ async function buildSystemPrompt(
       );
 
       const gdd = weather.agronomics.gddSeasonToDate;
+      const fairways = resolveGrassTypes(course.grass_type_fairways, course.grass_type);
       const crabgrass = getCrabgrassStatus(gdd);
       const whiteGrub = getWhiteGrubStatus(gdd);
       const pestLines = [
@@ -73,7 +79,7 @@ async function buildSystemPrompt(
         `- Crabgrass (Purdue/Michigan State/UW-Madison validated 200 GDD50 threshold): ${crabgrass.stage} — ${crabgrass.detail}`,
         `- White Grub (industry guidance range, not primary-extension-sourced): ${whiteGrub.stage} — ${whiteGrub.detail}`,
       ];
-      if (isCoolSeasonGrass(course.grass_type_fairways || course.grass_type)) {
+      if (isCoolSeasonGrass(fairways)) {
         const abw = getAbwStatus(gdd);
         pestLines.push(`- Annual Bluegrass Weevil: ${abw.stage} — ${abw.detail}`);
       }

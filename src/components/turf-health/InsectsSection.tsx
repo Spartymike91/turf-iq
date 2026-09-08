@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import { isWeedApplication, isDiseaseTarget, isGrowthRegulatorApplication, type ProductCategory } from "@/lib/pestCategorization";
 import { printSection } from "@/lib/printSection";
 import PestApplicationEditRow, { type PestApplicationRow } from "@/components/turf-health/PestApplicationEditRow";
@@ -21,7 +22,7 @@ interface Product {
 export default function InsectsSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
-  const [fairwaysGrassType, setFairwaysGrassType] = useState("");
+  const [fairwaysGrassTypes, setFairwaysGrassTypes] = useState<string[]>([]);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [applications, setApplications] = useState<PestApplicationRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -53,7 +54,7 @@ export default function InsectsSection() {
       setCourseName(course?.name ?? "");
       // ABW is a fairway pest (see getAbwStatus's own doc comment) — read
       // that area specifically, falling back to the legacy single value.
-      setFairwaysGrassType(course?.grass_type_fairways || course?.grass_type || "");
+      setFairwaysGrassTypes(resolveGrassTypes(course?.grass_type_fairways, course?.grass_type));
 
       const { data: apps } = await supabase
         .from("pest_applications")
@@ -119,7 +120,7 @@ export default function InsectsSection() {
 
   const gdd = weather?.agronomics.gddSeasonToDate ?? null;
   const whiteGrub = gdd != null ? getWhiteGrubStatus(gdd) : null;
-  const showAbw = isCoolSeasonGrass(fairwaysGrassType);
+  const showAbw = isCoolSeasonGrass(fairwaysGrassTypes);
   const abw = showAbw && gdd != null ? getAbwStatus(gdd) : null;
 
   const cards = [
@@ -133,7 +134,7 @@ export default function InsectsSection() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Insect Control</div>
         <div className="font-serif text-2xl text-green-dark">Insect Management</div>
         <div className="text-[13px] text-mist mt-1">
-          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {fairwaysGrassType || "—"} · {courseName}
+          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {fairwaysGrassTypes.join("/") || "—"} · {courseName}
         </div>
       </div>
 

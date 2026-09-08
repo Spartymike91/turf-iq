@@ -6,6 +6,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
 import { isDiseaseTarget } from "@/lib/pestCategorization";
 import { isCoolSeasonGrass, isSpringDeadSpotHost } from "@/lib/pestModels";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import { printSection } from "@/lib/printSection";
 import PestApplicationEditRow, { type PestApplicationRow } from "@/components/turf-health/PestApplicationEditRow";
 
@@ -20,8 +21,8 @@ interface Product {
 
 export default function DiseaseRiskSection() {
   const [courseName, setCourseName] = useState("");
-  const [greensGrassType, setGreensGrassType] = useState("");
-  const [fairwaysGrassType, setFairwaysGrassType] = useState("");
+  const [greensGrassTypes, setGreensGrassTypes] = useState<string[]>([]);
+  const [fairwaysGrassTypes, setFairwaysGrassTypes] = useState<string[]>([]);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [nAppliedYtd, setNAppliedYtd] = useState<number | null>(null);
   const [nTarget, setNTarget] = useState<number | null>(null);
@@ -56,8 +57,8 @@ export default function DiseaseRiskSection() {
       // Spot (below) is a fairway/rough disease — each reads its own area,
       // falling back to the legacy single grass_type for courses that
       // haven't set per-area values yet.
-      setGreensGrassType(course?.grass_type_greens || course?.grass_type || "");
-      setFairwaysGrassType(course?.grass_type_fairways || course?.grass_type || "");
+      setGreensGrassTypes(resolveGrassTypes(course?.grass_type_greens, course?.grass_type));
+      setFairwaysGrassTypes(resolveGrassTypes(course?.grass_type_fairways, course?.grass_type));
 
       const fiscalYear = new Date().getFullYear();
       const [{ data: program }, { data: apps }, { data: sprayRows }, { data: prods }, { data: soilTest }] = await Promise.all([
@@ -150,8 +151,8 @@ export default function DiseaseRiskSection() {
 
   const { dollarSpot, pythium, brownPatch, anthracnose, fusariumPatch, springDeadSpot } = weather.diseaseRisk;
   const dsAboveThreshold = dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct;
-  const showCoolSeasonDiseases = isCoolSeasonGrass(greensGrassType);
-  const showSpringDeadSpot = isSpringDeadSpotHost(fairwaysGrassType);
+  const showCoolSeasonDiseases = isCoolSeasonGrass(greensGrassTypes);
+  const showSpringDeadSpot = isSpringDeadSpotHost(fairwaysGrassTypes);
 
   // Fall N applied while soil temp is in the SDS infection window — a
   // documented risk factor (delays dormancy, reduces cold hardiness), not a
@@ -179,7 +180,7 @@ export default function DiseaseRiskSection() {
           </div>
           <div className="font-serif text-2xl text-green-dark">Turfgrass Disease Prediction</div>
           <div className="text-[13px] text-mist mt-1">
-            {courseName} {greensGrassType && `· ${greensGrassType} greens`} ·{" "}
+            {courseName} {greensGrassTypes.length > 0 && `· ${greensGrassTypes.join("/")} greens`} ·{" "}
             <span className="inline-flex items-center gap-1">
               <span className="w-1.5 h-1.5 bg-green-bright rounded-full animate-pulse-dot inline-block" />
               Models updated{" "}

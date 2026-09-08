@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import { printSection } from "@/lib/printSection";
@@ -57,7 +58,7 @@ export default function FertilitySection() {
 
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
-  const [grassType, setGrassType] = useState("");
+  const [grassType, setGrassType] = useState<string[]>([]);
   const [annualTarget, setAnnualTarget] = useState<number>(0);
   const [targetInput, setTargetInput] = useState("");
   const [editingTarget, setEditingTarget] = useState(false);
@@ -89,7 +90,7 @@ export default function FertilitySection() {
         .eq("id", context.courseId)
         .single();
       setCourseName(course?.name ?? "");
-      setGrassType(course?.grass_type_greens || course?.grass_type || "");
+      setGrassType(resolveGrassTypes(course?.grass_type_greens, course?.grass_type));
 
       const { data: program } = await supabase
         .from("fertility_programs")
@@ -264,7 +265,7 @@ export default function FertilitySection() {
         </div>
         <div className="font-serif text-2xl text-green-dark">Annual Nutrient Management</div>
         <div className="text-[13px] text-mist mt-1">
-          {courseName} {grassType && `· ${grassType}`} · {fiscalYear} Program Year
+          {courseName} {grassType.length > 0 && `· ${grassType.join("/")}`} · {fiscalYear} Program Year
         </div>
       </div>
 

@@ -6,7 +6,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PLAN_TIERS, PLAN_DISPLAY, isPlanTier, type PlanTier } from "@/lib/billing";
 import { DEFAULT_TASK_LIBRARY } from "@/lib/defaultTaskLibrary";
-import { GRASS_TYPES, GRASS_TYPE_AREAS, GRASS_TYPE_AREA_LABEL, defaultGrassTypeForClimateZone } from "@/lib/grassTypes";
+import {
+  GRASS_TYPES,
+  GRASS_TYPE_AREAS,
+  GRASS_TYPE_AREA_LABEL,
+  defaultGrassTypeForClimateZone,
+  resolveGrassTypes,
+  type GrassTypeArea,
+} from "@/lib/grassTypes";
 
 export default function CoursePage() {
   return (
@@ -20,7 +27,12 @@ function CourseForm() {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  const [grassTypes, setGrassTypes] = useState({ greens: "", tees: "", fairways: "", rough: "" });
+  const [grassTypes, setGrassTypes] = useState<Record<GrassTypeArea, string[]>>({
+    greens: [],
+    tees: [],
+    fairways: [],
+    rough: [],
+  });
   const [climateZone, setClimateZone] = useState("warm-humid");
   const [numHoles, setNumHoles] = useState("18");
   const [acres, setAcres] = useState("");
@@ -31,10 +43,10 @@ function CourseForm() {
     city: string;
     state: string;
     grass_type: string;
-    grass_type_greens: string;
-    grass_type_tees: string;
-    grass_type_fairways: string;
-    grass_type_rough: string;
+    grass_type_greens: string[];
+    grass_type_tees: string[];
+    grass_type_fairways: string[];
+    grass_type_rough: string[];
     climate_zone: string;
     num_holes: number;
     maintained_acres: number;
@@ -85,10 +97,10 @@ function CourseForm() {
           city: (c.city as string) || "",
           state: (c.state as string) || "",
           grass_type: (c.grass_type as string) || "",
-          grass_type_greens: (c.grass_type_greens as string) || "",
-          grass_type_tees: (c.grass_type_tees as string) || "",
-          grass_type_fairways: (c.grass_type_fairways as string) || "",
-          grass_type_rough: (c.grass_type_rough as string) || "",
+          grass_type_greens: (c.grass_type_greens as string[]) || [],
+          grass_type_tees: (c.grass_type_tees as string[]) || [],
+          grass_type_fairways: (c.grass_type_fairways as string[]) || [],
+          grass_type_rough: (c.grass_type_rough as string[]) || [],
           climate_zone: (c.climate_zone as string) || "",
           num_holes: (c.num_holes as number) || 18,
           maintained_acres: (c.maintained_acres as number) || 0,
@@ -100,16 +112,12 @@ function CourseForm() {
         setName(c.name as string);
         setCity((c.city as string) || "");
         setState((c.state as string) || "");
-        // "Mixed" isn't a valid per-area answer (that option no longer
-        // exists once grass type is asked per area), so it's not usable
-        // as a fallback — those courses just need a real per-area pass.
-        const rawLegacy = (c.grass_type as string) || "";
-        const legacyGrassType = (GRASS_TYPES as readonly string[]).includes(rawLegacy) ? rawLegacy : "";
+        const legacy = (c.grass_type as string) || "";
         setGrassTypes({
-          greens: (c.grass_type_greens as string) || legacyGrassType,
-          tees: (c.grass_type_tees as string) || legacyGrassType,
-          fairways: (c.grass_type_fairways as string) || legacyGrassType,
-          rough: (c.grass_type_rough as string) || legacyGrassType,
+          greens: resolveGrassTypes(c.grass_type_greens as string[], legacy),
+          tees: resolveGrassTypes(c.grass_type_tees as string[], legacy),
+          fairways: resolveGrassTypes(c.grass_type_fairways as string[], legacy),
+          rough: resolveGrassTypes(c.grass_type_rough as string[], legacy),
         });
         setClimateZone((c.climate_zone as string) || "warm-humid");
         setNumHoles(String((c.num_holes as number) || 18));
@@ -137,11 +145,11 @@ function CourseForm() {
           name,
           city,
           state,
-          grass_type: grassTypes.greens || null,
-          grass_type_greens: grassTypes.greens || null,
-          grass_type_tees: grassTypes.tees || null,
-          grass_type_fairways: grassTypes.fairways || null,
-          grass_type_rough: grassTypes.rough || null,
+          grass_type: grassTypes.greens[0] ?? null,
+          grass_type_greens: grassTypes.greens.length > 0 ? grassTypes.greens : null,
+          grass_type_tees: grassTypes.tees.length > 0 ? grassTypes.tees : null,
+          grass_type_fairways: grassTypes.fairways.length > 0 ? grassTypes.fairways : null,
+          grass_type_rough: grassTypes.rough.length > 0 ? grassTypes.rough : null,
           climate_zone: climateZone,
           num_holes: parseInt(numHoles),
           maintained_acres: parseFloat(acres) || null,
@@ -158,11 +166,11 @@ function CourseForm() {
         name,
         city,
         state,
-        grass_type: grassTypes.greens || null,
-        grass_type_greens: grassTypes.greens || null,
-        grass_type_tees: grassTypes.tees || null,
-        grass_type_fairways: grassTypes.fairways || null,
-        grass_type_rough: grassTypes.rough || null,
+        grass_type: grassTypes.greens[0] ?? null,
+        grass_type_greens: grassTypes.greens.length > 0 ? grassTypes.greens : null,
+        grass_type_tees: grassTypes.tees.length > 0 ? grassTypes.tees : null,
+        grass_type_fairways: grassTypes.fairways.length > 0 ? grassTypes.fairways : null,
+        grass_type_rough: grassTypes.rough.length > 0 ? grassTypes.rough : null,
         climate_zone: climateZone,
         num_holes: parseInt(numHoles),
         maintained_acres: parseFloat(acres) || null,
@@ -444,7 +452,7 @@ function CourseForm() {
               setGrassTypes((prev) => {
                 const next = { ...prev };
                 for (const area of GRASS_TYPE_AREAS) {
-                  if (!next[area]) next[area] = def;
+                  if (next[area].length === 0) next[area] = [def];
                 }
                 return next;
               });
@@ -466,24 +474,35 @@ function CourseForm() {
             fairways) — disease and pest models use the right area&apos;s grass type instead of one guess for
             the whole course.
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {GRASS_TYPE_AREAS.map((area) => (
               <div key={area} className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-mono uppercase tracking-wide text-mist">
                   {GRASS_TYPE_AREA_LABEL[area]}
+                  {grassTypes[area].length === 0 && <span className="normal-case text-mist/70"> — none selected</span>}
                 </label>
-                <select
-                  value={grassTypes[area]}
-                  onChange={(e) => setGrassTypes({ ...grassTypes, [area]: e.target.value })}
-                  className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-                >
-                  <option value="">Select...</option>
-                  {GRASS_TYPES.map((g) => (
-                    <option key={g} value={g}>
-                      {g}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-1.5">
+                  {GRASS_TYPES.map((g) => {
+                    const selected = grassTypes[area].includes(g);
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() =>
+                          setGrassTypes({
+                            ...grassTypes,
+                            [area]: selected ? grassTypes[area].filter((x) => x !== g) : [...grassTypes[area], g],
+                          })
+                        }
+                        className={`px-2.5 py-1.5 border-[1.5px] rounded-lg text-xs font-medium transition-colors ${
+                          selected ? "border-green-bright bg-green-pale text-green-dark" : "border-rule text-mist hover:border-green-mid"
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ))}
           </div>

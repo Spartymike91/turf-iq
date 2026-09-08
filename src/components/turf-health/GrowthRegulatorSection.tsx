@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
+import { resolveGrassTypes } from "@/lib/grassTypes";
 import { isGrowthRegulatorApplication, type ProductCategory } from "@/lib/pestCategorization";
 import { printSection } from "@/lib/printSection";
 import PestApplicationEditRow, { type PestApplicationRow } from "@/components/turf-health/PestApplicationEditRow";
@@ -19,7 +20,7 @@ interface Product {
 export default function GrowthRegulatorSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
-  const [grassType, setGrassType] = useState("");
+  const [grassType, setGrassType] = useState<string[]>([]);
   const [applications, setApplications] = useState<PestApplicationRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [checking, setChecking] = useState(true);
@@ -48,7 +49,7 @@ export default function GrowthRegulatorSection() {
         .eq("id", context.courseId)
         .single();
       setCourseName(course?.name ?? "");
-      setGrassType(course?.grass_type_greens || course?.grass_type || "");
+      setGrassType(resolveGrassTypes(course?.grass_type_greens, course?.grass_type));
 
       const { data: apps } = await supabase
         .from("pest_applications")
@@ -106,7 +107,7 @@ export default function GrowthRegulatorSection() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Growth Regulation</div>
         <div className="font-serif text-2xl text-green-dark">Plant Growth Regulator Applications</div>
         <div className="text-[13px] text-mist mt-1">
-          {grassType || "—"} · {courseName}
+          {grassType.join("/") || "—"} · {courseName}
         </div>
       </div>
 

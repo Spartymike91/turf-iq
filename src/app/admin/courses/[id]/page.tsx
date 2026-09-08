@@ -12,10 +12,10 @@ interface Course {
   state: string | null;
   climate_zone: string | null;
   grass_type: string | null;
-  grass_type_greens: string | null;
-  grass_type_tees: string | null;
-  grass_type_fairways: string | null;
-  grass_type_rough: string | null;
+  grass_type_greens: string[] | null;
+  grass_type_tees: string[] | null;
+  grass_type_fairways: string[] | null;
+  grass_type_rough: string[] | null;
   num_holes: number | null;
   maintained_acres: number | null;
   annual_rounds: number | null;
@@ -263,10 +263,13 @@ export default function AdminCourseDetailPage() {
           <div>
             <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1">Grass Type</div>
             <div>
-              {course.grass_type_greens || course.grass_type_tees || course.grass_type_fairways || course.grass_type_rough ? (
+              {(course.grass_type_greens?.length ?? 0) > 0 ||
+              (course.grass_type_tees?.length ?? 0) > 0 ||
+              (course.grass_type_fairways?.length ?? 0) > 0 ||
+              (course.grass_type_rough?.length ?? 0) > 0 ? (
                 <>
-                  Greens {course.grass_type_greens ?? "—"} · Tees {course.grass_type_tees ?? "—"} · Fairways{" "}
-                  {course.grass_type_fairways ?? "—"} · Rough {course.grass_type_rough ?? "—"}
+                  Greens {course.grass_type_greens?.join("/") || "—"} · Tees {course.grass_type_tees?.join("/") || "—"} · Fairways{" "}
+                  {course.grass_type_fairways?.join("/") || "—"} · Rough {course.grass_type_rough?.join("/") || "—"}
                 </>
               ) : (
                 course.grass_type ?? "Not set"
