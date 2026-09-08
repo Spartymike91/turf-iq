@@ -20,7 +20,8 @@ interface Product {
 
 export default function DiseaseRiskSection() {
   const [courseName, setCourseName] = useState("");
-  const [grassType, setGrassType] = useState("");
+  const [greensGrassType, setGreensGrassType] = useState("");
+  const [fairwaysGrassType, setFairwaysGrassType] = useState("");
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [nAppliedYtd, setNAppliedYtd] = useState<number | null>(null);
   const [nTarget, setNTarget] = useState<number | null>(null);
@@ -46,12 +47,17 @@ export default function DiseaseRiskSection() {
 
       const { data: course } = await supabase
         .from("courses")
-        .select("name, grass_type")
+        .select("name, grass_type, grass_type_greens, grass_type_fairways")
         .eq("id", context.courseId)
         .single();
 
       setCourseName(course?.name ?? "");
-      setGrassType(course?.grass_type ?? "");
+      // Disease risk models here are calibrated to greens turf; Spring Dead
+      // Spot (below) is a fairway/rough disease — each reads its own area,
+      // falling back to the legacy single grass_type for courses that
+      // haven't set per-area values yet.
+      setGreensGrassType(course?.grass_type_greens || course?.grass_type || "");
+      setFairwaysGrassType(course?.grass_type_fairways || course?.grass_type || "");
 
       const fiscalYear = new Date().getFullYear();
       const [{ data: program }, { data: apps }, { data: sprayRows }, { data: prods }, { data: soilTest }] = await Promise.all([
@@ -144,8 +150,8 @@ export default function DiseaseRiskSection() {
 
   const { dollarSpot, pythium, brownPatch, anthracnose, fusariumPatch, springDeadSpot } = weather.diseaseRisk;
   const dsAboveThreshold = dollarSpot.probabilityPct >= dollarSpot.actionThresholdPct;
-  const showCoolSeasonDiseases = isCoolSeasonGrass(grassType);
-  const showSpringDeadSpot = isSpringDeadSpotHost(grassType);
+  const showCoolSeasonDiseases = isCoolSeasonGrass(greensGrassType);
+  const showSpringDeadSpot = isSpringDeadSpotHost(fairwaysGrassType);
 
   // Fall N applied while soil temp is in the SDS infection window — a
   // documented risk factor (delays dormancy, reduces cold hardiness), not a
@@ -173,7 +179,7 @@ export default function DiseaseRiskSection() {
           </div>
           <div className="font-serif text-2xl text-green-dark">Turfgrass Disease Prediction</div>
           <div className="text-[13px] text-mist mt-1">
-            {courseName} {grassType && `· ${grassType}`} ·{" "}
+            {courseName} {greensGrassType && `· ${greensGrassType} greens`} ·{" "}
             <span className="inline-flex items-center gap-1">
               <span className="w-1.5 h-1.5 bg-green-bright rounded-full animate-pulse-dot inline-block" />
               Models updated{" "}

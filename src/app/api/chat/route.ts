@@ -14,17 +14,24 @@ async function buildSystemPrompt(
 
   const { data: course } = await supabase
     .from("courses")
-    .select("name, city, state, grass_type, climate_zone, num_holes, maintained_acres, latitude, longitude")
+    .select(
+      "name, city, state, grass_type, grass_type_greens, grass_type_tees, grass_type_fairways, grass_type_rough, climate_zone, num_holes, maintained_acres, latitude, longitude"
+    )
     .eq("id", courseId)
     .single();
 
   const sections: string[] = [];
 
   if (course) {
+    const grassTypeLine =
+      course.grass_type_greens || course.grass_type_tees || course.grass_type_fairways || course.grass_type_rough
+        ? `Greens ${course.grass_type_greens || "—"} · Tees ${course.grass_type_tees || "—"} · Fairways ${course.grass_type_fairways || "—"} · Rough ${course.grass_type_rough || "—"}`
+        : course.grass_type ?? "not set";
     sections.push(
       `COURSE PROFILE:
 - ${course.name}, ${course.city ?? "—"}, ${course.state ?? "—"}
-- ${course.num_holes ?? "—"} holes · ${course.maintained_acres ?? "—"} maintained acres · ${course.grass_type ?? "not set"}
+- ${course.num_holes ?? "—"} holes · ${course.maintained_acres ?? "—"} maintained acres
+- Grass types: ${grassTypeLine}
 - Climate zone: ${course.climate_zone ?? "not set"}
 - Today: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}`
     );
@@ -66,7 +73,7 @@ async function buildSystemPrompt(
         `- Crabgrass (Purdue/Michigan State/UW-Madison validated 200 GDD50 threshold): ${crabgrass.stage} — ${crabgrass.detail}`,
         `- White Grub (industry guidance range, not primary-extension-sourced): ${whiteGrub.stage} — ${whiteGrub.detail}`,
       ];
-      if (isCoolSeasonGrass(course.grass_type)) {
+      if (isCoolSeasonGrass(course.grass_type_fairways || course.grass_type)) {
         const abw = getAbwStatus(gdd);
         pestLines.push(`- Annual Bluegrass Weevil: ${abw.stage} — ${abw.detail}`);
       }

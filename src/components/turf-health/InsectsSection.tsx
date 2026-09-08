@@ -21,7 +21,7 @@ interface Product {
 export default function InsectsSection() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
-  const [grassType, setGrassType] = useState("");
+  const [fairwaysGrassType, setFairwaysGrassType] = useState("");
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [applications, setApplications] = useState<PestApplicationRow[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -47,11 +47,13 @@ export default function InsectsSection() {
       setCourseId(context.courseId);
       const { data: course } = await supabase
         .from("courses")
-        .select("name, grass_type")
+        .select("name, grass_type, grass_type_fairways")
         .eq("id", context.courseId)
         .single();
       setCourseName(course?.name ?? "");
-      setGrassType(course?.grass_type ?? "");
+      // ABW is a fairway pest (see getAbwStatus's own doc comment) — read
+      // that area specifically, falling back to the legacy single value.
+      setFairwaysGrassType(course?.grass_type_fairways || course?.grass_type || "");
 
       const { data: apps } = await supabase
         .from("pest_applications")
@@ -117,7 +119,7 @@ export default function InsectsSection() {
 
   const gdd = weather?.agronomics.gddSeasonToDate ?? null;
   const whiteGrub = gdd != null ? getWhiteGrubStatus(gdd) : null;
-  const showAbw = isCoolSeasonGrass(grassType);
+  const showAbw = isCoolSeasonGrass(fairwaysGrassType);
   const abw = showAbw && gdd != null ? getAbwStatus(gdd) : null;
 
   const cards = [
@@ -131,7 +133,7 @@ export default function InsectsSection() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Insect Control</div>
         <div className="font-serif text-2xl text-green-dark">Insect Management</div>
         <div className="text-[13px] text-mist mt-1">
-          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {grassType || "—"} · {courseName}
+          {gdd != null ? `${gdd.toFixed(0)} GDD (Base 50°F)` : "GDD unavailable"} · {fairwaysGrassType || "—"} · {courseName}
         </div>
       </div>
 

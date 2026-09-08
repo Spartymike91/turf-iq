@@ -27,7 +27,7 @@ export async function GET() {
 
   const { data: course } = await supabase
     .from("courses")
-    .select("name, city, state, grass_type, latitude, longitude")
+    .select("name, city, state, grass_type, grass_type_fairways, latitude, longitude")
     .eq("id", courseId)
     .single();
 

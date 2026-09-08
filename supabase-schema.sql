@@ -1882,3 +1882,35 @@ CREATE POLICY "Owners and supers can delete calendar events"
   ON calendar_events FOR DELETE USING (
     EXISTS (SELECT 1 FROM course_members WHERE course_id = calendar_events.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
   );
+
+-- ============================================
+-- PER-AREA GRASS TYPE
+-- ============================================
+-- Mike/Robert flagged that one course-wide grass_type is wrong for any
+-- transition-zone course (e.g. bentgrass greens + bermudagrass fairways,
+-- extremely common) — and it was already silently mismatched even before
+-- this: Spring Dead Spot and ABW are fairway pests/diseases per their own
+-- literature basis (see pestModels.ts), while Anthracnose/Fusarium Patch
+-- are classically greens diseases, yet all were gated off the same single
+-- value. courses.grass_type is kept as a legacy fallback (existing reads
+-- keep working via `grass_type_x || grass_type` in application code) —
+-- not dropped, and not backfilled from these new columns in reverse.
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS grass_type_greens TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS grass_type_tees TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS grass_type_fairways TEXT;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS grass_type_rough TEXT;
+
+-- One-time backfill: existing courses' single grass_type becomes every
+-- area's starting value, so nobody's dashboard looks freshly blank after
+-- this ships. Skips courses that self-reported "Mixed" — that value isn't
+-- a valid per-area answer, so those genuinely need a real per-area pass
+-- from the course owner rather than a guessed backfill.
+UPDATE courses
+SET
+  grass_type_greens = grass_type,
+  grass_type_tees = grass_type,
+  grass_type_fairways = grass_type,
+  grass_type_rough = grass_type
+WHERE grass_type IS NOT NULL
+  AND grass_type <> 'Mixed'
+  AND grass_type_greens IS NULL;

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PLAN_TIERS, PLAN_DISPLAY, isPlanTier, type PlanTier } from "@/lib/billing";
 import { DEFAULT_TASK_LIBRARY } from "@/lib/defaultTaskLibrary";
+import { GRASS_TYPES, GRASS_TYPE_AREAS, GRASS_TYPE_AREA_LABEL, defaultGrassTypeForClimateZone } from "@/lib/grassTypes";
 
 export default function CoursePage() {
   return (
@@ -19,7 +20,7 @@ function CourseForm() {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
-  const [grassType, setGrassType] = useState("Bermudagrass");
+  const [grassTypes, setGrassTypes] = useState({ greens: "", tees: "", fairways: "", rough: "" });
   const [climateZone, setClimateZone] = useState("warm-humid");
   const [numHoles, setNumHoles] = useState("18");
   const [acres, setAcres] = useState("");
@@ -30,6 +31,10 @@ function CourseForm() {
     city: string;
     state: string;
     grass_type: string;
+    grass_type_greens: string;
+    grass_type_tees: string;
+    grass_type_fairways: string;
+    grass_type_rough: string;
     climate_zone: string;
     num_holes: number;
     maintained_acres: number;
@@ -80,6 +85,10 @@ function CourseForm() {
           city: (c.city as string) || "",
           state: (c.state as string) || "",
           grass_type: (c.grass_type as string) || "",
+          grass_type_greens: (c.grass_type_greens as string) || "",
+          grass_type_tees: (c.grass_type_tees as string) || "",
+          grass_type_fairways: (c.grass_type_fairways as string) || "",
+          grass_type_rough: (c.grass_type_rough as string) || "",
           climate_zone: (c.climate_zone as string) || "",
           num_holes: (c.num_holes as number) || 18,
           maintained_acres: (c.maintained_acres as number) || 0,
@@ -91,7 +100,17 @@ function CourseForm() {
         setName(c.name as string);
         setCity((c.city as string) || "");
         setState((c.state as string) || "");
-        setGrassType((c.grass_type as string) || "Bermudagrass");
+        // "Mixed" isn't a valid per-area answer (that option no longer
+        // exists once grass type is asked per area), so it's not usable
+        // as a fallback — those courses just need a real per-area pass.
+        const rawLegacy = (c.grass_type as string) || "";
+        const legacyGrassType = (GRASS_TYPES as readonly string[]).includes(rawLegacy) ? rawLegacy : "";
+        setGrassTypes({
+          greens: (c.grass_type_greens as string) || legacyGrassType,
+          tees: (c.grass_type_tees as string) || legacyGrassType,
+          fairways: (c.grass_type_fairways as string) || legacyGrassType,
+          rough: (c.grass_type_rough as string) || legacyGrassType,
+        });
         setClimateZone((c.climate_zone as string) || "warm-humid");
         setNumHoles(String((c.num_holes as number) || 18));
         setAcres(String((c.maintained_acres as number) || ""));
@@ -118,7 +137,11 @@ function CourseForm() {
           name,
           city,
           state,
-          grass_type: grassType,
+          grass_type: grassTypes.greens || null,
+          grass_type_greens: grassTypes.greens || null,
+          grass_type_tees: grassTypes.tees || null,
+          grass_type_fairways: grassTypes.fairways || null,
+          grass_type_rough: grassTypes.rough || null,
           climate_zone: climateZone,
           num_holes: parseInt(numHoles),
           maintained_acres: parseFloat(acres) || null,
@@ -135,7 +158,11 @@ function CourseForm() {
         name,
         city,
         state,
-        grass_type: grassType,
+        grass_type: grassTypes.greens || null,
+        grass_type_greens: grassTypes.greens || null,
+        grass_type_tees: grassTypes.tees || null,
+        grass_type_fairways: grassTypes.fairways || null,
+        grass_type_rough: grassTypes.rough || null,
         climate_zone: climateZone,
         num_holes: parseInt(numHoles),
         maintained_acres: parseFloat(acres) || null,
@@ -369,24 +396,7 @@ function CourseForm() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-semibold uppercase tracking-wide">
-              Grass Type
-            </label>
-            <select
-              value={grassType}
-              onChange={(e) => setGrassType(e.target.value)}
-              className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
-            >
-              <option>Bermudagrass</option>
-              <option>Bentgrass</option>
-              <option>Zoysiagrass</option>
-              <option>Paspalum</option>
-              <option>Poa annua</option>
-              <option>Mixed</option>
-            </select>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-semibold uppercase tracking-wide">
               Holes
@@ -422,7 +432,23 @@ function CourseForm() {
           </label>
           <select
             value={climateZone}
-            onChange={(e) => setClimateZone(e.target.value)}
+            onChange={(e) => {
+              const zone = e.target.value;
+              setClimateZone(zone);
+              // Pre-fill only areas the owner hasn't set yet — never
+              // overwrite an explicit per-area choice. Transition Zone has
+              // no default (defaultGrassTypeForClimateZone returns null),
+              // since that's exactly the case per-area grass type exists for.
+              const def = defaultGrassTypeForClimateZone(zone);
+              if (!def) return;
+              setGrassTypes((prev) => {
+                const next = { ...prev };
+                for (const area of GRASS_TYPE_AREAS) {
+                  if (!next[area]) next[area] = def;
+                }
+                return next;
+              });
+            }}
             className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
           >
             <option value="warm-humid">Warm-Season Humid</option>
@@ -431,6 +457,36 @@ function CourseForm() {
             <option value="cool-arid">Cool-Season Arid</option>
             <option value="transition">Transition Zone</option>
           </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-wide">Grass Type by Area</label>
+          <div className="text-xs text-mist -mt-1 mb-1">
+            Many courses run different grass on different areas (e.g. bentgrass greens with bermudagrass
+            fairways) — disease and pest models use the right area&apos;s grass type instead of one guess for
+            the whole course.
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {GRASS_TYPE_AREAS.map((area) => (
+              <div key={area} className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-mono uppercase tracking-wide text-mist">
+                  {GRASS_TYPE_AREA_LABEL[area]}
+                </label>
+                <select
+                  value={grassTypes[area]}
+                  onChange={(e) => setGrassTypes({ ...grassTypes, [area]: e.target.value })}
+                  className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                >
+                  <option value="">Select...</option>
+                  {GRASS_TYPES.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
         </div>
 
         {!existingCourse && (

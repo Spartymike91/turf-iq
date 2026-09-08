@@ -47,11 +47,11 @@ export default function WeedSection() {
       setCourseId(context.courseId);
       const { data: course } = await supabase
         .from("courses")
-        .select("name, grass_type")
+        .select("name, grass_type, grass_type_greens")
         .eq("id", context.courseId)
         .single();
       setCourseName(course?.name ?? "");
-      setGrassType(course?.grass_type ?? "");
+      setGrassType(course?.grass_type_greens || course?.grass_type || "");
 
       const { data: apps } = await supabase
         .from("pest_applications")
