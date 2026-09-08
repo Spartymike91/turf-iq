@@ -7,6 +7,7 @@ import AgronomistPanel from "@/components/agronomist/AgronomistPanel";
 import AgronomistFab from "@/components/agronomist/AgronomistFab";
 import { hasModuleAccess, getModuleLabel, getRequiredTier, hasModulePermission, ALL_MODULES } from "@/lib/planAccess";
 import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
+import type { UserCourseSummary } from "@/lib/supabase/course-context";
 
 export default function AppShell({
   courseName,
@@ -15,6 +16,8 @@ export default function AppShell({
   isEditElevated,
   planTier,
   allowedModules,
+  courses,
+  currentCourseId,
   children,
 }: {
   courseName?: string;
@@ -23,6 +26,8 @@ export default function AppShell({
   isEditElevated?: boolean;
   planTier?: PlanTier | null;
   allowedModules?: string[] | null;
+  courses?: UserCourseSummary[];
+  currentCourseId?: string;
   children: React.ReactNode;
 }) {
   const [agronomistOpen, setAgronomistOpen] = useState(false);
@@ -138,6 +143,8 @@ export default function AppShell({
         isAdminView={isAdminView}
         planTier={planTier}
         allowedModules={allowedModules}
+        courses={courses}
+        currentCourseId={currentCourseId}
       />
       <div className="flex flex-1 overflow-hidden">
         <main

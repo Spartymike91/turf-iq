@@ -82,6 +82,8 @@ export default async function AppLayout({
       isEditElevated={isAdminView && isEditElevated}
       planTier={planTier}
       allowedModules={allowedModules}
+      courses={context?.courses ?? []}
+      currentCourseId={context?.courseId}
     >
       {children}
     </AppShell>

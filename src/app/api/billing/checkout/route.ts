@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { getStripe } from "@/lib/stripe";
 import { priceIdForTier, isPlanTier } from "@/lib/billing";
 
@@ -16,18 +17,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "A valid plan is required." }, { status: 400 });
   }
 
+  // Billing always acts on the caller's actual "current course" (which of
+  // their own course_members rows they've got selected), never an arbitrary
+  // one — see course-context.ts. Deliberately excludes admin view: a
+  // platform admin inspecting a customer's course can't start/manage that
+  // customer's real billing from here.
+  const context = await resolveCourseIdServer(supabase, user);
+  if (!context) return NextResponse.json({ error: "No course found for this account." }, { status: 404 });
+  if (context.isAdminView) {
+    return NextResponse.json({ error: "Billing isn't available while viewing as another course." }, { status: 403 });
+  }
+  const courseId = context.courseId;
+
   const { data: membership } = await supabase
     .from("course_members")
-    .select("course_id, role")
+    .select("role")
     .eq("user_id", user.id)
-    .limit(1)
+    .eq("course_id", courseId)
     .single();
   if (!membership) return NextResponse.json({ error: "No course found for this account." }, { status: 404 });
   if (membership.role !== "owner") {
     return NextResponse.json({ error: "Only the course owner can manage billing." }, { status: 403 });
   }
 
-  const courseId = membership.course_id as string;
   const { data: course } = await supabase
     .from("courses")
     .select("id, name, stripe_customer_id, subscription_status")

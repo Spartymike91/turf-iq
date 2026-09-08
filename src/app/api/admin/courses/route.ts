@@ -81,21 +81,10 @@ export async function POST(request: NextRequest) {
     .ilike("email", owner_email)
     .maybeSingle();
 
-  if (existingProfile) {
-    const { data: existingMembership } = await adminClient
-      .from("course_members")
-      .select("id, course_id")
-      .eq("user_id", existingProfile.id)
-      .maybeSingle();
-
-    if (existingMembership) {
-      return NextResponse.json(
-        { error: "This person already belongs to a course. Turf IQ supports one course per account today." },
-        { status: 409 }
-      );
-    }
-  }
-
+  // No "already belongs to a course" check here — an owner legitimately
+  // building or managing multiple courses is a supported case (see
+  // course-context.ts), and this route always creates a brand-new course,
+  // so there's no existing membership on *this* course to conflict with.
   const courseId = crypto.randomUUID();
   const { error: courseError } = await adminClient.from("courses").insert({
     id: courseId,

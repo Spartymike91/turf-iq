@@ -84,20 +84,18 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (existingProfile) {
+    // Scoped to this specific course — a person can legitimately belong to
+    // more than one course (e.g. staff who work at multiple properties), so
+    // only a duplicate on *this* course is actually a conflict.
     const { data: existingMembership } = await supabase
       .from("course_members")
-      .select("id, course_id")
+      .select("id")
       .eq("user_id", existingProfile.id)
+      .eq("course_id", courseId)
       .maybeSingle();
 
-    if (existingMembership?.course_id === courseId) {
-      return NextResponse.json({ error: "This person is already on your team." }, { status: 409 });
-    }
     if (existingMembership) {
-      return NextResponse.json(
-        { error: "This person already belongs to another course and can't be added to a second one." },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: "This person is already on your team." }, { status: 409 });
     }
 
     const { error: insertError } = await supabase.from("course_members").insert({

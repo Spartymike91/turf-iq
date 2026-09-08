@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getRequiredTier, TIER_RANK, ALL_MODULES } from "@/lib/planAccess";
 import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
+import type { UserCourseSummary } from "@/lib/supabase/course-context";
 
 const tabs = ALL_MODULES;
 
@@ -15,12 +16,16 @@ export default function AppHeader({
   isAdminView,
   planTier,
   allowedModules,
+  courses,
+  currentCourseId,
 }: {
   courseName?: string;
   isPlatformAdmin?: boolean;
   isAdminView?: boolean;
   planTier?: PlanTier | null;
   allowedModules?: string[] | null;
+  courses?: UserCourseSummary[];
+  currentCourseId?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -64,6 +69,29 @@ export default function AppHeader({
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
+  }
+
+  // A hard navigation (not router.push) is deliberate and load-bearing:
+  // most pages resolve their course id inside a mount-only useEffect, which
+  // won't re-run just because router.refresh() re-renders server
+  // components — and confirmed live, router.push("/dashboard") is a no-op
+  // for the page's own client component when you're switching *from*
+  // /dashboard itself (same pathname, so Next never remounts it), leaving
+  // the old course's data on screen despite the cookie having actually
+  // changed. window.location.href forces a real page load every time,
+  // regardless of which page the switch was triggered from.
+  async function handleSwitchCourse(courseId: string) {
+    if (courseId === currentCourseId) {
+      setAccountMenuOpen(false);
+      return;
+    }
+    await fetch("/api/course/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course_id: courseId }),
+    });
+    setAccountMenuOpen(false);
+    window.location.assign("/dashboard");
   }
 
   // Permission-denied tabs are omitted entirely (not shown greyed-out like
@@ -147,12 +175,39 @@ export default function AppHeader({
             </button>
             {accountMenuOpen && (
               <div className="absolute right-0 top-full mt-1.5 w-48 bg-white border border-rule rounded-lg shadow-lg overflow-hidden z-50">
+                {courses && courses.length > 1 && (
+                  <div className="border-b border-rule">
+                    <div className="px-3.5 pt-2 pb-1 text-[10px] font-mono uppercase tracking-wide text-mist">
+                      Switch Course
+                    </div>
+                    {courses.map((c) => (
+                      <button
+                        key={c.courseId}
+                        onClick={() => handleSwitchCourse(c.courseId)}
+                        className={`w-full text-left px-3.5 py-2 text-xs hover:bg-chalk transition-colors ${
+                          c.courseId === currentCourseId ? "text-green-dark font-semibold" : "text-ink"
+                        }`}
+                      >
+                        {c.courseId === currentCourseId ? "✓ " : ""}
+                        {c.courseName}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Link
                   href="/course"
                   className="block px-3.5 py-2.5 text-xs text-ink hover:bg-chalk transition-colors"
                 >
                   ⛳ Course Settings
                 </Link>
+                {!isAdminView && (
+                  <Link
+                    href="/course/new"
+                    className="block px-3.5 py-2.5 text-xs text-ink hover:bg-chalk transition-colors border-t border-rule"
+                  >
+                    + Add Another Course
+                  </Link>
+                )}
                 {isPlatformAdmin && (
                   <Link
                     href="/admin"
