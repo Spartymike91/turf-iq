@@ -268,6 +268,80 @@ export default function TaskStatusPage() {
         </div>
       )}
 
+      {eventsInView.length > 0 && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+          <div className="px-5 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">This Month&apos;s Entries</div>
+          <div className="divide-y divide-rule">
+            {eventsInView.map((e) => {
+              const emp = e.employee_id ? employees.find((emp2) => emp2.id === e.employee_id) : null;
+              return (
+                <div key={e.id} className="flex items-center gap-3 px-5 py-2.5 text-xs">
+                  <span className="text-mist font-mono w-32 shrink-0">
+                    {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
+                  </span>
+                  {emp && (
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
+                    />
+                  )}
+                  <span className="flex-1 text-ink font-medium">
+                    {emp ? `${emp.name} — ${e.title}` : e.title}
+                  </span>
+                  {isManager && (
+                    <button onClick={() => handleDeleteEvent(e.id)} className="text-mist font-semibold hover:text-red shrink-0">
+                      Delete
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tasks.length === 0 ? (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
+          <div className="text-4xl mb-3">📋</div>
+          <div className="text-sm text-mist">No tasks scheduled for today. Add some in the Scheduler.</div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {crewCards.map((card) => (
+            <div key={card.employeeId} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
+              <div className="px-4 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">
+                {card.name} ({card.tasks.filter((t) => t.status === "complete").length}/{card.tasks.length})
+              </div>
+              <div className="p-3 flex flex-col gap-2">
+                {card.tasks.map((t, i) => (
+                  <div key={t.id} className="border-[1.5px] border-rule rounded-lg p-2.5 text-xs">
+                    <div className="flex items-center justify-between gap-1.5 mb-1">
+                      <span className="font-semibold text-ink flex items-center gap-1.5">
+                        <span className="text-mist font-mono">{i + 1}.</span>
+                        {t.name}
+                        <MowDirectionIcon direction={t.mow_direction} />
+                        <CleanupLapDirectionIcon direction={t.cleanup_lap_direction} />
+                      </span>
+                      <span className="text-[8px] font-bold px-1 py-0.5 rounded font-mono bg-chalk text-mist shrink-0">
+                        {STATUS_LABEL[t.status].toUpperCase()}
+                      </span>
+                    </div>
+                    {t.status !== "complete" && canManage(t) && (
+                      <button
+                        onClick={() => (t.status === "not_started" ? advanceStatus(t) : openCompleteDialog(t))}
+                        className="text-green-mid font-semibold hover:text-green-dark"
+                      >
+                        {t.status === "not_started" ? "Start →" : "Complete →"}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="px-5 py-4 border-b-[1.5px] border-rule flex items-center justify-between">
           <div>
@@ -373,78 +447,6 @@ export default function TaskStatusPage() {
         onPrevMonth={() => shiftMonth(-1)}
         onNextMonth={() => shiftMonth(1)}
       />
-
-      {isManager && eventsInView.length > 0 && (
-        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
-          <div className="px-5 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">This Month&apos;s Entries</div>
-          <div className="divide-y divide-rule">
-            {eventsInView.map((e) => {
-              const emp = e.employee_id ? employees.find((emp2) => emp2.id === e.employee_id) : null;
-              return (
-                <div key={e.id} className="flex items-center gap-3 px-5 py-2.5 text-xs">
-                  <span className="text-mist font-mono w-32 shrink-0">
-                    {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
-                  </span>
-                  {emp && (
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
-                    />
-                  )}
-                  <span className="flex-1 text-ink font-medium">
-                    {emp ? `${emp.name} — ${e.title}` : e.title}
-                  </span>
-                  <button onClick={() => handleDeleteEvent(e.id)} className="text-mist font-semibold hover:text-red shrink-0">
-                    Delete
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {tasks.length === 0 ? (
-        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
-          <div className="text-4xl mb-3">📋</div>
-          <div className="text-sm text-mist">No tasks scheduled for today. Add some in the Scheduler.</div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {crewCards.map((card) => (
-            <div key={card.employeeId} className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
-              <div className="px-4 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">
-                {card.name} ({card.tasks.filter((t) => t.status === "complete").length}/{card.tasks.length})
-              </div>
-              <div className="p-3 flex flex-col gap-2">
-                {card.tasks.map((t, i) => (
-                  <div key={t.id} className="border-[1.5px] border-rule rounded-lg p-2.5 text-xs">
-                    <div className="flex items-center justify-between gap-1.5 mb-1">
-                      <span className="font-semibold text-ink flex items-center gap-1.5">
-                        <span className="text-mist font-mono">{i + 1}.</span>
-                        {t.name}
-                        <MowDirectionIcon direction={t.mow_direction} />
-                        <CleanupLapDirectionIcon direction={t.cleanup_lap_direction} />
-                      </span>
-                      <span className="text-[8px] font-bold px-1 py-0.5 rounded font-mono bg-chalk text-mist shrink-0">
-                        {STATUS_LABEL[t.status].toUpperCase()}
-                      </span>
-                    </div>
-                    {t.status !== "complete" && canManage(t) && (
-                      <button
-                        onClick={() => (t.status === "not_started" ? advanceStatus(t) : openCompleteDialog(t))}
-                        className="text-green-mid font-semibold hover:text-green-dark"
-                      >
-                        {t.status === "not_started" ? "Start →" : "Complete →"}
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {completingTask && (
         <TaskCompleteModal
