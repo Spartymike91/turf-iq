@@ -268,7 +268,7 @@ export default function TaskStatusPage() {
         </div>
       )}
 
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="px-5 py-4 border-b-[1.5px] border-rule flex items-center justify-between">
           <div>
             <div className="font-serif text-lg text-green-dark">Calendar</div>
@@ -375,7 +375,7 @@ export default function TaskStatusPage() {
       />
 
       {isManager && eventsInView.length > 0 && (
-        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
           <div className="px-5 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">This Month&apos;s Entries</div>
           <div className="divide-y divide-rule">
             {eventsInView.map((e) => {

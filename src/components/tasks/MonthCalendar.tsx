@@ -63,7 +63,7 @@ export default function MonthCalendar({
   }
 
   return (
-    <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+    <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
       <div className="px-5 py-4 border-b-[1.5px] border-rule flex items-center justify-between">
         <button onClick={onPrevMonth} className="text-mist hover:text-ink font-semibold px-2" aria-label="Previous month">
           ←
