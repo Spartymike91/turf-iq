@@ -9,10 +9,12 @@ import type { MowDirection } from "@/lib/mowDirections";
 import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon";
 import type { CleanupLapDirection } from "@/lib/cleanupLapDirections";
 import type { WeatherResult } from "@/lib/weather";
+import MonthCalendar, { type CalendarEvent } from "@/components/tasks/MonthCalendar";
 
 interface Employee {
   id: string;
   name: string;
+  color: string | null;
   course_member_id: string | null;
 }
 
@@ -49,6 +51,21 @@ export default function TaskStatusPage() {
   const [completingTask, setCompletingTask] = useState<TaskAssignment | null>(null);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
 
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const now = new Date();
+  const [calendarYear, setCalendarYear] = useState(now.getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [eventForm, setEventForm] = useState({
+    event_type: "special_event" as "special_event" | "time_off",
+    employee_id: "",
+    title: "",
+    start_date: todayStr(),
+    end_date: todayStr(),
+  });
+  const [eventError, setEventError] = useState<string | null>(null);
+  const [eventSaving, setEventSaving] = useState(false);
+
   useEffect(() => {
     async function load() {
       const supabase = createClient();
@@ -63,15 +80,21 @@ export default function TaskStatusPage() {
       }
       setCourseId(context.courseId);
 
-      const [{ data: emp }, { data: assign }, { data: membership }] = await Promise.all([
-        supabase.from("employees").select("id, name, course_member_id").eq("course_id", context.courseId),
+      const [{ data: emp }, { data: assign }, { data: membership }, { data: calEvents }] = await Promise.all([
+        supabase.from("employees").select("id, name, color, course_member_id").eq("course_id", context.courseId),
         supabase.from("task_assignments").select("*").eq("course_id", context.courseId).eq("scheduled_date", todayStr()),
         supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
+        supabase
+          .from("calendar_events")
+          .select("id, employee_id, event_type, title, start_date, end_date")
+          .eq("course_id", context.courseId)
+          .order("start_date", { ascending: true }),
       ]);
       setEmployees(emp ?? []);
       setTasks(assign ?? []);
       setMyRole(membership?.role ?? null);
       setMyEmployeeId((emp ?? []).find((e) => e.course_member_id === membership?.id)?.id ?? null);
+      setCalendarEvents(calEvents ?? []);
       setChecking(false);
     }
     load();
@@ -86,6 +109,67 @@ export default function TaskStatusPage() {
 
   function canManage(task: TaskAssignment) {
     return myRole === "owner" || myRole === "superintendent" || task.assigned_to === myEmployeeId;
+  }
+
+  const isManager = myRole === "owner" || myRole === "superintendent";
+
+  async function handleAddEvent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!courseId) return;
+    if (!eventForm.title.trim()) {
+      setEventError("Enter a title.");
+      return;
+    }
+    if (eventForm.event_type === "time_off" && !eventForm.employee_id) {
+      setEventError("Pick an employee for time off.");
+      return;
+    }
+    if (eventForm.end_date < eventForm.start_date) {
+      setEventError("End date can't be before the start date.");
+      return;
+    }
+    setEventSaving(true);
+    setEventError(null);
+    const supabase = createClient();
+    const { data, error: insertError } = await supabase
+      .from("calendar_events")
+      .insert({
+        course_id: courseId,
+        event_type: eventForm.event_type,
+        employee_id: eventForm.event_type === "time_off" ? eventForm.employee_id : null,
+        title: eventForm.title.trim(),
+        start_date: eventForm.start_date,
+        end_date: eventForm.end_date,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      setEventError(
+        insertError.message.includes("row-level security policy")
+          ? "You don't have permission to add calendar events. Ask an owner or superintendent."
+          : insertError.message
+      );
+    } else if (data) {
+      setCalendarEvents((prev) => [...prev, data].sort((a, b) => a.start_date.localeCompare(b.start_date)));
+      setEventForm({ event_type: "special_event", employee_id: "", title: "", start_date: todayStr(), end_date: todayStr() });
+      setShowAddEvent(false);
+    }
+    setEventSaving(false);
+  }
+
+  async function handleDeleteEvent(id: string) {
+    const supabase = createClient();
+    const { error: deleteError } = await supabase.from("calendar_events").delete().eq("id", id);
+    if (!deleteError) {
+      setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
+    }
+  }
+
+  function shiftMonth(delta: number) {
+    const d = new Date(calendarYear, calendarMonth + delta, 1);
+    setCalendarYear(d.getFullYear());
+    setCalendarMonth(d.getMonth());
   }
 
   async function advanceStatus(task: TaskAssignment) {
@@ -138,6 +222,13 @@ export default function TaskStatusPage() {
     return cards;
   }, [tasks, employees]);
 
+  const eventsInView = useMemo(() => {
+    const monthStart = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`;
+    const monthEndDate = new Date(calendarYear, calendarMonth + 1, 0);
+    const monthEnd = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(monthEndDate.getDate()).padStart(2, "0")}`;
+    return calendarEvents.filter((e) => e.start_date <= monthEnd && e.end_date >= monthStart);
+  }, [calendarEvents, calendarYear, calendarMonth]);
+
   if (checking) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -173,6 +264,142 @@ export default function TaskStatusPage() {
               {weather.current.tempF}°F — {weather.current.highF}° / {weather.current.lowF}°F
             </div>
             <div className="text-xs text-mist">{weather.current.description}</div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+        <div className="px-5 py-4 border-b-[1.5px] border-rule flex items-center justify-between">
+          <div>
+            <div className="font-serif text-lg text-green-dark">Calendar</div>
+            <div className="text-xs text-mist">Special events and employee time off — visible to the whole crew.</div>
+          </div>
+          {isManager && (
+            <button
+              onClick={() => setShowAddEvent((v) => !v)}
+              className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors shrink-0"
+            >
+              {showAddEvent ? "Cancel" : "+ Add to Calendar"}
+            </button>
+          )}
+        </div>
+        {showAddEvent && (
+          <form onSubmit={handleAddEvent} className="flex flex-wrap items-end gap-2 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+            {eventError && <div className="w-full text-xs text-red">{eventError}</div>}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Type</label>
+              <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1">
+                {(["special_event", "time_off"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setEventForm({ ...eventForm, event_type: t })}
+                    className={`px-2.5 py-1 rounded text-xs font-semibold transition-colors ${
+                      eventForm.event_type === t ? "bg-green-pale text-green-mid" : "text-mist hover:text-ink"
+                    }`}
+                  >
+                    {t === "special_event" ? "Special Event" : "Time Off"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {eventForm.event_type === "time_off" && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">Employee</label>
+                <select
+                  value={eventForm.employee_id}
+                  onChange={(e) => setEventForm({ ...eventForm, employee_id: e.target.value })}
+                  className="w-36 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
+                >
+                  <option value="">Select employee</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Title</label>
+              <input
+                value={eventForm.title}
+                onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })}
+                placeholder={eventForm.event_type === "time_off" ? "Vacation" : "Member-Guest Tournament"}
+                className="px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm w-full"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Start</label>
+              <input
+                type="date"
+                value={eventForm.start_date}
+                onChange={(e) =>
+                  setEventForm({
+                    ...eventForm,
+                    start_date: e.target.value,
+                    end_date: eventForm.end_date < e.target.value ? e.target.value : eventForm.end_date,
+                  })
+                }
+                className="px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">End</label>
+              <input
+                type="date"
+                value={eventForm.end_date}
+                min={eventForm.start_date}
+                onChange={(e) => setEventForm({ ...eventForm, end_date: e.target.value })}
+                className="px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={eventSaving}
+              className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+            >
+              {eventSaving ? "Saving..." : "Save"}
+            </button>
+          </form>
+        )}
+      </div>
+
+      <MonthCalendar
+        year={calendarYear}
+        month={calendarMonth}
+        events={calendarEvents}
+        employees={employees}
+        onPrevMonth={() => shiftMonth(-1)}
+        onNextMonth={() => shiftMonth(1)}
+      />
+
+      {isManager && eventsInView.length > 0 && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+          <div className="px-5 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">This Month&apos;s Entries</div>
+          <div className="divide-y divide-rule">
+            {eventsInView.map((e) => {
+              const emp = e.employee_id ? employees.find((emp2) => emp2.id === e.employee_id) : null;
+              return (
+                <div key={e.id} className="flex items-center gap-3 px-5 py-2.5 text-xs">
+                  <span className="text-mist font-mono w-32 shrink-0">
+                    {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
+                  </span>
+                  {emp && (
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
+                    />
+                  )}
+                  <span className="flex-1 text-ink font-medium">
+                    {emp ? `${emp.name} — ${e.title}` : e.title}
+                  </span>
+                  <button onClick={() => handleDeleteEvent(e.id)} className="text-mist font-semibold hover:text-red shrink-0">
+                    Delete
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

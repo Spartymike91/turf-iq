@@ -1828,3 +1828,57 @@ CREATE POLICY "Owners and supers can delete expenses"
 -- the crew task board next to the mow direction icon.
 ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS cleanup_lap_direction TEXT
   CHECK (cleanup_lap_direction IN ('clockwise', 'counterclockwise'));
+
+-- ============================================
+-- CALENDAR: special events + employee time off
+-- ============================================
+-- Robert wants a shared yearly calendar for course-wide special events
+-- (tournaments, closures) and per-employee days off/vacation, shown on the
+-- crew's Live Status board ("Today's Crew Board") alongside the existing
+-- weather + task cards. One table covers both event_types rather than two
+-- tables, since they're the same shape (a title + a date range) and only
+-- differ in whether an employee is attached.
+--
+-- Entry is owner/superintendent-only (same pattern as pest_applications
+-- above — not the can_manage_course_finances helper, since this isn't
+-- financial data and SELECT here is plain is_course_member, not PIN-gated,
+-- so there's no risk of the "UPDATE/DELETE needs SELECT visibility too"
+-- trap this project hit earlier with expenses). Everyone who's a course
+-- member can see every entry — Robert wants the whole crew to see
+-- everyone's days off and upcoming events, not just their own.
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  employee_id UUID REFERENCES employees(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('special_event', 'time_off')),
+  title TEXT NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  CHECK (end_date >= start_date),
+  CHECK (
+    (event_type = 'time_off' AND employee_id IS NOT NULL) OR
+    (event_type = 'special_event' AND employee_id IS NULL)
+  )
+);
+ALTER TABLE calendar_events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Members can view calendar events" ON calendar_events;
+CREATE POLICY "Members can view calendar events"
+  ON calendar_events FOR SELECT USING (public.is_course_member(course_id));
+DROP POLICY IF EXISTS "Owners and supers can insert calendar events" ON calendar_events;
+CREATE POLICY "Owners and supers can insert calendar events"
+  ON calendar_events FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = calendar_events.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update calendar events" ON calendar_events;
+CREATE POLICY "Owners and supers can update calendar events"
+  ON calendar_events FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = calendar_events.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete calendar events" ON calendar_events;
+CREATE POLICY "Owners and supers can delete calendar events"
+  ON calendar_events FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = calendar_events.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
