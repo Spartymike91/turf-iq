@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import { COURSE_AREAS } from "@/lib/areas";
@@ -244,12 +245,20 @@ export default function LogApplicationForm() {
           <div className="font-serif text-base text-green-dark">Log Application</div>
           <div className="text-[11px] text-mist">One tank mix, any combination of products — each tracked to its own budget category.</div>
         </div>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors shrink-0"
-        >
-          {open ? "Cancel" : "+ Log Application"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href="/turf-health/import"
+            className="px-3.5 py-1.5 border-[1.5px] border-rule text-ink text-xs font-semibold rounded-lg hover:border-green-mid transition-colors"
+          >
+            Import History
+          </Link>
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
+          >
+            {open ? "Cancel" : "+ Log Application"}
+          </button>
+        </div>
       </div>
 
       {notice && (

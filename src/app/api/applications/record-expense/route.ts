@@ -2,30 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
-
-async function findOrCreateCategory(
-  adminClient: ReturnType<typeof createAdminClient>,
-  courseId: string,
-  name: string,
-  fiscalYear: number
-) {
-  const { data: existing } = await adminClient
-    .from("budget_categories")
-    .select("id")
-    .eq("course_id", courseId)
-    .eq("name", name)
-    .eq("fiscal_year", fiscalYear)
-    .maybeSingle();
-  if (existing) return existing.id as string;
-
-  const { data: created, error } = await adminClient
-    .from("budget_categories")
-    .insert({ course_id: courseId, name, fiscal_year: fiscalYear, annual_budget: 0 })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return created.id as string;
-}
+import { findOrCreateBudgetCategoryId } from "@/lib/budgetCategories";
 
 // Records a budget expense for a logged product application (Fertility,
 // Weed, Insects, Disease Risk). Routed server-side with the service-role
@@ -77,7 +54,7 @@ export async function POST(request: NextRequest) {
   }
 
   const fiscalYear = new Date(expenseDate).getFullYear();
-  const categoryId = await findOrCreateCategory(adminClient, courseId, categoryName, fiscalYear);
+  const categoryId = await findOrCreateBudgetCategoryId(adminClient, courseId, categoryName, fiscalYear);
 
   const { error: insertError } = await adminClient.from("expenses").insert({
     course_id: courseId,

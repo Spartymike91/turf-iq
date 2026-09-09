@@ -1932,3 +1932,23 @@ ALTER TABLE courses ALTER COLUMN grass_type_fairways TYPE TEXT[]
   USING (CASE WHEN grass_type_fairways IS NULL THEN NULL ELSE ARRAY[grass_type_fairways] END);
 ALTER TABLE courses ALTER COLUMN grass_type_rough TYPE TEXT[]
   USING (CASE WHEN grass_type_rough IS NULL THEN NULL ELSE ARRAY[grass_type_rough] END);
+
+-- ============================================
+-- BULK CSV IMPORT FOR HISTORICAL APPLICATIONS
+-- ============================================
+-- Tags every row inserted by one CSV import with a shared batch id, so an
+-- entire import can be undone in one action (DELETE ... WHERE
+-- import_batch_id = ...) instead of hand-deleting rows one at a time if a
+-- first attempt has the wrong column mapping or date format. Deleting the
+-- application rows already cascades into their linked expenses via the
+-- existing fertilizer_application_id/pest_application_id ON DELETE CASCADE
+-- foreign keys, so undo needs no separate expense-cleanup step. NULL for
+-- every manually-entered row (the overwhelming majority), so both new
+-- indexes are partial to stay small.
+ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS import_batch_id UUID;
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS import_batch_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_fertilizer_applications_import_batch_id
+  ON fertilizer_applications(import_batch_id) WHERE import_batch_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pest_applications_import_batch_id
+  ON pest_applications(import_batch_id) WHERE import_batch_id IS NOT NULL;
