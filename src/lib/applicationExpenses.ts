@@ -1,8 +1,10 @@
+import type { BudgetCategoryName } from "@/lib/pestCategorization";
+
 /**
  * Records a budget expense for a logged product application. "Fertilizer"
- * for fertilizer_applications; pest_applications route to "Fungicides",
- * "Herbicides", "Insecticides", "Growth Regulators", or "Other" based on
- * each line's own resolved category (see LogApplicationForm.tsx).
+ * for fertilizer_applications; pest_applications route to their own budget
+ * category name (see CATEGORY_TO_BUDGET_NAME) based on each line's own
+ * resolved category (see LogApplicationForm.tsx).
  *
  * Goes through /api/applications/record-expense (service-role client)
  * rather than a direct client-side insert — budget_categories/expenses'
@@ -17,7 +19,7 @@
  * application log entry, which already saved successfully.
  */
 export async function recordApplicationExpense(params: {
-  categoryName: "Fertilizer" | "Fungicides" | "Herbicides" | "Insecticides" | "Growth Regulators" | "Other";
+  categoryName: BudgetCategoryName;
   amount: number;
   description: string;
   expenseDate: string; // YYYY-MM-DD

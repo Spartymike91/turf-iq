@@ -95,7 +95,7 @@ export function isGrowthRegulatorApplication(
 // product form and the unified Log Application form's per-line category
 // picker (for custom, not-in-directory lines) — one source of truth so the
 // two never drift apart.
-export const PRODUCT_CATEGORIES = ["fertilizer", "fungicide", "herbicide", "insecticide", "growth_regulator", "other"] as const;
+export const PRODUCT_CATEGORIES = ["fertilizer", "fungicide", "herbicide", "insecticide", "growth_regulator", "wetting_agent", "other"] as const;
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
 
 export const CATEGORY_LABEL: Record<ProductCategory, string> = {
@@ -104,17 +104,27 @@ export const CATEGORY_LABEL: Record<ProductCategory, string> = {
   herbicide: "Herbicide",
   insecticide: "Insecticide",
   growth_regulator: "Growth Regulator",
+  wetting_agent: "Wetting Agent",
   other: "Other",
 };
 
 // Maps a product/line category to the budget category name
 // recordApplicationExpense expects. Centralized here so the unified log form
 // and any future caller stay in sync with the budget category names.
-export const CATEGORY_TO_BUDGET_NAME: Record<ProductCategory, "Fertilizer" | "Fungicides" | "Herbicides" | "Insecticides" | "Growth Regulators" | "Other"> = {
+// `satisfies` (rather than an explicit Record<> annotation) checks every
+// ProductCategory is covered while keeping each value's literal type, so
+// BudgetCategoryName below can be derived from the real values instead of a
+// separately hand-maintained union.
+export const CATEGORY_TO_BUDGET_NAME = {
   fertilizer: "Fertilizer",
   fungicide: "Fungicides",
   herbicide: "Herbicides",
   insecticide: "Insecticides",
   growth_regulator: "Growth Regulators",
+  wetting_agent: "Wetting Agents",
   other: "Other",
-};
+} satisfies Record<ProductCategory, string>;
+
+// Every caller — record-expense, application edits — stays in sync
+// automatically the next time a category is added here.
+export type BudgetCategoryName = (typeof CATEGORY_TO_BUDGET_NAME)[ProductCategory];

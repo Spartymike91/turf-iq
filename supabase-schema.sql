@@ -1952,3 +1952,14 @@ CREATE INDEX IF NOT EXISTS idx_fertilizer_applications_import_batch_id
   ON fertilizer_applications(import_batch_id) WHERE import_batch_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pest_applications_import_batch_id
   ON pest_applications(import_batch_id) WHERE import_batch_id IS NOT NULL;
+
+-- ============================================
+-- MIGRATION: Wetting Agents application tab
+-- ============================================
+-- New pest_applications sub-category (Wetting Agent) carved out of the
+-- Insects/Other catch-all, same pattern as the earlier Growth Regulator
+-- split — see src/lib/pestCategorization.ts. Only the products.category
+-- CHECK constraint needs a DB change.
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_check;
+ALTER TABLE products ADD CONSTRAINT products_category_check
+  CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'growth_regulator', 'wetting_agent', 'other'));

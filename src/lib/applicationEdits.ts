@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordApplicationExpense, deleteApplicationExpense } from "@/lib/applicationExpenses";
+import type { BudgetCategoryName } from "@/lib/pestCategorization";
 
 /**
  * Reconciles product stock when a logged application line is edited —
@@ -72,7 +73,7 @@ export async function reconcileExpenseForEdit(params: {
   pestApplicationId?: string;
   fertilizerApplicationId?: string;
   newCost: number | null;
-  categoryName: "Fertilizer" | "Fungicides" | "Herbicides" | "Insecticides" | "Growth Regulators" | "Other";
+  categoryName: BudgetCategoryName;
   description: string;
   expenseDate: string;
   source: "application_fertilizer" | "application_pest";

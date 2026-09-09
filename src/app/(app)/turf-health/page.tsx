@@ -7,6 +7,7 @@ import WeedSection from "@/components/turf-health/WeedSection";
 import InsectsSection from "@/components/turf-health/InsectsSection";
 import DiseaseRiskSection from "@/components/turf-health/DiseaseRiskSection";
 import GrowthRegulatorSection from "@/components/turf-health/GrowthRegulatorSection";
+import WettingAgentSection from "@/components/turf-health/WettingAgentSection";
 import LogApplicationForm from "@/components/turf-health/LogApplicationForm";
 
 const SUB_TABS = [
@@ -15,6 +16,7 @@ const SUB_TABS = [
   { slug: "insects", label: "Insects", icon: "🐛" },
   { slug: "disease", label: "Disease Risk", icon: "🦠" },
   { slug: "growth-regulator", label: "Growth Regulators", icon: "🌾" },
+  { slug: "wetting-agent", label: "Wetting Agents", icon: "💧" },
 ] as const;
 
 type SubTab = (typeof SUB_TABS)[number]["slug"];
@@ -65,6 +67,7 @@ function TurfHealthContent() {
       {activeTab === "insects" && <InsectsSection />}
       {activeTab === "disease" && <DiseaseRiskSection />}
       {activeTab === "growth-regulator" && <GrowthRegulatorSection />}
+      {activeTab === "wetting-agent" && <WettingAgentSection />}
     </>
   );
 }
