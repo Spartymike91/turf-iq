@@ -6,6 +6,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import type { WeatherResult } from "@/lib/weather";
+import { getSelectableFiscalYears } from "@/lib/fiscalYears";
 
 const GAL_PER_ACRE_INCH = 27154;
 
@@ -35,8 +36,9 @@ const TARGET_LOW = 22;
 const TARGET_HIGH = 28;
 
 export default function IrrigationPage() {
-  const fiscalYear = new Date().getFullYear();
+  const [fiscalYear, setFiscalYear] = useState(new Date().getFullYear());
   const month = new Date().getMonth();
+  const isCurrentYear = fiscalYear === new Date().getFullYear();
 
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
@@ -114,14 +116,16 @@ export default function IrrigationPage() {
       setChecking(false);
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fiscalYear]);
 
   const stats = useMemo(() => {
+    // "Month to date" only means something for the real current year — for
+    // a past year selected via the picker, there's no "today" to be partway
+    // through, so show that year's full total instead.
     const monthStart = new Date(fiscalYear, month, 1).toISOString().slice(0, 10);
-    const gallonsMtd = logs
-      .filter((l) => l.cycle_date >= monthStart)
-      .reduce((sum, l) => sum + Number(l.gallons), 0);
+    const gallonsMtd = isCurrentYear
+      ? logs.filter((l) => l.cycle_date >= monthStart).reduce((sum, l) => sum + Number(l.gallons), 0)
+      : logs.reduce((sum, l) => sum + Number(l.gallons), 0);
     const monthlyBudgetShare = annualBudget / 12;
 
     const latestByZone = new Map<string, SoilMoistureReading>();
@@ -137,7 +141,7 @@ export default function IrrigationPage() {
     const dryZones = latestReadings.filter((r) => Number(r.vwc_pct) < DRY_THRESHOLD);
 
     return { gallonsMtd, monthlyBudgetShare, avgVwc, dryZones };
-  }, [logs, readings, annualBudget, fiscalYear, month]);
+  }, [logs, readings, annualBudget, fiscalYear, month, isCurrentYear]);
 
   async function handleSaveBudget() {
     if (!courseId || !budgetInput) return;
@@ -164,7 +168,7 @@ export default function IrrigationPage() {
 
   async function handleAddLog(e: React.FormEvent) {
     e.preventDefault();
-    if (!courseId || !addLogForm.gallons) return;
+    if (!courseId || !addLogForm.gallons || !addLogForm.cycle_date) return;
     setSaving(true);
     setError(null);
     const supabase = createClient();
@@ -172,7 +176,7 @@ export default function IrrigationPage() {
       .from("irrigation_logs")
       .insert({
         course_id: courseId,
-        cycle_date: addLogForm.cycle_date || new Date().toISOString().slice(0, 10),
+        cycle_date: addLogForm.cycle_date,
         gallons: parseFloat(addLogForm.gallons),
         duration_minutes: addLogForm.duration_minutes ? parseInt(addLogForm.duration_minutes) : null,
         notes: addLogForm.notes || null,
@@ -252,18 +256,37 @@ export default function IrrigationPage() {
   const weekRainfallIn = weather?.agronomics.weekRainfallIn ?? null;
   const et0WeekIn = weather?.agronomics.et0WeekIn ?? null;
   const weekDeficitIn = et0WeekIn != null && weekRainfallIn != null ? et0WeekIn - weekRainfallIn : null;
-  const mtdPct = stats.monthlyBudgetShare > 0 ? (stats.gallonsMtd / stats.monthlyBudgetShare) * 100 : null;
+  const usedPct = isCurrentYear
+    ? stats.monthlyBudgetShare > 0
+      ? (stats.gallonsMtd / stats.monthlyBudgetShare) * 100
+      : null
+    : annualBudget > 0
+    ? (stats.gallonsMtd / annualBudget) * 100
+    : null;
 
   return (
     <>
-      <div>
-        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
-          Irrigation Management
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
+            Irrigation Management
+          </div>
+          <div className="font-serif text-2xl text-green-dark">Water &amp; Soil Moisture</div>
+          <div className="text-[13px] text-mist mt-1">
+            {courseName} · ET-based scheduling{acres != null && ` · ${acres} maintained acres`}
+          </div>
         </div>
-        <div className="font-serif text-2xl text-green-dark">Water &amp; Soil Moisture</div>
-        <div className="text-[13px] text-mist mt-1">
-          {courseName} · ET-based scheduling{acres != null && ` · ${acres} maintained acres`}
-        </div>
+        <select
+          value={fiscalYear}
+          onChange={(e) => setFiscalYear(Number(e.target.value))}
+          className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+        >
+          {getSelectableFiscalYears().map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
       </div>
 
       {stats.dryZones.length > 0 && (
@@ -295,12 +318,18 @@ export default function IrrigationPage() {
           valueColor="#0369a1"
         />
         <StatChip
-          label="Water Used — MTD"
+          label={isCurrentYear ? "Water Used — MTD" : `Water Used — FY ${fiscalYear}`}
           value={stats.gallonsMtd >= 1000 ? `${(stats.gallonsMtd / 1000).toFixed(0)}K` : stats.gallonsMtd.toFixed(0)}
           unit="gal"
-          sub={annualBudget > 0 ? `Monthly share: ${Math.round(stats.monthlyBudgetShare).toLocaleString()} gal (annual ÷12)` : "No annual budget set"}
-          tag={mtdPct != null ? `${mtdPct.toFixed(0)}% of monthly share` : undefined}
-          tagColor={mtdPct != null && mtdPct > 100 ? "warn" : "ok"}
+          sub={
+            annualBudget === 0
+              ? "No annual budget set"
+              : isCurrentYear
+              ? `Monthly share: ${Math.round(stats.monthlyBudgetShare).toLocaleString()} gal (annual ÷12)`
+              : `Annual budget: ${Math.round(annualBudget).toLocaleString()} gal`
+          }
+          tag={usedPct != null ? `${usedPct.toFixed(0)}% of ${isCurrentYear ? "monthly share" : "annual budget"}` : undefined}
+          tagColor={usedPct != null && usedPct > 100 ? "warn" : "ok"}
           valueColor="#0369a1"
         />
         <StatChip
@@ -382,6 +411,7 @@ export default function IrrigationPage() {
               <label className="text-[11px] font-semibold uppercase tracking-wide">Date</label>
               <input
                 type="date"
+                required
                 value={addLogForm.cycle_date}
                 onChange={(e) => setAddLogForm({ ...addLogForm, cycle_date: e.target.value })}
                 className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
