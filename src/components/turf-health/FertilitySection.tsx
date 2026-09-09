@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import { resolveGrassTypes } from "@/lib/grassTypes";
@@ -52,6 +52,15 @@ const emptyTestForm = {
 function daysAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
   return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+// Builds the Date from local y/m/d components rather than parsing the
+// "YYYY-MM-DD" string directly — Date parsing treats a bare date string as
+// UTC midnight, which rolls back a day once displayed in any timezone west
+// of UTC.
+function formatDate(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 export default function FertilitySection() {
@@ -160,6 +169,27 @@ export default function FertilitySection() {
     if (issues.length === 0) return null;
     return { zone: test.zone, date: test.test_date, issues };
   }, [soilTests]);
+
+  // One Log Application submission shares a date + zone across every product
+  // line in the tank mix — grouping on that pair (rather than date alone)
+  // means a same-day application to a different zone stays its own group.
+  // `applications` is already sorted by application_date desc, so the
+  // groups come out in that same order for free.
+  const groupedApplications = useMemo(() => {
+    const groups: { key: string; date: string; zone: string; rows: FertilizerApplicationRow[] }[] = [];
+    const indexByKey = new Map<string, number>();
+    for (const app of applications) {
+      const key = `${app.application_date}|${app.zone}`;
+      let idx = indexByKey.get(key);
+      if (idx === undefined) {
+        idx = groups.length;
+        indexByKey.set(key, idx);
+        groups.push({ key, date: app.application_date, zone: app.zone, rows: [] });
+      }
+      groups[idx].rows.push(app);
+    }
+    return groups;
+  }, [applications]);
 
   async function handleSaveTarget() {
     if (!courseId || !targetInput) return;
@@ -396,9 +426,7 @@ export default function FertilitySection() {
             <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
-                <th className="text-left px-5 py-2.5 font-medium">Date</th>
-                <th className="text-left px-3 py-2.5 font-medium">Zone</th>
-                <th className="text-left px-3 py-2.5 font-medium">Product</th>
+                <th className="text-left px-5 py-2.5 font-medium">Product</th>
                 <th className="text-left px-3 py-2.5 font-medium">N (lbs/M)</th>
                 <th className="text-left px-3 py-2.5 font-medium">Cost</th>
                 <th className="text-left px-3 py-2.5 font-medium">Notes</th>
@@ -406,43 +434,61 @@ export default function FertilitySection() {
               </tr>
             </thead>
             <tbody>
-              {applications.map((app) =>
-                editingId === app.id ? (
-                  <FertilizerApplicationEditRow
-                    key={app.id}
-                    app={app}
-                    products={products}
-                    colSpan={7}
-                    onCancel={() => setEditingId(null)}
-                    onSaved={(updated) => {
-                      setApplications((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-                      setEditingId(null);
-                    }}
-                  />
-                ) : (
-                  <tr key={app.id} className="border-b border-rule last:border-0">
-                    <td className="px-5 py-2.5 text-mist">{app.application_date}</td>
-                    <td className="px-3 py-2.5 font-medium">{app.zone}</td>
-                    <td className="px-3 py-2.5">{app.product}</td>
-                    <td className="px-3 py-2.5 font-mono">{Number(app.n_lbs_per_1000).toFixed(3)}</td>
-                    <td className="px-3 py-2.5 font-mono">
-                      {app.cost != null ? `$${Number(app.cost).toFixed(2)}` : "—"}
-                    </td>
-                    <td className="px-3 py-2.5 text-mist">{app.notes || "—"}</td>
-                    <td className="px-5 py-2.5 text-right no-print whitespace-nowrap">
-                      <button onClick={() => setEditingId(app.id)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDeleteApplication(app.id)}
-                        className="text-mist text-xs font-semibold hover:text-red"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                )
-              )}
+              {groupedApplications.map((group) => {
+                const groupN = group.rows.reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0);
+                const groupCost = group.rows.reduce((sum, a) => sum + Number(a.cost ?? 0), 0);
+                return (
+                  <Fragment key={group.key}>
+                    <tr className="bg-chalk">
+                      <td colSpan={5} className="px-5 py-2 text-xs border-b border-rule">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-green-forest font-bold mr-2">
+                          {formatDate(group.date)}
+                        </span>
+                        <span className="font-semibold text-ink">{group.zone}</span>
+                        <span className="text-mist ml-2">
+                          {group.rows.length} product{group.rows.length === 1 ? "" : "s"} · {groupN.toFixed(3)} lbs/M
+                          {groupCost > 0 && ` · $${groupCost.toFixed(2)}`}
+                        </span>
+                      </td>
+                    </tr>
+                    {group.rows.map((app) =>
+                      editingId === app.id ? (
+                        <FertilizerApplicationEditRow
+                          key={app.id}
+                          app={app}
+                          products={products}
+                          colSpan={5}
+                          onCancel={() => setEditingId(null)}
+                          onSaved={(updated) => {
+                            setApplications((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                            setEditingId(null);
+                          }}
+                        />
+                      ) : (
+                        <tr key={app.id} className="border-b border-rule last:border-0">
+                          <td className="px-5 py-2.5">{app.product}</td>
+                          <td className="px-3 py-2.5 font-mono">{Number(app.n_lbs_per_1000).toFixed(3)}</td>
+                          <td className="px-3 py-2.5 font-mono">
+                            {app.cost != null ? `$${Number(app.cost).toFixed(2)}` : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-mist">{app.notes || "—"}</td>
+                          <td className="px-5 py-2.5 text-right no-print whitespace-nowrap">
+                            <button onClick={() => setEditingId(app.id)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteApplication(app.id)}
+                              className="text-mist text-xs font-semibold hover:text-red"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
           </div>
