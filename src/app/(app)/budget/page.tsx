@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import PinGate from "@/components/PinGate";
+import { getSelectableFiscalYears } from "@/lib/fiscalYears";
 import type { ReportData } from "@/lib/monthlyReport";
 
 interface MonthlyReport {
@@ -70,7 +71,7 @@ export default function BudgetPage() {
 }
 
 function BudgetPageInner() {
-  const fiscalYear = new Date().getFullYear();
+  const [fiscalYear, setFiscalYear] = useState(new Date().getFullYear());
 
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
@@ -136,8 +137,7 @@ function BudgetPageInner() {
       setChecking(false);
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fiscalYear]);
 
   const spentByCategory = useMemo(() => {
     const map: Record<string, number> = {};
@@ -225,7 +225,7 @@ function BudgetPageInner() {
 
   async function handleAddExpense(e: React.FormEvent) {
     e.preventDefault();
-    if (!courseId || !addExpenseForm.category_id || !addExpenseForm.amount) return;
+    if (!courseId || !addExpenseForm.category_id || !addExpenseForm.amount || !addExpenseForm.expense_date) return;
     setSaving(true);
     setError(null);
     const supabase = createClient();
@@ -236,7 +236,7 @@ function BudgetPageInner() {
         category_id: addExpenseForm.category_id,
         amount: parseFloat(addExpenseForm.amount),
         description: addExpenseForm.description || null,
-        expense_date: addExpenseForm.expense_date || new Date().toISOString().slice(0, 10),
+        expense_date: addExpenseForm.expense_date,
       })
       .select()
       .single();
@@ -302,14 +302,27 @@ function BudgetPageInner() {
 
   return (
     <>
-      <div>
-        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
-          Budget & Reporting
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
+            Budget & Reporting
+          </div>
+          <div className="font-serif text-2xl text-green-dark">Financial Overview</div>
+          <div className="text-[13px] text-mist mt-1">
+            {courseName} · FY {fiscalYear}
+          </div>
         </div>
-        <div className="font-serif text-2xl text-green-dark">Financial Overview</div>
-        <div className="text-[13px] text-mist mt-1">
-          {courseName} · FY {fiscalYear}
-        </div>
+        <select
+          value={fiscalYear}
+          onChange={(e) => setFiscalYear(Number(e.target.value))}
+          className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+        >
+          {getSelectableFiscalYears().map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -578,6 +591,7 @@ function BudgetPageInner() {
                   <label className="text-[11px] font-semibold uppercase tracking-wide">Date</label>
                   <input
                     type="date"
+                    required
                     value={addExpenseForm.expense_date}
                     onChange={(e) =>
                       setAddExpenseForm({ ...addExpenseForm, expense_date: e.target.value })

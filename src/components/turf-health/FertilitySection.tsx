@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import { resolveGrassTypes } from "@/lib/grassTypes";
+import { getSelectableFiscalYears } from "@/lib/fiscalYears";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import { printSection } from "@/lib/printSection";
@@ -54,7 +55,7 @@ function daysAgo(dateStr: string) {
 }
 
 export default function FertilitySection() {
-  const fiscalYear = new Date().getFullYear();
+  const [fiscalYear, setFiscalYear] = useState(new Date().getFullYear());
 
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
@@ -132,8 +133,7 @@ export default function FertilitySection() {
       setChecking(false);
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fiscalYear]);
 
   const stats = useMemo(() => {
     const nAppliedYtd = applications.reduce((sum, a) => sum + Number(a.n_lbs_per_1000), 0);
@@ -259,14 +259,27 @@ export default function FertilitySection() {
 
   return (
     <>
-      <div>
-        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
-          Fertility Program
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">
+            Fertility Program
+          </div>
+          <div className="font-serif text-2xl text-green-dark">Annual Nutrient Management</div>
+          <div className="text-[13px] text-mist mt-1">
+            {courseName} {grassType.length > 0 && `· ${grassType.join("/")}`} · {fiscalYear} Program Year
+          </div>
         </div>
-        <div className="font-serif text-2xl text-green-dark">Annual Nutrient Management</div>
-        <div className="text-[13px] text-mist mt-1">
-          {courseName} {grassType.length > 0 && `· ${grassType.join("/")}`} · {fiscalYear} Program Year
-        </div>
+        <select
+          value={fiscalYear}
+          onChange={(e) => setFiscalYear(Number(e.target.value))}
+          className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+        >
+          {getSelectableFiscalYears().map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
       </div>
 
       {deficiency && (
