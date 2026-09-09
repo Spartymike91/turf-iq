@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
@@ -90,6 +90,19 @@ export default function InventoryPage() {
   function sortByName(list: Product[]) {
     return [...list].sort((a, b) => a.name.localeCompare(b.name));
   }
+
+  // Same grouping/order as the Log Application form's product picker
+  // (productsByCategory in LogApplicationForm.tsx) — one source of truth
+  // for "what order do categories appear in," just rendered as table
+  // sections here instead of <optgroup>s.
+  const groupedProducts = useMemo(
+    () =>
+      CATEGORIES.map((category) => ({
+        category,
+        products: sortByName(products.filter((p) => p.category === category)),
+      })).filter((g) => g.products.length > 0),
+    [products]
+  );
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -362,7 +375,6 @@ export default function InventoryPage() {
               <thead>
                 <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
                   <th className="text-left px-5 py-2.5 font-medium">Name</th>
-                  <th className="text-left px-3 py-2.5 font-medium">Category</th>
                   <th className="text-left px-3 py-2.5 font-medium">Qty on Hand</th>
                   <th className="text-left px-3 py-2.5 font-medium">Unit</th>
                   <th className="text-left px-3 py-2.5 font-medium">Unit Cost</th>
@@ -371,150 +383,159 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {products.map((p) => {
-                  const isLow = p.reorder_threshold != null && p.current_stock <= p.reorder_threshold;
-                  return editingId === p.id ? (
-                    <tr key={p.id} className="border-b border-rule last:border-0 bg-chalk">
-                      <td colSpan={7} className="px-5 py-3">
-                        <div className="flex flex-wrap items-end gap-2">
-                          <input
-                            value={editForm.name}
-                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                            className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
-                            placeholder="Name"
-                          />
-                          <select
-                            value={editForm.category}
-                            onChange={(e) => setEditForm({ ...editForm, category: e.target.value as Category })}
-                            className="px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
-                          >
-                            {CATEGORIES.map((c) => (
-                              <option key={c} value={c}>
-                                {CATEGORY_LABEL[c]}
-                              </option>
-                            ))}
-                          </select>
-                          <input
-                            value={editForm.unit}
-                            onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}
-                            className="w-16 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
-                            placeholder="Unit"
-                          />
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editForm.current_stock}
-                            onChange={(e) => setEditForm({ ...editForm, current_stock: e.target.value })}
-                            className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
-                            placeholder="Stock"
-                          />
-                          <CurrencyInput
-                            value={editForm.unit_cost}
-                            onChange={(v) => setEditForm({ ...editForm, unit_cost: v })}
-                            placeholder="Unit cost"
-                            compact
-                            className="w-20"
-                          />
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editForm.reorder_threshold}
-                            onChange={(e) => setEditForm({ ...editForm, reorder_threshold: e.target.value })}
-                            className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
-                            placeholder="Reorder at"
-                          />
-                          <button
-                            onClick={() => handleSaveEdit(p.id)}
-                            disabled={saving}
-                            className="px-3 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
-                          >
-                            {saving ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="px-3 py-1.5 text-mist text-xs font-semibold hover:text-ink"
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                {groupedProducts.map((group) => (
+                  <Fragment key={group.category}>
+                    <tr className="bg-chalk">
+                      <td colSpan={6} className="px-5 py-2 text-[10px] font-mono uppercase tracking-wider text-green-forest font-bold border-b border-rule">
+                        {CATEGORY_LABEL[group.category]}{" "}
+                        <span className="text-mist font-normal normal-case">({group.products.length})</span>
                       </td>
                     </tr>
-                  ) : (
-                    <tr key={p.id} className="border-b border-rule last:border-0">
-                      <td className="px-5 py-2.5 font-medium">
-                        {p.name}
-                        {p.notes && <div className="text-[11px] text-mist font-normal">{p.notes}</div>}
-                      </td>
-                      <td className="px-3 py-2.5 text-mist">{CATEGORY_LABEL[p.category]}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`font-mono ${isLow ? "text-red font-semibold" : ""}`}>
-                          {p.current_stock}
-                        </span>
-                        {isLow && (
-                          <span className="ml-1.5 text-[9px] font-bold bg-red/10 text-red px-1 py-0.5 rounded font-mono">
-                            LOW
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-mist">{p.unit}</td>
-                      <td className="px-3 py-2.5 font-mono text-mist">
-                        {p.unit_cost != null ? `$${Number(p.unit_cost).toFixed(2)}/${p.unit}` : "—"}
-                      </td>
-                      <td className="px-3 py-2.5 font-mono text-mist">
-                        {p.unit_cost != null ? `$${(Number(p.unit_cost) * p.current_stock).toFixed(0)}` : "—"}
-                      </td>
-                      <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                        {receivingId === p.id ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <input
-                              type="number"
-                              step="0.01"
-                              autoFocus
-                              value={receiveAmount}
-                              onChange={(e) => setReceiveAmount(e.target.value)}
-                              placeholder={`+ ${p.unit}`}
-                              className="w-20 px-2 py-1 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
-                            />
-                            <button
-                              onClick={() => handleReceive(p)}
-                              disabled={saving}
-                              className="text-green-mid text-xs font-semibold hover:text-green-dark"
-                            >
-                              Add
-                            </button>
-                            <button
-                              onClick={() => setReceivingId(null)}
-                              className="text-mist text-xs font-semibold hover:text-ink mr-2"
-                            >
-                              Cancel
-                            </button>
-                          </span>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => startReceive(p)}
-                              className="text-mist text-xs font-semibold hover:text-green-dark mr-3"
-                            >
-                              Receive Stock
-                            </button>
-                            <button
-                              onClick={() => startEdit(p)}
-                              className="text-mist text-xs font-semibold hover:text-green-dark mr-3"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(p.id)}
-                              className="text-mist text-xs font-semibold hover:text-red"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                    {group.products.map((p) => {
+                      const isLow = p.reorder_threshold != null && p.current_stock <= p.reorder_threshold;
+                      return editingId === p.id ? (
+                        <tr key={p.id} className="border-b border-rule last:border-0 bg-chalk">
+                          <td colSpan={6} className="px-5 py-3">
+                            <div className="flex flex-wrap items-end gap-2">
+                              <input
+                                value={editForm.name}
+                                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                className="w-36 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                                placeholder="Name"
+                              />
+                              <select
+                                value={editForm.category}
+                                onChange={(e) => setEditForm({ ...editForm, category: e.target.value as Category })}
+                                className="px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                              >
+                                {CATEGORIES.map((c) => (
+                                  <option key={c} value={c}>
+                                    {CATEGORY_LABEL[c]}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                value={editForm.unit}
+                                onChange={(e) => setEditForm({ ...editForm, unit: e.target.value })}
+                                className="w-16 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                                placeholder="Unit"
+                              />
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editForm.current_stock}
+                                onChange={(e) => setEditForm({ ...editForm, current_stock: e.target.value })}
+                                className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                                placeholder="Stock"
+                              />
+                              <CurrencyInput
+                                value={editForm.unit_cost}
+                                onChange={(v) => setEditForm({ ...editForm, unit_cost: v })}
+                                placeholder="Unit cost"
+                                compact
+                                className="w-20"
+                              />
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editForm.reorder_threshold}
+                                onChange={(e) => setEditForm({ ...editForm, reorder_threshold: e.target.value })}
+                                className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                                placeholder="Reorder at"
+                              />
+                              <button
+                                onClick={() => handleSaveEdit(p.id)}
+                                disabled={saving}
+                                className="px-3 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+                              >
+                                {saving ? "Saving..." : "Save"}
+                              </button>
+                              <button
+                                onClick={() => setEditingId(null)}
+                                className="px-3 py-1.5 text-mist text-xs font-semibold hover:text-ink"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        <tr key={p.id} className="border-b border-rule last:border-0">
+                          <td className="px-5 py-2.5 font-medium">
+                            {p.name}
+                            {p.notes && <div className="text-[11px] text-mist font-normal">{p.notes}</div>}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className={`font-mono ${isLow ? "text-red font-semibold" : ""}`}>
+                              {p.current_stock}
+                            </span>
+                            {isLow && (
+                              <span className="ml-1.5 text-[9px] font-bold bg-red/10 text-red px-1 py-0.5 rounded font-mono">
+                                LOW
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-mist">{p.unit}</td>
+                          <td className="px-3 py-2.5 font-mono text-mist">
+                            {p.unit_cost != null ? `$${Number(p.unit_cost).toFixed(2)}/${p.unit}` : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 font-mono text-mist">
+                            {p.unit_cost != null ? `$${(Number(p.unit_cost) * p.current_stock).toFixed(0)}` : "—"}
+                          </td>
+                          <td className="px-5 py-2.5 text-right whitespace-nowrap">
+                            {receivingId === p.id ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  autoFocus
+                                  value={receiveAmount}
+                                  onChange={(e) => setReceiveAmount(e.target.value)}
+                                  placeholder={`+ ${p.unit}`}
+                                  className="w-20 px-2 py-1 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                                />
+                                <button
+                                  onClick={() => handleReceive(p)}
+                                  disabled={saving}
+                                  className="text-green-mid text-xs font-semibold hover:text-green-dark"
+                                >
+                                  Add
+                                </button>
+                                <button
+                                  onClick={() => setReceivingId(null)}
+                                  className="text-mist text-xs font-semibold hover:text-ink mr-2"
+                                >
+                                  Cancel
+                                </button>
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => startReceive(p)}
+                                  className="text-mist text-xs font-semibold hover:text-green-dark mr-3"
+                                >
+                                  Receive Stock
+                                </button>
+                                <button
+                                  onClick={() => startEdit(p)}
+                                  className="text-mist text-xs font-semibold hover:text-green-dark mr-3"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(p.id)}
+                                  className="text-mist text-xs font-semibold hover:text-red"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>
