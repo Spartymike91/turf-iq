@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import type { WeatherResult } from "@/lib/weather";
@@ -8,6 +8,7 @@ import { getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestM
 import { resolveGrassTypes } from "@/lib/grassTypes";
 import { isWeedApplication, isDiseaseTarget, isGrowthRegulatorApplication, type ProductCategory } from "@/lib/pestCategorization";
 import { printSection } from "@/lib/printSection";
+import { groupByAppliedAtAndArea } from "@/lib/applicationGrouping";
 import PestApplicationEditRow, { type PestApplicationRow } from "@/components/turf-health/PestApplicationEditRow";
 
 interface Product {
@@ -94,6 +95,7 @@ export default function InsectsSection() {
     if (a.category != null) return a.category === "insecticide" || a.category === "other";
     return !isWeedApplication(a, products) && !isDiseaseTarget(a.target) && !isGrowthRegulatorApplication(a, products);
   });
+  const groups = useMemo(() => groupByAppliedAtAndArea(insectApplications), [insectApplications]);
 
   async function handleDelete(id: string) {
     const supabase = createClient();
@@ -187,9 +189,7 @@ export default function InsectsSection() {
             <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-[10px] font-mono uppercase tracking-wider text-mist border-b border-rule">
-                <th className="text-left px-5 py-2.5 font-medium">Applied At</th>
-                <th className="text-left px-3 py-2.5 font-medium">Target</th>
-                <th className="text-left px-3 py-2.5 font-medium">Area</th>
+                <th className="text-left px-5 py-2.5 font-medium">Target</th>
                 <th className="text-left px-3 py-2.5 font-medium">Product</th>
                 <th className="text-left px-3 py-2.5 font-medium">REI</th>
                 <th className="text-left px-3 py-2.5 font-medium">Cost</th>
@@ -199,50 +199,67 @@ export default function InsectsSection() {
               </tr>
             </thead>
             <tbody>
-              {insectApplications.map((a) =>
-                editingId === a.id ? (
-                  <PestApplicationEditRow
-                    key={a.id}
-                    app={a}
-                    resolvedCategory={(a.category as ProductCategory) ?? "insecticide"}
-                    products={products}
-                    colSpan={9}
-                    onCancel={() => setEditingId(null)}
-                    onSaved={(updated) => {
-                      setApplications((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-                      setEditingId(null);
-                    }}
-                  />
-                ) : (
-                  <tr key={a.id} className="border-b border-rule last:border-0">
-                    <td className="px-5 py-2.5 text-mist">{new Date(a.applied_at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}</td>
-                    <td className="px-3 py-2.5 font-medium">{a.target || "—"}</td>
-                    <td className="px-3 py-2.5 text-mist">{a.area || "—"}</td>
-                    <td className="px-3 py-2.5">{a.product}</td>
-                    <td className="px-3 py-2.5 font-mono">{a.rei_hours}h</td>
-                    <td className="px-3 py-2.5 font-mono">{a.cost != null ? `$${Number(a.cost).toFixed(2)}` : "—"}</td>
-                    <td className="px-3 py-2.5">
-                      {(() => {
-                        const restricted = now < new Date(a.applied_at).getTime() + a.rei_hours * 60 * 60 * 1000;
-                        return (
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
-                            {restricted ? "RESTRICTED" : "CLEAR"}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-3 py-2.5 text-mist">{a.notes || "—"}</td>
-                    <td className="px-5 py-2.5 text-right no-print whitespace-nowrap">
-                      <button onClick={() => setEditingId(a.id)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
-                        Edit
-                      </button>
-                      <button onClick={() => handleDelete(a.id)} className="text-mist text-xs font-semibold hover:text-red">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                )
-              )}
+              {groups.map((group) => {
+                const groupCost = group.rows.reduce((sum, a) => sum + Number(a.cost ?? 0), 0);
+                return (
+                  <Fragment key={group.key}>
+                    <tr className="bg-chalk">
+                      <td colSpan={7} className="px-5 py-2 text-xs border-b border-rule">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-green-forest font-bold mr-2">
+                          {new Date(group.appliedAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
+                        </span>
+                        <span className="font-semibold text-ink">{group.area}</span>
+                        <span className="text-mist ml-2">
+                          {group.rows.length} product{group.rows.length === 1 ? "" : "s"}
+                          {groupCost > 0 && ` · $${groupCost.toFixed(2)}`}
+                        </span>
+                      </td>
+                    </tr>
+                    {group.rows.map((a) =>
+                      editingId === a.id ? (
+                        <PestApplicationEditRow
+                          key={a.id}
+                          app={a}
+                          resolvedCategory={(a.category as ProductCategory) ?? "insecticide"}
+                          products={products}
+                          colSpan={7}
+                          onCancel={() => setEditingId(null)}
+                          onSaved={(updated) => {
+                            setApplications((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+                            setEditingId(null);
+                          }}
+                        />
+                      ) : (
+                        <tr key={a.id} className="border-b border-rule last:border-0">
+                          <td className="px-5 py-2.5 font-medium">{a.target || "—"}</td>
+                          <td className="px-3 py-2.5">{a.product}</td>
+                          <td className="px-3 py-2.5 font-mono">{a.rei_hours}h</td>
+                          <td className="px-3 py-2.5 font-mono">{a.cost != null ? `$${Number(a.cost).toFixed(2)}` : "—"}</td>
+                          <td className="px-3 py-2.5">
+                            {(() => {
+                              const restricted = now < new Date(a.applied_at).getTime() + a.rei_hours * 60 * 60 * 1000;
+                              return (
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${restricted ? "bg-red/10 text-red" : "bg-green-pale text-green-mid"}`}>
+                                  {restricted ? "RESTRICTED" : "CLEAR"}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td className="px-3 py-2.5 text-mist">{a.notes || "—"}</td>
+                          <td className="px-5 py-2.5 text-right no-print whitespace-nowrap">
+                            <button onClick={() => setEditingId(a.id)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
+                              Edit
+                            </button>
+                            <button onClick={() => handleDelete(a.id)} className="text-mist text-xs font-semibold hover:text-red">
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
           </div>
