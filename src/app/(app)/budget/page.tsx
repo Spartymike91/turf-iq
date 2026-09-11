@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import PinGate from "@/components/PinGate";
 import { getSelectableFiscalYears } from "@/lib/fiscalYears";
 import type { ReportData } from "@/lib/monthlyReport";
+import { formatMinutes } from "@/lib/taskDuration";
 
 interface MonthlyReport {
   id: string;
@@ -16,6 +17,34 @@ interface MonthlyReport {
   generated_by: "auto" | "manual";
   data: ReportData;
   ai_narrative: string | null;
+}
+
+interface LaborReportRow {
+  taskId: string;
+  date: string;
+  employeeName: string;
+  taskName: string;
+  category: string | null;
+  targetMinutes: number | null;
+  actualMinutes: number;
+  varianceMinutes: number | null;
+  variancePct: number | null;
+  cost: number | null;
+}
+
+interface LaborReport {
+  startDate: string;
+  endDate: string;
+  rows: LaborReportRow[];
+  totals: {
+    taskCount: number;
+    targetMinutes: number;
+    actualMinutes: number;
+    varianceMinutes: number;
+    cost: number;
+  };
+  nonBillable: { employeeName: string; minutes: number; cost: number }[];
+  nonBillableTotalCost: number;
 }
 
 function lastMonthRange() {
@@ -42,13 +71,16 @@ interface Expense {
   amount: number;
   description: string | null;
   expense_date: string;
-  source: "manual" | "task_labor" | "task_materials";
+  source: "manual" | "task_labor" | "task_materials" | "application_fertilizer" | "application_pest" | "non_billable_labor";
 }
 
 const SOURCE_TAG: Record<Expense["source"], { label: string; className: string } | null> = {
   manual: null,
   task_labor: { label: "AUTO: LABOR", className: "bg-blue/10 text-blue" },
   task_materials: { label: "AUTO: MATERIALS", className: "bg-amber/10 text-[#92400e]" },
+  application_fertilizer: { label: "AUTO: FERTILIZER", className: "bg-green-pale text-green-mid" },
+  application_pest: { label: "AUTO: PEST/WEED", className: "bg-green-pale text-green-mid" },
+  non_billable_labor: { label: "AUTO: NON-BILLABLE", className: "bg-amber/10 text-[#92400e]" },
 };
 
 function fmtMoney(n: number) {
@@ -89,15 +121,48 @@ function BudgetPageInner() {
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [addExpenseForm, setAddExpenseForm] = useState(emptyExpenseForm);
 
+  const [myRole, setMyRole] = useState<string | null>(null);
+  const isManager = myRole === "owner" || myRole === "superintendent";
+
+  const [reportType, setReportType] = useState<"monthly" | "labor">("monthly");
+  const [reportTypeMenuOpen, setReportTypeMenuOpen] = useState(false);
+  const reportTypeMenuRef = useRef<HTMLDivElement>(null);
+
   const [reports, setReports] = useState<MonthlyReport[]>([]);
   const [reportRange, setReportRange] = useState(lastMonthRange());
   const [generatingReport, setGeneratingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
 
+  const [laborRange, setLaborRange] = useState(lastMonthRange());
+  const [laborReport, setLaborReport] = useState<LaborReport | null>(null);
+  const [generatingLaborReport, setGeneratingLaborReport] = useState(false);
+  const [laborReportError, setLaborReportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!reportTypeMenuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (reportTypeMenuRef.current && !reportTypeMenuRef.current.contains(e.target as Node)) {
+        setReportTypeMenuOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setReportTypeMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [reportTypeMenuOpen]);
+
   useEffect(() => {
     async function load() {
       const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       const context = await resolveCourseIdClient(supabase);
 
       if (!context) {
@@ -107,8 +172,8 @@ function BudgetPageInner() {
 
       setCourseId(context.courseId);
 
-      // None of these four depend on each other — fetch concurrently.
-      const [{ data: course }, { data: cats }, { data: exp }, { data: reportRows }] = await Promise.all([
+      // None of these five depend on each other — fetch concurrently.
+      const [{ data: course }, { data: cats }, { data: exp }, { data: reportRows }, membershipResult] = await Promise.all([
         supabase.from("courses").select("name").eq("id", context.courseId).single(),
         supabase
           .from("budget_categories")
@@ -128,12 +193,16 @@ function BudgetPageInner() {
           .select("*")
           .eq("course_id", context.courseId)
           .order("generated_at", { ascending: false }),
+        user
+          ? supabase.from("course_members").select("role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle()
+          : Promise.resolve({ data: null }),
       ]);
 
       setCourseName(course?.name ?? "");
       setCategories(cats ?? []);
       setExpenses(exp ?? []);
       setReports(reportRows ?? []);
+      setMyRole(context.isAdminView ? "owner" : (membershipResult.data?.role ?? null));
       setChecking(false);
     }
     load();
@@ -281,6 +350,25 @@ function BudgetPageInner() {
       setReportError("Could not generate report.");
     }
     setGeneratingReport(false);
+  }
+
+  async function handleGenerateLaborReport() {
+    setGeneratingLaborReport(true);
+    setLaborReportError(null);
+    try {
+      const res = await fetch(`/api/reports/labor?start=${laborRange.start}&end=${laborRange.end}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setLaborReportError(data.error ?? "Could not generate report.");
+        setLaborReport(null);
+      } else {
+        setLaborReport(data);
+      }
+    } catch {
+      setLaborReportError("Could not generate report.");
+      setLaborReport(null);
+    }
+    setGeneratingLaborReport(false);
   }
 
   if (checking) {
@@ -684,13 +772,56 @@ function BudgetPageInner() {
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule no-print">
           <div>
-            <div className="font-serif text-lg text-green-dark">Monthly Reports</div>
-            <div className="text-[11px] text-mist mt-0.5">
-              Auto-generates on the 1st of every month · or generate one now for any date range
+            <div className="font-serif text-lg text-green-dark">
+              {reportType === "monthly" ? "Monthly Reports" : "Labor Report"}
             </div>
+            <div className="text-[11px] text-mist mt-0.5">
+              {reportType === "monthly"
+                ? "Auto-generates on the 1st of every month · or generate one now for any date range"
+                : "Target vs. actual duration and labor cost by employee, for any date range"}
+            </div>
+          </div>
+          <div className="relative" ref={reportTypeMenuRef}>
+            <button
+              onClick={() => setReportTypeMenuOpen((v) => !v)}
+              className="flex items-center gap-1.5 px-3.5 py-2 border-[1.5px] border-rule rounded-lg text-sm font-semibold hover:border-green-mid transition-colors"
+            >
+              Reports
+              <span className="text-[9px] opacity-70">▾</span>
+            </button>
+            {reportTypeMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-52 bg-white border-[1.5px] border-rule rounded-lg shadow-lg overflow-hidden z-10">
+                <button
+                  onClick={() => {
+                    setReportType("monthly");
+                    setReportTypeMenuOpen(false);
+                  }}
+                  className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-chalk transition-colors ${
+                    reportType === "monthly" ? "text-green-dark font-semibold" : "text-ink"
+                  }`}
+                >
+                  📅 Monthly Report
+                </button>
+                {isManager && (
+                  <button
+                    onClick={() => {
+                      setReportType("labor");
+                      setReportTypeMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-chalk transition-colors border-t border-rule ${
+                      reportType === "labor" ? "text-green-dark font-semibold" : "text-ink"
+                    }`}
+                  >
+                    👷 Labor Report
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
+        {reportType === "monthly" && (
+        <>
         <div className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-semibold uppercase tracking-wide">From</label>
@@ -845,6 +976,142 @@ function BudgetPageInner() {
               );
             })}
           </div>
+        )}
+        </>
+        )}
+
+        {reportType === "labor" && (
+          <>
+            <div className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">From</label>
+                <input
+                  type="date"
+                  value={laborRange.start}
+                  onChange={(e) => setLaborRange({ ...laborRange, start: e.target.value })}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">To</label>
+                <input
+                  type="date"
+                  value={laborRange.end}
+                  onChange={(e) => setLaborRange({ ...laborRange, end: e.target.value })}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              <button
+                onClick={handleGenerateLaborReport}
+                disabled={generatingLaborReport}
+                className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+              >
+                {generatingLaborReport ? "Generating..." : "Generate Report"}
+              </button>
+              {laborReport && (
+                <a
+                  href={`/api/reports/labor?start=${laborRange.start}&end=${laborRange.end}&format=csv`}
+                  className="px-4 py-2 border-[1.5px] border-rule rounded-lg text-sm font-semibold hover:border-green-mid transition-colors no-print"
+                >
+                  ⬇ Download CSV
+                </a>
+              )}
+            </div>
+
+            {laborReportError && <div className="px-5 py-2 text-xs text-red bg-red/5 no-print">{laborReportError}</div>}
+
+            {!laborReport ? (
+              <div className="p-10 text-center">
+                <div className="text-4xl mb-3">👷</div>
+                <div className="text-sm text-mist">Pick a date range and generate a report above.</div>
+              </div>
+            ) : (
+              <div className="p-5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <StatChip label="Tasks" value={String(laborReport.totals.taskCount)} sub={`${laborReport.startDate} – ${laborReport.endDate}`} />
+                  <StatChip label="Target" value={formatMinutes(laborReport.totals.targetMinutes)} sub="planned duration" />
+                  <StatChip label="Actual" value={formatMinutes(laborReport.totals.actualMinutes)} sub="worked duration" />
+                  <StatChip
+                    label="Variance"
+                    value={`${laborReport.totals.varianceMinutes >= 0 ? "+" : ""}${formatMinutes(laborReport.totals.varianceMinutes)}`}
+                    sub={`labor cost: ${fmtMoney(laborReport.totals.cost)}`}
+                    valueColor={laborReport.totals.varianceMinutes > 0 ? "#dc2626" : "#2d6a4f"}
+                  />
+                </div>
+
+                {laborReport.rows.length === 0 ? (
+                  <div className="text-sm text-mist text-center py-6">No completed tasks in this date range.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-[10px] font-mono uppercase tracking-wide text-mist border-b border-rule">
+                          <th className="py-2 pr-3">Date</th>
+                          <th className="py-2 pr-3">Employee</th>
+                          <th className="py-2 pr-3">Task</th>
+                          <th className="py-2 pr-3">Category</th>
+                          <th className="py-2 pr-3 text-right">Target</th>
+                          <th className="py-2 pr-3 text-right">Actual</th>
+                          <th className="py-2 pr-3 text-right">Variance</th>
+                          <th className="py-2 text-right">Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {laborReport.rows.map((r) => (
+                          <tr key={r.taskId} className="border-b border-rule last:border-0">
+                            <td className="py-2 pr-3 whitespace-nowrap">{r.date}</td>
+                            <td className="py-2 pr-3">{r.employeeName}</td>
+                            <td className="py-2 pr-3">{r.taskName}</td>
+                            <td className="py-2 pr-3 text-mist">{r.category ?? "—"}</td>
+                            <td className="py-2 pr-3 text-right font-mono">
+                              {r.targetMinutes != null ? formatMinutes(r.targetMinutes) : "—"}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono">{formatMinutes(r.actualMinutes)}</td>
+                            <td
+                              className={`py-2 pr-3 text-right font-mono ${
+                                r.varianceMinutes != null && r.varianceMinutes > 0 ? "text-red" : "text-green-mid"
+                              }`}
+                            >
+                              {r.varianceMinutes != null
+                                ? `${r.varianceMinutes >= 0 ? "+" : ""}${formatMinutes(r.varianceMinutes)}${
+                                    r.variancePct != null ? ` (${r.variancePct >= 0 ? "+" : ""}${Math.round(r.variancePct)}%)` : ""
+                                  }`
+                                : "—"}
+                            </td>
+                            <td className="py-2 text-right font-mono">{r.cost != null ? fmtMoney(r.cost) : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="mt-5">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-mist mb-1.5">
+                    Non-Billable Labor this period
+                  </div>
+                  {laborReport.nonBillable.length === 0 ? (
+                    <div className="text-xs text-mist">None recorded.</div>
+                  ) : (
+                    <div className="text-xs">
+                      {laborReport.nonBillable.map((nb) => (
+                        <div key={nb.employeeName} className="flex justify-between py-1 border-b border-rule">
+                          <span>{nb.employeeName}</span>
+                          <span className="font-mono">
+                            {formatMinutes(nb.minutes)} · {fmtMoney(nb.cost)}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between py-1.5 font-semibold">
+                        <span>Total</span>
+                        <span className="font-mono">{fmtMoney(laborReport.nonBillableTotalCost)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </>
