@@ -8,7 +8,7 @@ export interface TaskToday {
   id: string;
   name: string;
   priority: number;
-  status: "not_started" | "in_progress" | "complete";
+  status: "not_started" | "in_progress" | "paused" | "complete";
   assigned_to: string | null;
   estimated_minutes: number | null;
 }

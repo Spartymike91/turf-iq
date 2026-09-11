@@ -22,7 +22,7 @@ interface TimeEntry {
 interface TaskAssignment {
   id: string;
   priority: number;
-  status: "not_started" | "in_progress" | "complete";
+  status: "not_started" | "in_progress" | "paused" | "complete";
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -90,7 +90,7 @@ export default function TasksDashboardPage() {
   const activeEmployees = employees.filter((e) => e.is_active);
   const clockedIn = entries.filter((e) => e.clock_out === null).length;
   const completeCount = tasksToday.filter((t) => t.status === "complete").length;
-  const inProgressCount = tasksToday.filter((t) => t.status === "in_progress").length;
+  const inProgressCount = tasksToday.filter((t) => t.status === "in_progress" || t.status === "paused").length;
   const highPriorityOpen = tasksToday.filter((t) => t.priority === 1 && t.status !== "complete").length;
   const progressPct = tasksToday.length > 0 ? Math.round((completeCount / tasksToday.length) * 100) : 0;
   const hoursToday_ = hoursToday(entries, null, now);

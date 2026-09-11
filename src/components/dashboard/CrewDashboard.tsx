@@ -10,7 +10,8 @@ interface TaskAssignment {
   name: string;
   assigned_to: string | null;
   priority: number;
-  status: "not_started" | "in_progress" | "complete";
+  status: "not_started" | "in_progress" | "paused" | "complete";
+  paused_at: string | null;
   scheduled_date: string;
 }
 
@@ -92,6 +93,38 @@ export default function CrewDashboard({ courseId, courseName }: { courseId: stri
     }
   }
 
+  async function pauseTask(task: TaskAssignment) {
+    try {
+      const res = await fetch("/api/tasks/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: task.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? data.assignment : t)));
+      }
+    } catch {
+      // Best-effort — list just won't update if this fails.
+    }
+  }
+
+  async function resumeTask(task: TaskAssignment) {
+    try {
+      const res = await fetch("/api/tasks/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: task.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTodayTasks((prev) => prev.map((t) => (t.id === task.id ? data.assignment : t)));
+      }
+    } catch {
+      // Best-effort — list just won't update if this fails.
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -145,6 +178,12 @@ export default function CrewDashboard({ courseId, courseName }: { courseId: stri
                   }`}
                 >
                   {t.name}
+                  {t.status === "paused" && t.paused_at && (
+                    <span className="ml-2 text-[10px] font-mono text-amber-800">
+                      ⏸ since{" "}
+                      {new Date(t.paused_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </span>
+                  )}
                 </span>
                 <span className="text-xs text-mist whitespace-nowrap">
                   {employees.find((e) => e.id === t.assigned_to)?.name ?? "Unassigned"}
@@ -153,12 +192,31 @@ export default function CrewDashboard({ courseId, courseName }: { courseId: stri
                   <span className="text-xs text-green-mid whitespace-nowrap">✓ Done</span>
                 ) : (
                   canManage(t) && (
-                    <button
-                      onClick={() => (t.status === "not_started" ? startTask(t) : setCompletingTask(t))}
-                      className="text-xs font-semibold text-green-mid hover:text-green-dark whitespace-nowrap"
-                    >
-                      {t.status === "not_started" ? "Start →" : "Complete →"}
-                    </button>
+                    <span className="flex items-center gap-3 whitespace-nowrap">
+                      {t.status === "not_started" && (
+                        <button onClick={() => startTask(t)} className="text-xs font-semibold text-green-mid hover:text-green-dark">
+                          Start →
+                        </button>
+                      )}
+                      {t.status === "in_progress" && (
+                        <>
+                          <button onClick={() => pauseTask(t)} className="text-xs font-semibold text-amber-700 hover:text-amber-900">
+                            ⏸ Pause
+                          </button>
+                          <button
+                            onClick={() => setCompletingTask(t)}
+                            className="text-xs font-semibold text-green-mid hover:text-green-dark"
+                          >
+                            Complete →
+                          </button>
+                        </>
+                      )}
+                      {t.status === "paused" && (
+                        <button onClick={() => resumeTask(t)} className="text-xs font-semibold text-amber-700 hover:text-amber-900">
+                          ▶ Resume
+                        </button>
+                      )}
+                    </span>
                   )
                 )}
               </div>

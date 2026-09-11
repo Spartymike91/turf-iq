@@ -82,11 +82,24 @@ export async function POST(request: NextRequest) {
   }
 
   const completedAt = new Date();
+
+  // If the task is still paused when Complete is hit (no forced resume-first
+  // requirement), fold the trailing open pause interval in as if it had
+  // just been resumed — otherwise that final stretch would incorrectly
+  // count as worked time in the labor-cost calc below.
+  const finalPausedMinutes =
+    Number(assignment.paused_minutes ?? 0) +
+    (assignment.status === "paused" && assignment.paused_at
+      ? Math.max(0, (completedAt.getTime() - new Date(assignment.paused_at).getTime()) / 60000)
+      : 0);
+
   const { data: updated, error: updateError } = await adminClient
     .from("task_assignments")
     .update({
       status: "complete",
       completed_at: completedAt.toISOString(),
+      paused_at: null,
+      paused_minutes: finalPausedMinutes,
       ...(quality_rating != null ? { quality_rating } : {}),
     })
     .eq("id", assignment_id)
@@ -128,7 +141,7 @@ export async function POST(request: NextRequest) {
       if (employee && rateRow) {
         const actualMinutes = Math.max(
           0,
-          (completedAt.getTime() - new Date(assignment.started_at).getTime()) / 60000
+          (completedAt.getTime() - new Date(assignment.started_at).getTime()) / 60000 - finalPausedMinutes
         );
         const laborCost = Math.round((actualMinutes / 60) * Number(rateRow.hourly_rate) * 100) / 100;
 

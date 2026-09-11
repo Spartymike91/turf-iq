@@ -25,10 +25,11 @@ interface TaskAssignment {
   priority: number;
   mow_direction: MowDirection | null;
   cleanup_lap_direction: CleanupLapDirection | null;
-  status: "not_started" | "in_progress" | "complete";
+  status: "not_started" | "in_progress" | "paused" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
   completed_at: string | null;
+  paused_at: string | null;
   quality_rating: number | null;
   scheduled_date: string;
 }
@@ -42,6 +43,7 @@ interface TimeEntry {
 const STATUS_LABEL: Record<TaskAssignment["status"], string> = {
   not_started: "Not Started",
   in_progress: "In Progress",
+  paused: "Paused",
   complete: "Complete",
 };
 
@@ -275,6 +277,38 @@ export default function TaskStatusPage() {
     setCompletingTask(task);
   }
 
+  async function handlePause(task: TaskAssignment) {
+    try {
+      const res = await fetch("/api/tasks/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: task.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? data.assignment : t)));
+      }
+    } catch {
+      // Best-effort — board just won't update if this fails.
+    }
+  }
+
+  async function handleResume(task: TaskAssignment) {
+    try {
+      const res = await fetch("/api/tasks/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: task.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? data.assignment : t)));
+      }
+    } catch {
+      // Best-effort — board just won't update if this fails.
+    }
+  }
+
   // Group today's tasks by crew member — each employee gets a card listing
   // their jobs in order, rather than one global board split by status.
   // Tasks with no assignee collect into a trailing "Unassigned" card.
@@ -394,17 +428,43 @@ export default function TaskStatusPage() {
                         <MowDirectionIcon direction={t.mow_direction} />
                         <CleanupLapDirectionIcon direction={t.cleanup_lap_direction} />
                       </span>
-                      <span className="text-[8px] font-bold px-1 py-0.5 rounded font-mono bg-chalk text-mist shrink-0">
+                      <span
+                        className={`text-[8px] font-bold px-1 py-0.5 rounded font-mono shrink-0 ${
+                          t.status === "paused" ? "bg-amber-100 text-amber-900" : "bg-chalk text-mist"
+                        }`}
+                      >
                         {STATUS_LABEL[t.status].toUpperCase()}
                       </span>
                     </div>
-                    {t.status !== "complete" && canManage(t) && (
-                      <button
-                        onClick={() => (t.status === "not_started" ? advanceStatus(t) : openCompleteDialog(t))}
-                        className="text-green-mid font-semibold hover:text-green-dark"
-                      >
-                        {t.status === "not_started" ? "Start →" : "Complete →"}
-                      </button>
+                    {t.status === "paused" && t.paused_at && (
+                      <div className="text-[10px] text-amber-800 mb-1">
+                        ⏸ Paused since{" "}
+                        {new Date(t.paused_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                      </div>
+                    )}
+                    {canManage(t) && (
+                      <>
+                        {t.status === "not_started" && (
+                          <button onClick={() => advanceStatus(t)} className="text-green-mid font-semibold hover:text-green-dark">
+                            Start →
+                          </button>
+                        )}
+                        {t.status === "in_progress" && (
+                          <span className="flex items-center gap-3">
+                            <button onClick={() => handlePause(t)} className="text-amber-700 font-semibold hover:text-amber-900">
+                              ⏸ Pause
+                            </button>
+                            <button onClick={() => openCompleteDialog(t)} className="text-green-mid font-semibold hover:text-green-dark">
+                              Complete →
+                            </button>
+                          </span>
+                        )}
+                        {t.status === "paused" && (
+                          <button onClick={() => handleResume(t)} className="text-amber-700 font-semibold hover:text-amber-900">
+                            ▶ Resume
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}

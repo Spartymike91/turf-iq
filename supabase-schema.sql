@@ -2090,3 +2090,31 @@ CREATE POLICY "Members can view own push subscriptions"
   ON push_subscriptions FOR SELECT USING (
     EXISTS (SELECT 1 FROM course_members cm WHERE cm.id = push_subscriptions.course_member_id AND cm.user_id = auth.uid())
   );
+
+-- ============================================
+-- PAUSE/RESUME TASKS + NON-BILLABLE LABOR
+-- ============================================
+-- A task can now sit "paused" between in_progress and complete (e.g. a rain
+-- delay) without that gap counting as worked time. paused_at is set while
+-- currently paused; paused_minutes accumulates the total across however
+-- many pause/resume cycles a task goes through. /api/tasks/complete
+-- subtracts paused_minutes from its completed_at - started_at delta, so
+-- pause time never gets billed to the task's labor cost.
+ALTER TABLE task_assignments DROP CONSTRAINT IF EXISTS task_assignments_status_check;
+ALTER TABLE task_assignments ADD CONSTRAINT task_assignments_status_check
+  CHECK (status IN ('not_started', 'in_progress', 'paused', 'complete'));
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS paused_minutes NUMERIC NOT NULL DEFAULT 0;
+
+-- Pause time is excluded from a task's own labor cost, but it's still real
+-- labor the course is paying for — a daily cron reconciles each employee's
+-- total clocked time (time_entries) against their total task-attributed
+-- time (task_assignments) and books the gap as one "Non-Billable Labor"
+-- expense per employee per day. employee_id is new here specifically to
+-- make that reconciliation idempotent (existing task_labor/task_materials
+-- rows are already traceable via task_assignment_id, which doesn't apply
+-- to a non-task expense).
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS employee_id UUID REFERENCES employees(id) ON DELETE SET NULL;
+ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_source_check;
+ALTER TABLE expenses ADD CONSTRAINT expenses_source_check
+  CHECK (source IN ('manual', 'task_labor', 'task_materials', 'application_fertilizer', 'application_pest', 'non_billable_labor'));

@@ -38,10 +38,11 @@ interface TaskAssignment {
   priority: number;
   mow_direction: MowDirection | null;
   cleanup_lap_direction: CleanupLapDirection | null;
-  status: "not_started" | "in_progress" | "complete";
+  status: "not_started" | "in_progress" | "paused" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
   completed_at: string | null;
+  paused_minutes: number | null;
   quality_rating: number | null;
   notes: string | null;
 }
@@ -130,7 +131,8 @@ export default function TaskSchedulerPage() {
       if (!byEmployee.has(a.assigned_to)) byEmployee.set(a.assigned_to, { durations: [], qualities: [] });
       const entry = byEmployee.get(a.assigned_to)!;
       if (a.started_at && a.completed_at) {
-        entry.durations.push((new Date(a.completed_at).getTime() - new Date(a.started_at).getTime()) / 60000);
+        const rawMinutes = (new Date(a.completed_at).getTime() - new Date(a.started_at).getTime()) / 60000;
+        entry.durations.push(Math.max(0, rawMinutes - Number(a.paused_minutes ?? 0)));
       }
       if (a.quality_rating != null) entry.qualities.push(a.quality_rating);
     }
