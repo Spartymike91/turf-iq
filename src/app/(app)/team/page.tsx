@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
-import { ALL_MODULES } from "@/lib/planAccess";
+import { ALL_MODULES, SUB_MODULES, ALL_MODULE_SLUGS } from "@/lib/planAccess";
 import { type Role, ALL_ROLES, JUNIOR_ROLES, ROLE_LABEL } from "@/lib/roles";
 
 interface Member {
@@ -16,8 +16,6 @@ interface Member {
   allowed_modules: string[] | null;
   title: string | null;
 }
-
-const ALL_MODULE_SLUGS = ALL_MODULES.map((m) => m.slug);
 
 export default function TeamPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -376,7 +374,7 @@ export default function TeamPage() {
                   Visible Tabs <span className="text-mist font-normal normal-case">— unchecked tabs won&apos;t show for this person</span>
                 </label>
                 <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                  {ALL_MODULES.map((m) => (
+                  {[...ALL_MODULES, ...SUB_MODULES].map((m) => (
                     <label key={m.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -486,7 +484,7 @@ export default function TeamPage() {
                                 Visible tabs
                               </div>
                               <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                                {ALL_MODULES.map((mod) => (
+                                {[...ALL_MODULES, ...SUB_MODULES].map((mod) => (
                                   <label key={mod.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
                                     <input
                                       type="checkbox"

@@ -30,6 +30,13 @@ interface TaskAssignment {
   started_at: string | null;
   completed_at: string | null;
   quality_rating: number | null;
+  scheduled_date: string;
+}
+
+interface TimeEntry {
+  id: string;
+  employee_id: string;
+  clock_in: string;
 }
 
 const STATUS_LABEL: Record<TaskAssignment["status"], string> = {
@@ -50,6 +57,10 @@ export default function TaskStatusPage() {
 
   const [completingTask, setCompletingTask] = useState<TaskAssignment | null>(null);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
+  const [upcoming, setUpcoming] = useState<TaskAssignment[]>([]);
+  const [openEntries, setOpenEntries] = useState<TimeEntry[]>([]);
+  const [clockLoading, setClockLoading] = useState(false);
+  const [clockError, setClockError] = useState<string | null>(null);
 
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const now = new Date();
@@ -80,21 +91,35 @@ export default function TaskStatusPage() {
       }
       setCourseId(context.courseId);
 
-      const [{ data: emp }, { data: assign }, { data: membership }, { data: calEvents }] = await Promise.all([
-        supabase.from("employees").select("id, name, color, course_member_id").eq("course_id", context.courseId),
-        supabase.from("task_assignments").select("*").eq("course_id", context.courseId).eq("scheduled_date", todayStr()),
-        supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
-        supabase
-          .from("calendar_events")
-          .select("id, employee_id, event_type, title, start_date, end_date")
-          .eq("course_id", context.courseId)
-          .order("start_date", { ascending: true }),
-      ]);
+      const [{ data: emp }, { data: assign }, { data: future }, { data: membership }, { data: calEvents }, { data: openTimeEntries }] =
+        await Promise.all([
+          supabase.from("employees").select("id, name, color, course_member_id").eq("course_id", context.courseId),
+          supabase.from("task_assignments").select("*").eq("course_id", context.courseId).eq("scheduled_date", todayStr()),
+          supabase
+            .from("task_assignments")
+            .select("*")
+            .eq("course_id", context.courseId)
+            .gt("scheduled_date", todayStr())
+            .order("scheduled_date", { ascending: true })
+            .limit(15),
+          supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
+          supabase
+            .from("calendar_events")
+            .select("id, employee_id, event_type, title, start_date, end_date")
+            .eq("course_id", context.courseId)
+            .order("start_date", { ascending: true }),
+          // At most one row per currently-clocked-in employee — cheap enough
+          // to always fetch here rather than a second round-trip once
+          // myEmployeeId is known below.
+          supabase.from("time_entries").select("id, employee_id, clock_in").eq("course_id", context.courseId).is("clock_out", null),
+        ]);
       setEmployees(emp ?? []);
       setTasks(assign ?? []);
+      setUpcoming(future ?? []);
       setMyRole(membership?.role ?? null);
       setMyEmployeeId((emp ?? []).find((e) => e.course_member_id === membership?.id)?.id ?? null);
       setCalendarEvents(calEvents ?? []);
+      setOpenEntries(openTimeEntries ?? []);
       setChecking(false);
     }
     load();
@@ -112,6 +137,30 @@ export default function TaskStatusPage() {
   }
 
   const isManager = myRole === "owner" || myRole === "superintendent";
+  const myOpenEntry = myEmployeeId ? openEntries.find((e) => e.employee_id === myEmployeeId) ?? null : null;
+
+  async function handleClockToggle() {
+    setClockLoading(true);
+    setClockError(null);
+    try {
+      const res = await fetch("/api/time-clock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: myOpenEntry ? "clock_out" : "clock_in" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setClockError(data.error || "Something went wrong.");
+      } else if (myOpenEntry) {
+        setOpenEntries((prev) => prev.filter((e) => e.id !== myOpenEntry.id));
+      } else {
+        setOpenEntries((prev) => [...prev, data.entry]);
+      }
+    } catch {
+      setClockError("Something went wrong.");
+    }
+    setClockLoading(false);
+  }
 
   async function handleAddEvent(e: React.FormEvent) {
     e.preventDefault();
@@ -248,12 +297,36 @@ export default function TaskStatusPage() {
 
   return (
     <>
-      <div>
-        <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Live Status</div>
-        <div className="font-serif text-2xl text-green-dark">Today&apos;s Crew Board</div>
-        <div className="text-[13px] text-mist mt-1">
-          {tasks.filter((t) => t.status === "complete").length} of {tasks.length} complete
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Live Status</div>
+          <div className="font-serif text-2xl text-green-dark">Today&apos;s Crew Board</div>
+          <div className="text-[13px] text-mist mt-1">
+            {tasks.filter((t) => t.status === "complete").length} of {tasks.length} complete
+          </div>
         </div>
+        {myEmployeeId && (
+          <div className="flex flex-col items-end gap-1">
+            {clockError && <div className="text-[11px] text-red">{clockError}</div>}
+            <div className="flex items-center gap-2">
+              {myOpenEntry && (
+                <span className="text-xs text-mist">
+                  🟢 Clocked in since{" "}
+                  {new Date(myOpenEntry.clock_in).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+              <button
+                onClick={handleClockToggle}
+                disabled={clockLoading}
+                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 ${
+                  myOpenEntry ? "border-[1.5px] border-rule text-ink hover:border-red hover:text-red" : "bg-green-mid text-white hover:bg-green-dark"
+                }`}
+              >
+                {clockLoading ? "..." : myOpenEntry ? "Clock Out" : "Clock In"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {weather && (
@@ -339,6 +412,29 @@ export default function TaskStatusPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {upcoming.length > 0 && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden">
+          <div className="px-5 py-4 border-b-[1.5px] border-rule font-serif text-lg text-green-dark">Upcoming</div>
+          <div className="divide-y divide-rule">
+            {upcoming.map((t) => (
+              <div key={t.id} className="flex items-center gap-3 px-5 py-3 text-sm">
+                <span className="text-xs font-mono text-mist w-16 shrink-0">
+                  {new Date(`${t.scheduled_date}T00:00:00`).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "numeric",
+                    day: "numeric",
+                  })}
+                </span>
+                <span className="flex-1 text-ink">{t.name}</span>
+                <span className="text-xs text-mist whitespace-nowrap">
+                  {employees.find((e) => e.id === t.assigned_to)?.name ?? "Unassigned"}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

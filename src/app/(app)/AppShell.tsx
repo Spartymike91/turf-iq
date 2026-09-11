@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import AppHeader from "@/components/layout/AppHeader";
 import AgronomistPanel from "@/components/agronomist/AgronomistPanel";
 import AgronomistFab from "@/components/agronomist/AgronomistFab";
-import { hasModuleAccess, getModuleLabel, getRequiredTier, hasModulePermission, ALL_MODULES } from "@/lib/planAccess";
+import { hasModuleAccess, getModuleLabel, getRequiredTier, hasModulePermission, findRestrictableModule } from "@/lib/planAccess";
 import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
 import type { UserCourseSummary } from "@/lib/supabase/course-context";
 
@@ -50,9 +50,7 @@ export default function AppShell({
   // shows the upgrade message above regardless of per-crew permission.
   const permissionDenied =
     !isAdminView && !locked && !hasModulePermission(allowedModules ?? null, pathname);
-  const deniedModuleInfo = permissionDenied
-    ? ALL_MODULES.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`))
-    : null;
+  const deniedModuleInfo = permissionDenied ? findRestrictableModule(pathname) : null;
 
   async function handleExitAdminView() {
     setExiting(true);

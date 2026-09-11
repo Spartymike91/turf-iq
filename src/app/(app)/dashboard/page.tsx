@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import AlertBanner from "@/components/ui/AlertBanner";
 import CrewDashboard from "@/components/dashboard/CrewDashboard";
+import { hasModulePermission } from "@/lib/planAccess";
 import type { WeatherResult } from "@/lib/weather";
 
 const CREW_ROLES = ["crew", "crew_lead"];
@@ -40,6 +42,7 @@ interface Employee {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
   const [isCrewView, setIsCrewView] = useState(false);
@@ -111,7 +114,7 @@ export default function DashboardPage() {
         !context.isAdminView && user
           ? supabase
               .from("course_members")
-              .select("role")
+              .select("role, allowed_modules")
               .eq("user_id", user.id)
               .eq("course_id", context.courseId)
               .maybeSingle()
@@ -120,10 +123,17 @@ export default function DashboardPage() {
       setCourseName(course?.name ?? "");
       const role: string | null = membershipResult.data?.role ?? null;
 
-      // Crew and crew leads get the simplified CrewDashboard instead — it
-      // fetches its own data and skips the AI briefing entirely, so bail out
-      // here rather than also loading the manager view's heavier data.
+      // Crew and crew leads land on the Live Status board instead — unless
+      // they've been specifically restricted from it, in which case they
+      // fall back to the simplified CrewDashboard below (unchanged from
+      // before this board existed). Left `checking` true through the
+      // redirect so CrewDashboard never flashes first.
       if (role && CREW_ROLES.includes(role)) {
+        const allowedModules = membershipResult.data?.allowed_modules ?? null;
+        if (hasModulePermission(allowedModules, "/tasks/status")) {
+          router.replace("/tasks/status");
+          return;
+        }
         setIsCrewView(true);
         setChecking(false);
         return;

@@ -63,11 +63,37 @@ export const ALL_MODULES: { slug: string; href: string; icon: string; label: str
   { slug: "team", href: "/team", icon: "👥", label: "Team" },
 ];
 
+// Independently-restrictable sub-routes that live under a broader module's
+// prefix (e.g. /tasks/status under the "tasks" module) — kept out of
+// ALL_MODULES deliberately, since that array also drives AppHeader's top-nav
+// tabs and a sub-route doesn't need its own redundant tab. Still surfaced as
+// its own checkbox in the Team page's permission checklist.
+export const SUB_MODULES: { slug: string; href: string; icon: string; label: string }[] = [
+  { slug: "live-status", href: "/tasks/status", icon: "🟢", label: "Live Status (Crew Board)" },
+];
+
+// Single source of truth for "everything granted by default" — used to seed
+// a fresh invite's checklist and as the fallback when editing a member whose
+// allowed_modules is still null (unrestricted).
+export const ALL_MODULE_SLUGS = [...ALL_MODULES, ...SUB_MODULES].map((m) => m.slug);
+
+// Resolves which restrictable entry (if any) governs a given pathname.
+// SUB_MODULES is checked first since its entries are more specific
+// (longer/nested) prefixes than their parent in ALL_MODULES — checking
+// ALL_MODULES first would always match the shorter parent prefix instead.
+export function findRestrictableModule(
+  pathname: string
+): { slug: string; href: string; icon: string; label: string } | null {
+  const subMatch = SUB_MODULES.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`));
+  if (subMatch) return subMatch;
+  return ALL_MODULES.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`)) ?? null;
+}
+
 // null = unrestricted (default for owners/superintendents and any member
 // who's never been restricted) — sees everything the plan tier allows.
 export function hasModulePermission(allowedModules: string[] | null, pathname: string): boolean {
   if (!allowedModules) return true;
-  const found = ALL_MODULES.find((m) => pathname === m.href || pathname.startsWith(`${m.href}/`));
+  const found = findRestrictableModule(pathname);
   if (!found) return true; // dashboard, course settings, etc. are never restrictable
   return allowedModules.includes(found.slug);
 }
