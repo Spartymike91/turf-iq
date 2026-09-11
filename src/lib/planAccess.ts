@@ -61,6 +61,7 @@ export const ALL_MODULES: { slug: string; href: string; icon: string; label: str
   { slug: "labor", href: "/labor", icon: "👷", label: "Labor" },
   { slug: "tasks", href: "/tasks", icon: "📋", label: "Tasks" },
   { slug: "team", href: "/team", icon: "👥", label: "Team" },
+  { slug: "chat", href: "/chat", icon: "💬", label: "Chat" },
 ];
 
 // Independently-restrictable sub-routes that live under a broader module's

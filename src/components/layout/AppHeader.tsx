@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getRequiredTier, TIER_RANK, ALL_MODULES } from "@/lib/planAccess";
 import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
 import type { UserCourseSummary } from "@/lib/supabase/course-context";
+import { checkHasUnreadChat } from "@/lib/chatUnread";
 
 const tabs = ALL_MODULES;
 
@@ -32,6 +33,7 @@ export default function AppHeader({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
+  const [realtimeClient] = useState(() => createClient());
 
   useEffect(() => {
     if (!accountMenuOpen) return;
@@ -53,6 +55,71 @@ export default function AppHeader({
   // Admin View (inspecting a different customer's course) always sees every
   // tab. A platform admin using their own course is still gated normally.
   const bypassGating = !!isAdminView;
+
+  // Chat unread dot — resolved client-side (own course_members.id isn't
+  // threaded through as a prop) and kept live via its own Realtime
+  // subscription so it updates while the user is on any page, not just
+  // /chat. Skipped in Admin View, which has no real course_members row.
+  const [chatHasUnread, setChatHasUnread] = useState(false);
+  useEffect(() => {
+    if (isAdminView || !currentCourseId) return;
+    const supabase = realtimeClient;
+    let cancelled = false;
+    let myCourseMemberId: string | null = null;
+
+    // The Realtime subscription below is set up immediately (not gated on
+    // this resolving first) so a message arriving during the brief window
+    // before we know our own course_members.id still isn't missed — the
+    // sender-id check inside the handler just falls back to "not mine" and
+    // shows the dot until this resolves.
+    async function init() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: membership } = await supabase
+        .from("course_members")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("course_id", currentCourseId!)
+        .single();
+      if (cancelled || !membership) return;
+      myCourseMemberId = membership.id;
+      const unread = await checkHasUnreadChat(supabase, currentCourseId!, membership.id);
+      if (!cancelled) setChatHasUnread(unread);
+    }
+    init();
+
+    // Uses the stable `realtimeClient` instance (not a freshly-created one)
+    // — a fresh createClient() call here was confirmed live to silently
+    // never deliver postgres_changes events, despite reporting a healthy
+    // SUBSCRIBED status. Match this pattern for any future Realtime
+    // subscription in a client component.
+    const channel = supabase
+      .channel(`app-header-chat:${currentCourseId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages", filter: `course_id=eq.${currentCourseId}` },
+        (payload) => {
+          const isMine = myCourseMemberId && (payload.new as { sender_id?: string }).sender_id === myCourseMemberId;
+          // If they're already on /chat, that page owns marking things read
+          // — don't fight it with a dot that would immediately be wrong.
+          if (!isMine && window.location.pathname !== "/chat") setChatHasUnread(true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [isAdminView, currentCourseId, realtimeClient]);
+
+  // Cleared during render (same pattern as lastPathname below) rather than
+  // in an effect, the moment the user actually lands on /chat.
+  if (pathname === "/chat" && chatHasUnread) {
+    setChatHasUnread(false);
+  }
 
   // Route changes close the mobile menu — it's a Link, not a full reload, so
   // AppHeader stays mounted and the menu would otherwise stay open over the
@@ -151,7 +218,7 @@ export default function AppHeader({
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={`px-2 sm:px-3.5 text-xs font-medium flex items-center gap-1.5 border-b-2 -mb-[2px] transition-all whitespace-nowrap select-none ${
+                className={`relative px-2 sm:px-3.5 text-xs font-medium flex items-center gap-1.5 border-b-2 -mb-[2px] transition-all whitespace-nowrap select-none ${
                   tab.isActive
                     ? "text-white border-green-bright"
                     : "text-white/50 border-transparent hover:text-white/80"
@@ -159,6 +226,9 @@ export default function AppHeader({
               >
                 <span className="text-[13px]">{tab.icon}</span>
                 {tab.label}
+                {tab.slug === "chat" && chatHasUnread && (
+                  <span className="absolute top-1.5 right-0.5 w-1.5 h-1.5 rounded-full bg-red" />
+                )}
               </Link>
             );
           })}
@@ -258,6 +328,9 @@ export default function AppHeader({
               >
                 <span className="text-base">{tab.icon}</span>
                 {tab.label}
+                {tab.slug === "chat" && chatHasUnread && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-red ml-auto" />
+                )}
               </Link>
             );
           })}

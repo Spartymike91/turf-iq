@@ -1963,3 +1963,130 @@ CREATE INDEX IF NOT EXISTS idx_pest_applications_import_batch_id
 ALTER TABLE products DROP CONSTRAINT IF EXISTS products_category_check;
 ALTER TABLE products ADD CONSTRAINT products_category_check
   CHECK (category IN ('fertilizer', 'fungicide', 'herbicide', 'insecticide', 'growth_regulator', 'wetting_agent', 'other'));
+
+-- ============================================
+-- INTERNAL TEAM CHAT + WEB PUSH
+-- ============================================
+-- One course-wide "general" thread plus 1:1 DM threads, keyed by
+-- course_members.id (not auth.users.id) since one person can belong to
+-- multiple courses and messages must never leak across them. Writes go
+-- through service-role API routes only (see /api/team-chat/*), so these
+-- tables deliberately have SELECT-only RLS (default-deny for INSERT except
+-- chat_reads, a trivial self-scoped high-frequency write). Reads are direct
+-- client-side selects under RLS, which is what lets Supabase Realtime's
+-- postgres_changes filter events per-client.
+CREATE TABLE IF NOT EXISTS chat_threads (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('general', 'dm')),
+  participant_1_id UUID REFERENCES course_members(id) ON DELETE CASCADE,
+  participant_2_id UUID REFERENCES course_members(id) ON DELETE CASCADE,
+  last_message_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT chat_threads_kind_participants_check CHECK (
+    (kind = 'general' AND participant_1_id IS NULL AND participant_2_id IS NULL)
+    OR (kind = 'dm' AND participant_1_id IS NOT NULL AND participant_2_id IS NOT NULL
+        AND participant_1_id < participant_2_id)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS chat_threads_one_general_per_course
+  ON chat_threads (course_id) WHERE kind = 'general';
+CREATE UNIQUE INDEX IF NOT EXISTS chat_threads_unique_dm_pair
+  ON chat_threads (course_id, participant_1_id, participant_2_id) WHERE kind = 'dm';
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id UUID REFERENCES chat_threads(id) ON DELETE CASCADE NOT NULL,
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  sender_id UUID REFERENCES course_members(id) ON DELETE SET NULL,
+  body TEXT NOT NULL CHECK (char_length(body) BETWEEN 1 AND 2000),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS chat_messages_thread_created_idx ON chat_messages (thread_id, created_at);
+
+-- Minimal unread tracking: one row per (thread, member), last time they
+-- opened it. No per-message read receipts, no counts — just enough for a
+-- nav unread dot.
+CREATE TABLE IF NOT EXISTS chat_reads (
+  thread_id UUID REFERENCES chat_threads(id) ON DELETE CASCADE NOT NULL,
+  course_member_id UUID REFERENCES course_members(id) ON DELETE CASCADE NOT NULL,
+  last_read_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (thread_id, course_member_id)
+);
+
+-- endpoint is globally unique because a browser push subscription is
+-- origin-scoped, not course-scoped — a person in two courses who enables
+-- notifications on both ends up bound to whichever course they most
+-- recently enabled on. Known MVP limitation.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  course_member_id UUID REFERENCES course_members(id) ON DELETE CASCADE NOT NULL,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_member_idx ON push_subscriptions (course_member_id);
+
+ALTER TABLE chat_threads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_reads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Members can view their chat threads" ON chat_threads;
+CREATE POLICY "Members can view their chat threads"
+  ON chat_threads FOR SELECT USING (
+    (kind = 'general' AND public.is_course_member(course_id))
+    OR (kind = 'dm' AND EXISTS (
+      SELECT 1 FROM course_members cm
+      WHERE cm.user_id = auth.uid() AND cm.id IN (participant_1_id, participant_2_id)
+    ))
+  );
+
+DROP POLICY IF EXISTS "Members can view messages in their chat threads" ON chat_messages;
+CREATE POLICY "Members can view messages in their chat threads"
+  ON chat_messages FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM chat_threads t WHERE t.id = chat_messages.thread_id AND (
+        (t.kind = 'general' AND public.is_course_member(t.course_id))
+        OR (t.kind = 'dm' AND EXISTS (
+          SELECT 1 FROM course_members cm
+          WHERE cm.user_id = auth.uid() AND cm.id IN (t.participant_1_id, t.participant_2_id)
+        ))
+      )
+    )
+  );
+
+-- Required for Realtime — RLS alone does not make postgres_changes fire,
+-- the table also has to be in this publication.
+ALTER PUBLICATION supabase_realtime ADD TABLE chat_messages;
+
+DROP POLICY IF EXISTS "Members can view own chat reads" ON chat_reads;
+CREATE POLICY "Members can view own chat reads"
+  ON chat_reads FOR SELECT USING (
+    EXISTS (SELECT 1 FROM course_members cm WHERE cm.id = chat_reads.course_member_id AND cm.user_id = auth.uid())
+  );
+DROP POLICY IF EXISTS "Members can insert own chat reads" ON chat_reads;
+CREATE POLICY "Members can insert own chat reads"
+  ON chat_reads FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members cm WHERE cm.id = chat_reads.course_member_id AND cm.user_id = auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM chat_threads t WHERE t.id = chat_reads.thread_id AND (
+        (t.kind = 'general' AND public.is_course_member(t.course_id))
+        OR (t.kind = 'dm' AND chat_reads.course_member_id IN (t.participant_1_id, t.participant_2_id))
+      )
+    )
+  );
+DROP POLICY IF EXISTS "Members can update own chat reads" ON chat_reads;
+CREATE POLICY "Members can update own chat reads"
+  ON chat_reads FOR UPDATE
+  USING (EXISTS (SELECT 1 FROM course_members cm WHERE cm.id = chat_reads.course_member_id AND cm.user_id = auth.uid()))
+  WITH CHECK (EXISTS (SELECT 1 FROM course_members cm WHERE cm.id = chat_reads.course_member_id AND cm.user_id = auth.uid()));
+
+DROP POLICY IF EXISTS "Members can view own push subscriptions" ON push_subscriptions;
+CREATE POLICY "Members can view own push subscriptions"
+  ON push_subscriptions FOR SELECT USING (
+    EXISTS (SELECT 1 FROM course_members cm WHERE cm.id = push_subscriptions.course_member_id AND cm.user_id = auth.uid())
+  );
