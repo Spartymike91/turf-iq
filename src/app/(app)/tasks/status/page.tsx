@@ -10,6 +10,7 @@ import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon"
 import type { CleanupLapDirection } from "@/lib/cleanupLapDirections";
 import type { WeatherResult } from "@/lib/weather";
 import MonthCalendar, { type CalendarEvent } from "@/components/tasks/MonthCalendar";
+import { formatMinutes } from "@/lib/taskDuration";
 
 interface Employee {
   id: string;
@@ -30,6 +31,7 @@ interface TaskAssignment {
   started_at: string | null;
   completed_at: string | null;
   paused_at: string | null;
+  paused_minutes: number | null;
   quality_rating: number | null;
   scheduled_date: string;
 }
@@ -52,6 +54,8 @@ const todayStr = () => new Date().toISOString().slice(0, 10);
 export default function TaskStatusPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [tasks, setTasks] = useState<TaskAssignment[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [viewDate, setViewDate] = useState(todayStr());
   const [checking, setChecking] = useState(true);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -81,6 +85,9 @@ export default function TaskStatusPage() {
   const [eventError, setEventError] = useState<string | null>(null);
   const [eventSaving, setEventSaving] = useState(false);
 
+  // Everything here is independent of which day is being viewed — only
+  // runs once on mount. Today's/viewed-day's tasks and Upcoming are
+  // deliberately NOT fetched here; see the viewDate-keyed effect below.
   useEffect(() => {
     async function load() {
       const supabase = createClient();
@@ -95,31 +102,20 @@ export default function TaskStatusPage() {
       }
       setCourseId(context.courseId);
 
-      const [{ data: emp }, { data: assign }, { data: future }, { data: membership }, { data: calEvents }, { data: openTimeEntries }] =
-        await Promise.all([
-          supabase.from("employees").select("id, name, color, course_member_id").eq("course_id", context.courseId),
-          supabase.from("task_assignments").select("*").eq("course_id", context.courseId).eq("scheduled_date", todayStr()),
-          supabase
-            .from("task_assignments")
-            .select("*")
-            .eq("course_id", context.courseId)
-            .gt("scheduled_date", todayStr())
-            .order("scheduled_date", { ascending: true })
-            .limit(15),
-          supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
-          supabase
-            .from("calendar_events")
-            .select("id, employee_id, event_type, title, start_date, end_date")
-            .eq("course_id", context.courseId)
-            .order("start_date", { ascending: true }),
-          // At most one row per currently-clocked-in employee — cheap enough
-          // to always fetch here rather than a second round-trip once
-          // myEmployeeId is known below.
-          supabase.from("time_entries").select("id, employee_id, clock_in").eq("course_id", context.courseId).is("clock_out", null),
-        ]);
+      const [{ data: emp }, { data: membership }, { data: calEvents }, { data: openTimeEntries }] = await Promise.all([
+        supabase.from("employees").select("id, name, color, course_member_id").eq("course_id", context.courseId),
+        supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
+        supabase
+          .from("calendar_events")
+          .select("id, employee_id, event_type, title, start_date, end_date")
+          .eq("course_id", context.courseId)
+          .order("start_date", { ascending: true }),
+        // At most one row per currently-clocked-in employee — cheap enough
+        // to always fetch here rather than a second round-trip once
+        // myEmployeeId is known below.
+        supabase.from("time_entries").select("id, employee_id, clock_in").eq("course_id", context.courseId).is("clock_out", null),
+      ]);
       setEmployees(emp ?? []);
-      setTasks(assign ?? []);
-      setUpcoming(future ?? []);
       setMyRole(membership?.role ?? null);
       setMyEmployeeId((emp ?? []).find((e) => e.course_member_id === membership?.id)?.id ?? null);
       setCalendarEvents(calEvents ?? []);
@@ -135,6 +131,45 @@ export default function TaskStatusPage() {
       .then((data) => setWeather(data && !data.error ? data : null))
       .catch(() => setWeather(null));
   }, []);
+
+  // Re-fetches whenever the viewed day changes (including the initial
+  // mount, once courseId resolves above).
+  useEffect(() => {
+    if (!courseId) return;
+    let cancelled = false;
+    async function loadTasks() {
+      setTasksLoading(true);
+      const supabase = createClient();
+      const [{ data: assign }, { data: future }] = await Promise.all([
+        supabase.from("task_assignments").select("*").eq("course_id", courseId!).eq("scheduled_date", viewDate),
+        supabase
+          .from("task_assignments")
+          .select("*")
+          .eq("course_id", courseId!)
+          .gt("scheduled_date", viewDate)
+          .order("scheduled_date", { ascending: true })
+          .limit(15),
+      ]);
+      if (cancelled) return;
+      setTasks(assign ?? []);
+      setUpcoming(future ?? []);
+      setTasksLoading(false);
+    }
+    loadTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, viewDate]);
+
+  const isViewingToday = viewDate === todayStr();
+
+  function shiftViewDate(deltaDays: number) {
+    const d = new Date(`${viewDate}T00:00:00`);
+    d.setDate(d.getDate() + deltaDays);
+    setViewDate(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    );
+  }
 
   function canManage(task: TaskAssignment) {
     return myRole === "owner" || myRole === "superintendent" || task.assigned_to === myEmployeeId;
@@ -365,7 +400,28 @@ export default function TaskStatusPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Live Status</div>
-          <div className="font-serif text-2xl text-green-dark">Today&apos;s Crew Board</div>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => shiftViewDate(-1)} className="text-mist hover:text-ink font-semibold px-1" aria-label="Previous day">
+              ←
+            </button>
+            <div className="font-serif text-2xl text-green-dark">
+              {isViewingToday
+                ? "Today's Crew Board"
+                : new Date(`${viewDate}T00:00:00`).toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                  })}
+            </div>
+            <button onClick={() => shiftViewDate(1)} className="text-mist hover:text-ink font-semibold px-1" aria-label="Next day">
+              →
+            </button>
+            {!isViewingToday && (
+              <button onClick={() => setViewDate(todayStr())} className="text-xs text-green-mid font-semibold hover:text-green-dark ml-1">
+                Today
+              </button>
+            )}
+          </div>
           <div className="text-[13px] text-mist mt-1">
             {tasks.filter((t) => t.status === "complete").length} of {tasks.length} complete
           </div>
@@ -394,7 +450,7 @@ export default function TaskStatusPage() {
         )}
       </div>
 
-      {weather && (
+      {weather && isViewingToday && (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-4 flex items-center gap-4">
           <div className="text-4xl">{weather.forecast[0]?.icon ?? "☀️"}</div>
           <div>
@@ -406,10 +462,16 @@ export default function TaskStatusPage() {
         </div>
       )}
 
-      {tasks.length === 0 ? (
+      {tasksLoading ? (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
+          <div className="text-sm text-mist">Loading...</div>
+        </div>
+      ) : tasks.length === 0 ? (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
           <div className="text-4xl mb-3">📋</div>
-          <div className="text-sm text-mist">No tasks scheduled for today. Add some in the Scheduler.</div>
+          <div className="text-sm text-mist">
+            {isViewingToday ? "No tasks scheduled for today. Add some in the Scheduler." : "No tasks scheduled for this day."}
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -440,6 +502,19 @@ export default function TaskStatusPage() {
                       <div className="text-[10px] text-amber-800 mb-1">
                         ⏸ Paused since{" "}
                         {new Date(t.paused_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                      </div>
+                    )}
+                    {t.status === "complete" && t.started_at && t.completed_at && (
+                      <div className="text-[10px] text-mist mb-1">
+                        {t.estimated_minutes != null && `Target: ${formatMinutes(t.estimated_minutes)} · `}
+                        Actual:{" "}
+                        {formatMinutes(
+                          Math.max(
+                            0,
+                            (new Date(t.completed_at).getTime() - new Date(t.started_at).getTime()) / 60000 -
+                              Number(t.paused_minutes ?? 0)
+                          )
+                        )}
                       </div>
                     )}
                     {canManage(t) && (

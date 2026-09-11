@@ -7,6 +7,7 @@ import { MOW_DIRECTIONS, type MowDirection } from "@/lib/mowDirections";
 import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
 import { CLEANUP_LAP_DIRECTIONS, type CleanupLapDirection } from "@/lib/cleanupLapDirections";
 import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon";
+import { parseEstimatedMinutes } from "@/lib/taskDuration";
 
 interface TaskTemplate {
   id: string;
@@ -190,8 +191,7 @@ export default function TaskSchedulerPage() {
         priority: Number(addForm.priority) || 1,
         mow_direction: addForm.mow_direction || null,
         cleanup_lap_direction: addForm.cleanup_lap_direction || null,
-        estimated_minutes:
-          template?.target_minutes ?? (template?.estimated_duration ? parseInt(template.estimated_duration) || null : null),
+        estimated_minutes: template?.target_minutes ?? parseEstimatedMinutes(template?.estimated_duration),
         notes: addForm.notes || null,
       })
       .select()
