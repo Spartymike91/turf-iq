@@ -67,13 +67,15 @@ export default function TaskStatusPage() {
   const [calendarYear, setCalendarYear] = useState(now.getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(now.getMonth());
   const [showAddEvent, setShowAddEvent] = useState(false);
-  const [eventForm, setEventForm] = useState({
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const emptyEventForm = {
     event_type: "special_event" as "special_event" | "time_off",
     employee_id: "",
     title: "",
     start_date: todayStr(),
     end_date: todayStr(),
-  });
+  };
+  const [eventForm, setEventForm] = useState(emptyEventForm);
   const [eventError, setEventError] = useState<string | null>(null);
   const [eventSaving, setEventSaving] = useState(false);
 
@@ -162,7 +164,27 @@ export default function TaskStatusPage() {
     setClockLoading(false);
   }
 
-  async function handleAddEvent(e: React.FormEvent) {
+  function openEditEvent(event: CalendarEvent) {
+    setEditingEventId(event.id);
+    setEventForm({
+      event_type: event.event_type,
+      employee_id: event.employee_id ?? "",
+      title: event.title,
+      start_date: event.start_date,
+      end_date: event.end_date,
+    });
+    setEventError(null);
+    setShowAddEvent(true);
+  }
+
+  function closeEventForm() {
+    setShowAddEvent(false);
+    setEditingEventId(null);
+    setEventForm(emptyEventForm);
+    setEventError(null);
+  }
+
+  async function handleSaveEvent(e: React.FormEvent) {
     e.preventDefault();
     if (!courseId) return;
     if (!eventForm.title.trim()) {
@@ -180,38 +202,47 @@ export default function TaskStatusPage() {
     setEventSaving(true);
     setEventError(null);
     const supabase = createClient();
-    const { data, error: insertError } = await supabase
-      .from("calendar_events")
-      .insert({
-        course_id: courseId,
-        event_type: eventForm.event_type,
-        employee_id: eventForm.event_type === "time_off" ? eventForm.employee_id : null,
-        title: eventForm.title.trim(),
-        start_date: eventForm.start_date,
-        end_date: eventForm.end_date,
-      })
-      .select()
-      .single();
+    const payload = {
+      event_type: eventForm.event_type,
+      employee_id: eventForm.event_type === "time_off" ? eventForm.employee_id : null,
+      title: eventForm.title.trim(),
+      start_date: eventForm.start_date,
+      end_date: eventForm.end_date,
+    };
+    const { data, error: saveError } = editingEventId
+      ? await supabase.from("calendar_events").update(payload).eq("id", editingEventId).select().single()
+      : await supabase.from("calendar_events").insert({ course_id: courseId, ...payload }).select().single();
 
-    if (insertError) {
+    if (saveError) {
       setEventError(
-        insertError.message.includes("row-level security policy")
-          ? "You don't have permission to add calendar events. Ask an owner or superintendent."
-          : insertError.message
+        saveError.message.includes("row-level security policy")
+          ? `You don't have permission to ${editingEventId ? "edit" : "add"} calendar events. Ask an owner or superintendent.`
+          : saveError.message
       );
     } else if (data) {
-      setCalendarEvents((prev) => [...prev, data].sort((a, b) => a.start_date.localeCompare(b.start_date)));
-      setEventForm({ event_type: "special_event", employee_id: "", title: "", start_date: todayStr(), end_date: todayStr() });
-      setShowAddEvent(false);
+      setCalendarEvents((prev) =>
+        (editingEventId ? prev.map((e) => (e.id === data.id ? data : e)) : [...prev, data]).sort((a, b) =>
+          a.start_date.localeCompare(b.start_date)
+        )
+      );
+      closeEventForm();
     }
     setEventSaving(false);
   }
 
   async function handleDeleteEvent(id: string) {
+    setEventError(null);
     const supabase = createClient();
     const { error: deleteError } = await supabase.from("calendar_events").delete().eq("id", id);
-    if (!deleteError) {
+    if (deleteError) {
+      setEventError(
+        deleteError.message.includes("row-level security policy")
+          ? "You don't have permission to delete calendar events. Ask an owner or superintendent."
+          : deleteError.message
+      );
+    } else {
       setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
+      if (editingEventId === id) closeEventForm();
     }
   }
 
@@ -341,38 +372,6 @@ export default function TaskStatusPage() {
         </div>
       )}
 
-      {eventsInView.length > 0 && (
-        <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden shrink-0">
-          <div className="px-5 py-3 border-b-[1.5px] border-rule font-serif text-sm text-green-dark">This Month&apos;s Entries</div>
-          <div className="divide-y divide-rule">
-            {eventsInView.map((e) => {
-              const emp = e.employee_id ? employees.find((emp2) => emp2.id === e.employee_id) : null;
-              return (
-                <div key={e.id} className="flex items-center gap-3 px-5 py-2.5 text-xs">
-                  <span className="text-mist font-mono w-32 shrink-0">
-                    {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
-                  </span>
-                  {emp && (
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
-                    />
-                  )}
-                  <span className="flex-1 text-ink font-medium">
-                    {emp ? `${emp.name} — ${e.title}` : e.title}
-                  </span>
-                  {isManager && (
-                    <button onClick={() => handleDeleteEvent(e.id)} className="text-mist font-semibold hover:text-red shrink-0">
-                      Delete
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {tasks.length === 0 ? (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
           <div className="text-4xl mb-3">📋</div>
@@ -446,7 +445,14 @@ export default function TaskStatusPage() {
           </div>
           {isManager && (
             <button
-              onClick={() => setShowAddEvent((v) => !v)}
+              onClick={() => {
+                if (showAddEvent) {
+                  closeEventForm();
+                } else {
+                  setEventForm(emptyEventForm);
+                  setShowAddEvent(true);
+                }
+              }}
               className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors shrink-0"
             >
               {showAddEvent ? "Cancel" : "+ Add to Calendar"}
@@ -454,7 +460,7 @@ export default function TaskStatusPage() {
           )}
         </div>
         {showAddEvent && (
-          <form onSubmit={handleAddEvent} className="flex flex-wrap items-end gap-2 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+          <form onSubmit={handleSaveEvent} className="flex flex-wrap items-end gap-2 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
             {eventError && <div className="w-full text-xs text-red">{eventError}</div>}
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Type</label>
@@ -529,9 +535,48 @@ export default function TaskStatusPage() {
               disabled={eventSaving}
               className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
             >
-              {eventSaving ? "Saving..." : "Save"}
+              {eventSaving ? "Saving..." : editingEventId ? "Update" : "Save"}
             </button>
           </form>
+        )}
+        {!showAddEvent && eventError && <div className="px-5 py-2.5 text-xs text-red border-b-[1.5px] border-rule">{eventError}</div>}
+        {eventsInView.length > 0 && (
+          <div>
+            <div className="px-5 pt-3 pb-1 text-[10px] font-mono uppercase tracking-widest text-mist">
+              This Month&apos;s Entries{isManager ? " — click Edit or Delete to manage" : ""}
+            </div>
+            <div className="divide-y divide-rule">
+              {eventsInView.map((e) => {
+                const emp = e.employee_id ? employees.find((emp2) => emp2.id === e.employee_id) : null;
+                return (
+                  <div key={e.id} className="flex items-center gap-3 px-5 py-2.5 text-xs">
+                    <span className="text-mist font-mono w-32 shrink-0">
+                      {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
+                    </span>
+                    {emp && (
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
+                      />
+                    )}
+                    <span className="flex-1 text-ink font-medium">
+                      {emp ? `${emp.name} — ${e.title}` : e.title}
+                    </span>
+                    {isManager && (
+                      <span className="flex items-center gap-3 shrink-0">
+                        <button onClick={() => openEditEvent(e)} className="text-mist font-semibold hover:text-ink">
+                          Edit
+                        </button>
+                        <button onClick={() => handleDeleteEvent(e.id)} className="text-mist font-semibold hover:text-red">
+                          Delete
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 
