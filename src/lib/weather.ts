@@ -57,6 +57,7 @@ export interface WeatherResult {
     gddSeasonToDate: number;
     leafWetnessHours: number;
     weekRainfallIn: number;
+    rainfall24hIn: number | null;
     rainfallYtdIn: number;
     rainfallYtdAvgIn: number | null;
   };
@@ -556,6 +557,38 @@ async function fetchSoilTemp(lat: number, lon: number): Promise<{ soilTempF: num
 }
 
 /**
+ * True rolling trailing-24h rainfall total via Open-Meteo's hourly
+ * precipitation — deliberately not the same number as rainfall_daily_log's
+ * "today" row (that's calendar-day-since-midnight, a different question
+ * from "how much fell in the last 24 hours ending right now"). past_days=2
+ * leaves enough buffer to always have a full 24 trailing hourly values
+ * before "now" regardless of what time of day it is. Same
+ * find-the-"now"-index-then-slice-back approach as fetchSoilTemp's
+ * averageOverLast, just summed instead of averaged.
+ */
+async function fetchTrailing24hRainfallIn(lat: number, lon: number): Promise<number | null> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=precipitation&timezone=auto&past_days=2&forecast_days=1`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  const data = await res.json();
+  const times: string[] = data?.hourly?.time ?? [];
+  const values: Array<number | null> = data?.hourly?.precipitation ?? [];
+
+  const nowMs = Date.now();
+  let idx = -1;
+  for (let i = 0; i < times.length; i++) {
+    if (new Date(times[i]).getTime() <= nowMs) idx = i;
+    else break;
+  }
+  if (idx < 0) return null;
+
+  const slice = values.slice(Math.max(0, idx - 23), idx + 1).filter((v): v is number => v != null);
+  if (!slice.length) return null;
+  const totalMm = slice.reduce((sum, v) => sum + v, 0);
+  return Math.round((totalMm / 25.4) * 100) / 100;
+}
+
+/**
  * Actual daily rainfall backfill/refresh via Open-Meteo's forecast API
  * (`past_days`) — used instead of the NWS station observations already
  * fetched above because point-station METAR precipitation fields are
@@ -851,9 +884,10 @@ async function fetchFreshWeather(
     await supabase.from("courses").update({ latitude: lat, longitude: lon }).eq("id", course.id);
   }
 
-  const [{ forecastPeriods, hourlyForecastPeriods, grid, latestObs, obsHistory }, soilTemp] = await Promise.all([
+  const [{ forecastPeriods, hourlyForecastPeriods, grid, latestObs, obsHistory }, soilTemp, rainfall24hIn] = await Promise.all([
     fetchNwsWeather(lat, lon),
     fetchSoilTemp(lat, lon),
+    fetchTrailing24hRainfallIn(lat, lon),
   ]);
 
   const now = new Date();
@@ -1006,6 +1040,7 @@ async function fetchFreshWeather(
       gddSeasonToDate: Math.round(gddSeasonToDate * 10) / 10,
       leafWetnessHours,
       weekRainfallIn: Math.round(weekRainfallIn * 100) / 100,
+      rainfall24hIn,
       rainfallYtdIn,
       rainfallYtdAvgIn,
     },

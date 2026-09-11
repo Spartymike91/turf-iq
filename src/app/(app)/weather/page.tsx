@@ -154,6 +154,14 @@ export default function WeatherPage() {
             fill={Math.min(100, (weather.agronomics.weekRainfallIn / 2) * 100)}
             color="var(--water)"
           />
+          <AgroCard
+            label="24-Hr Rainfall"
+            value={weather.agronomics.rainfall24hIn != null ? weather.agronomics.rainfall24hIn.toFixed(2) : "—"}
+            unit=" in"
+            desc="Actual total, trailing 24 hours"
+            fill={weather.agronomics.rainfall24hIn != null ? Math.min(100, (weather.agronomics.rainfall24hIn / 1) * 100) : 0}
+            color="var(--water)"
+          />
         </div>
       </div>
 
