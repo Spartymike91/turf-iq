@@ -272,7 +272,17 @@ export default function CourseMapPage() {
   }
 
   const viewedNote = popup?.mode === "view" ? notes.find((n) => n.id === popup.noteId) : null;
+  // The add/edit form (category pills + textarea + buttons) runs up to
+  // ~320px tall — clicking anywhere in the lower half of the map (a large,
+  // wide element) could otherwise position the popup's bottom well past
+  // the visible viewport with nothing to scroll it into view, since
+  // position:fixed doesn't participate in page scroll. Same idea as the
+  // horizontal clamp below, just for the vertical axis.
+  const POPUP_MAX_HEIGHT = 320;
   const popupLeft = popup ? Math.min(popup.x, (typeof window !== "undefined" ? window.innerWidth - 280 : popup.x)) : 0;
+  const popupTop = popup
+    ? Math.max(8, Math.min(popup.y, typeof window !== "undefined" ? window.innerHeight - POPUP_MAX_HEIGHT : popup.y))
+    : 0;
 
   return (
     <>
@@ -326,7 +336,7 @@ export default function CourseMapPage() {
         <div
           ref={popupRef}
           className="fixed z-50 bg-white border-[1.5px] border-rule rounded-lg shadow-lg p-3 w-64"
-          style={{ top: popup.y, left: popupLeft }}
+          style={{ top: popupTop, left: popupLeft }}
         >
           {popup.mode === "add" || editingNoteId ? (
             <>
