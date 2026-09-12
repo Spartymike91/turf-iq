@@ -56,6 +56,7 @@ export default function CourseMapView({
   onMarkerClick: (noteId: string, clientX: number, clientY: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LType.Map | undefined>(undefined);
   const markersLayerRef = useRef<LType.LayerGroup | undefined>(undefined);
   const onMapClickRef = useRef(onMapClick);
   const onMarkerClickRef = useRef(onMarkerClick);
@@ -68,14 +69,31 @@ export default function CourseMapView({
     canAddRef.current = canAdd;
   }, [onMapClick, onMarkerClick, canAdd]);
 
+  // Converts a Leaflet lat/lng to a viewport screen position (for
+  // positioning the React popup) via Leaflet's own coordinate API rather
+  // than trusting the triggering DOM event's clientX/clientY — Leaflet adds
+  // a "leaflet-touch" mode on trackpads it detects as touch-capable
+  // (common on Macs/Safari even without a touchscreen), and in that mode
+  // the click event's originalEvent can be a TouchEvent, which has no
+  // top-level clientX/clientY at all. That silently produced an
+  // off-screen/NaN-positioned popup on Safari even though the click itself
+  // registered fine.
+  function screenPointFor(latlng: LType.LatLng): { x: number; y: number } | null {
+    const map = mapRef.current;
+    if (!map) return null;
+    const containerRect = map.getContainer().getBoundingClientRect();
+    const point = map.latLngToContainerPoint(latlng);
+    return { x: containerRect.left + point.x, y: containerRect.top + point.y };
+  }
+
   useEffect(() => {
     let cancelled = false;
-    let map: LType.Map | undefined;
 
     import("leaflet").then((L) => {
       if (cancelled || !containerRef.current) return;
 
-      map = L.map(containerRef.current, { center: [center.lat, center.lng], zoom: 17 });
+      const map = L.map(containerRef.current, { center: [center.lat, center.lng], zoom: 17 });
+      mapRef.current = map;
 
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -86,7 +104,9 @@ export default function CourseMapView({
 
       map.on("click", (e: LType.LeafletMouseEvent) => {
         if (!canAddRef.current || !onMapClickRef.current) return;
-        onMapClickRef.current(e.latlng.lat, e.latlng.lng, e.originalEvent.clientX, e.originalEvent.clientY);
+        const screenPoint = screenPointFor(e.latlng);
+        if (!screenPoint) return;
+        onMapClickRef.current(e.latlng.lat, e.latlng.lng, screenPoint.x, screenPoint.y);
       });
 
       setMapReady(true);
@@ -94,7 +114,8 @@ export default function CourseMapView({
 
     return () => {
       cancelled = true;
-      map?.remove();
+      mapRef.current?.remove();
+      mapRef.current = undefined;
       markersLayerRef.current = undefined;
     };
     // Deliberately mount-only: re-running this on every center change would
@@ -112,7 +133,9 @@ export default function CourseMapView({
         const marker = L.marker([n.lat, n.lng], { icon: createDotIcon(L, categoryColor(n.category)) });
         marker.on("click", (e: LType.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e);
-          onMarkerClickRef.current(n.id, e.originalEvent.clientX, e.originalEvent.clientY);
+          const screenPoint = screenPointFor(e.latlng);
+          if (!screenPoint) return;
+          onMarkerClickRef.current(n.id, screenPoint.x, screenPoint.y);
         });
         marker.addTo(layer);
       });
