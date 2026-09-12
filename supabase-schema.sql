@@ -2138,3 +2138,55 @@ ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS color TEXT;
 -- (which reads every event regardless) still shows their color. Always
 -- false for anything created through the full Add/Edit form.
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS is_quick_tag BOOLEAN NOT NULL DEFAULT false;
+
+-- ============================================
+-- COURSE MAP + NOTE PINS
+-- ============================================
+-- A street address to precisely center the new satellite Course Map on
+-- (courses.latitude/longitude already exist, but are only ever set by
+-- geocodeCityState() in weather.ts — a coarse, city-level geocode that's
+-- fine for weather but not precise enough to center a course-level map).
+-- Setting this address re-geocodes and overwrites latitude/longitude with
+-- a precise fix, which also quietly improves weather accuracy as a
+-- side effect.
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS address TEXT;
+
+-- Click-to-drop-a-pin notes on the Course Map (e.g. "broken sprinkler
+-- head here", "cart path repair needed"). Same access shape as
+-- calendar_events: every course member can view, only owner/
+-- superintendent can add/edit/delete. created_by references
+-- course_members.id (not auth.users.id) per this app's multi-course FK
+-- convention, and ON DELETE SET NULL so a note outlives whoever left it —
+-- never silently destroy data.
+CREATE TABLE IF NOT EXISTS course_map_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  lat NUMERIC(9,6) NOT NULL,
+  lng NUMERIC(9,6) NOT NULL,
+  category TEXT NOT NULL DEFAULT 'general'
+    CHECK (category IN ('general', 'irrigation', 'turf_issue', 'maintenance')),
+  note TEXT NOT NULL,
+  created_by UUID REFERENCES course_members(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE course_map_notes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Members can view course map notes" ON course_map_notes;
+CREATE POLICY "Members can view course map notes"
+  ON course_map_notes FOR SELECT USING (public.is_course_member(course_id));
+DROP POLICY IF EXISTS "Owners and supers can insert course map notes" ON course_map_notes;
+CREATE POLICY "Owners and supers can insert course map notes"
+  ON course_map_notes FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update course map notes" ON course_map_notes;
+CREATE POLICY "Owners and supers can update course map notes"
+  ON course_map_notes FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete course map notes" ON course_map_notes;
+CREATE POLICY "Owners and supers can delete course map notes"
+  ON course_map_notes FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
+  );
