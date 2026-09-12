@@ -556,6 +556,17 @@ async function fetchSoilTemp(lat: number, lon: number): Promise<{ soilTempF: num
   };
 }
 
+// Open-Meteo's live nowcast for the current (still-in-progress) hour has
+// been observed to occasionally spike to an implausible single-hour value
+// while every surrounding hour reads 0 — caught live on 2026-09-12, where
+// one bad hour (146.9mm, ~5.8in) made the whole 24h total look like a
+// historic flash flood on a day with no rain at all. 100mm/hr (~3.9in) is
+// already a globally rare, severe-thunderstorm-level rate; a reading above
+// it for a single hour is far more likely to be a model glitch than a real
+// observation, so it's dropped rather than trusted, since this number
+// feeds real irrigation decisions.
+const MAX_PLAUSIBLE_HOURLY_RAIN_MM = 100;
+
 /**
  * True rolling trailing-24h rainfall total via Open-Meteo's hourly
  * precipitation — deliberately not the same number as rainfall_daily_log's
@@ -582,7 +593,9 @@ async function fetchTrailing24hRainfallIn(lat: number, lon: number): Promise<num
   }
   if (idx < 0) return null;
 
-  const slice = values.slice(Math.max(0, idx - 23), idx + 1).filter((v): v is number => v != null);
+  const slice = values
+    .slice(Math.max(0, idx - 23), idx + 1)
+    .filter((v): v is number => v != null && v <= MAX_PLAUSIBLE_HOURLY_RAIN_MM);
   if (!slice.length) return null;
   const totalMm = slice.reduce((sum, v) => sum + v, 0);
   return Math.round((totalMm / 25.4) * 100) / 100;
@@ -605,21 +618,36 @@ async function refreshRecentRainfall(
   lon: number,
   todayStr: string
 ): Promise<void> {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=precipitation_sum&timezone=auto&past_days=10&forecast_days=1`;
+  // Built from hourly data (with the same MAX_PLAUSIBLE_HOURLY_RAIN_MM
+  // filter as fetchTrailing24hRainfallIn above) rather than trusting
+  // Open-Meteo's own `daily.precipitation_sum` directly — that field is
+  // just a server-side sum of the same hourly values, so it silently
+  // inherits the exact same live-nowcast glitch (one bad hour reads as a
+  // historic flash flood, confirmed live on 2026-09-12) with no way to
+  // filter it out after the fact. Today's row in particular gets
+  // re-fetched on every page load, so a bad value here doesn't just
+  // mis-display once — it gets upserted into permanent history.
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=precipitation&timezone=auto&past_days=10&forecast_days=1`;
   const res = await fetch(url);
   if (!res.ok) return;
   const data = await res.json();
-  const dates: string[] = data?.daily?.time ?? [];
-  const mm: Array<number | null> = data?.daily?.precipitation_sum ?? [];
+  const times: string[] = data?.hourly?.time ?? [];
+  const values: Array<number | null> = data?.hourly?.precipitation ?? [];
 
-  const rows = dates
-    .map((date, i) => ({ date, mmVal: mm[i] }))
-    .filter((r) => r.date <= todayStr)
-    .map((r) => ({
-      course_id: courseId,
-      log_date: r.date,
-      rainfall_in: Math.round(((r.mmVal ?? 0) / 25.4) * 100) / 100,
-    }));
+  const dailyTotalsMm = new Map<string, number>();
+  for (let i = 0; i < times.length; i++) {
+    const date = times[i].slice(0, 10);
+    if (date > todayStr) continue;
+    const v = values[i];
+    if (v == null || v > MAX_PLAUSIBLE_HOURLY_RAIN_MM) continue;
+    dailyTotalsMm.set(date, (dailyTotalsMm.get(date) ?? 0) + v);
+  }
+
+  const rows = Array.from(dailyTotalsMm.entries()).map(([date, mmVal]) => ({
+    course_id: courseId,
+    log_date: date,
+    rainfall_in: Math.round((mmVal / 25.4) * 100) / 100,
+  }));
 
   if (rows.length) {
     await supabase.from("rainfall_daily_log").upsert(rows, { onConflict: "course_id,log_date" });
