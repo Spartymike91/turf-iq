@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import TaskCompleteModal from "@/components/tasks/TaskCompleteModal";
@@ -9,7 +9,7 @@ import type { MowDirection } from "@/lib/mowDirections";
 import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon";
 import type { CleanupLapDirection } from "@/lib/cleanupLapDirections";
 import type { WeatherResult } from "@/lib/weather";
-import MonthCalendar, { type CalendarEvent } from "@/components/tasks/MonthCalendar";
+import MonthCalendar, { type CalendarEvent, EVENT_COLORS } from "@/components/tasks/MonthCalendar";
 import { formatMinutes } from "@/lib/taskDuration";
 
 interface Employee {
@@ -80,10 +80,32 @@ export default function TaskStatusPage() {
     title: "",
     start_date: todayStr(),
     end_date: todayStr(),
+    color: null as string | null,
   };
   const [eventForm, setEventForm] = useState(emptyEventForm);
   const [eventError, setEventError] = useState<string | null>(null);
   const [eventSaving, setEventSaving] = useState(false);
+
+  const [colorPicker, setColorPicker] = useState<{ dateStr: string; x: number; y: number } | null>(null);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!colorPicker) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setColorPicker(null);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setColorPicker(null);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [colorPicker]);
 
   // Everything here is independent of which day is being viewed — only
   // runs once on mount. Today's/viewed-day's tasks and Upcoming are
@@ -107,7 +129,7 @@ export default function TaskStatusPage() {
         supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
         supabase
           .from("calendar_events")
-          .select("id, employee_id, event_type, title, start_date, end_date")
+          .select("id, employee_id, event_type, title, start_date, end_date, color")
           .eq("course_id", context.courseId)
           .order("start_date", { ascending: true }),
         // At most one row per currently-clocked-in employee — cheap enough
@@ -209,6 +231,7 @@ export default function TaskStatusPage() {
       title: event.title,
       start_date: event.start_date,
       end_date: event.end_date,
+      color: event.color,
     });
     setEventError(null);
     setShowAddEvent(true);
@@ -245,6 +268,7 @@ export default function TaskStatusPage() {
       title: eventForm.title.trim(),
       start_date: eventForm.start_date,
       end_date: eventForm.end_date,
+      color: eventForm.color,
     };
     const { data, error: saveError } = editingEventId
       ? await supabase.from("calendar_events").update(payload).eq("id", editingEventId).select().single()
@@ -281,6 +305,48 @@ export default function TaskStatusPage() {
       setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
       if (editingEventId === id) closeEventForm();
     }
+  }
+
+  function handleDayRightClick(dateStr: string, x: number, y: number) {
+    setColorPicker({ dateStr, x, y });
+  }
+
+  // The events currently occupying the day the color picker is open for —
+  // drives whether the popup shows swatches (0 or 1 event) or the
+  // "multiple entries" message (2+, ambiguous which to recolor).
+  const colorPickerDayEvents = colorPicker
+    ? calendarEvents.filter((e) => e.start_date <= colorPicker.dateStr && colorPicker.dateStr <= e.end_date)
+    : [];
+
+  async function handleQuickSetColor(color: string | null, colorName?: string) {
+    if (!colorPicker || !courseId) return;
+    const { dateStr } = colorPicker;
+    const supabase = createClient();
+
+    if (colorPickerDayEvents.length === 0) {
+      const { data, error } = await supabase
+        .from("calendar_events")
+        .insert({
+          course_id: courseId,
+          event_type: "special_event",
+          title: colorName ?? "Event",
+          start_date: dateStr,
+          end_date: dateStr,
+          color,
+        })
+        .select()
+        .single();
+      if (!error && data) {
+        setCalendarEvents((prev) => [...prev, data].sort((a, b) => a.start_date.localeCompare(b.start_date)));
+      }
+    } else if (colorPickerDayEvents.length === 1) {
+      const target = colorPickerDayEvents[0];
+      const { data, error } = await supabase.from("calendar_events").update({ color }).eq("id", target.id).select().single();
+      if (!error && data) {
+        setCalendarEvents((prev) => prev.map((e) => (e.id === data.id ? data : e)));
+      }
+    }
+    setColorPicker(null);
   }
 
   function shiftMonth(delta: number) {
@@ -665,6 +731,33 @@ export default function TaskStatusPage() {
                 className="px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm"
               />
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Color</label>
+              <div className="flex items-center gap-1.5 h-[38px]">
+                <button
+                  type="button"
+                  onClick={() => setEventForm({ ...eventForm, color: null })}
+                  title="No color"
+                  aria-label="No color"
+                  className={`w-6 h-6 rounded-full border-[1.5px] flex items-center justify-center text-mist text-xs ${
+                    eventForm.color === null ? "border-ink" : "border-rule"
+                  }`}
+                >
+                  ✕
+                </button>
+                {EVENT_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setEventForm({ ...eventForm, color: c.value })}
+                    title={c.name}
+                    aria-label={c.name}
+                    className={`w-6 h-6 rounded-full border-[1.5px] ${eventForm.color === c.value ? "border-ink" : "border-rule"}`}
+                    style={{ backgroundColor: c.value }}
+                  />
+                ))}
+              </div>
+            </div>
             <button
               type="submit"
               disabled={eventSaving}
@@ -688,10 +781,10 @@ export default function TaskStatusPage() {
                     <span className="text-mist font-mono w-32 shrink-0">
                       {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
                     </span>
-                    {emp && (
+                    {(emp || e.color) && (
                       <span
                         className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
+                        style={{ backgroundColor: e.color ?? emp?.color ?? "#3b5bdb" }}
                       />
                     )}
                     <span className="flex-1 text-ink font-medium">
@@ -722,7 +815,48 @@ export default function TaskStatusPage() {
         employees={employees}
         onPrevMonth={() => shiftMonth(-1)}
         onNextMonth={() => shiftMonth(1)}
+        onDayContextMenu={isManager ? handleDayRightClick : undefined}
       />
+
+      {colorPicker && (
+        <div
+          ref={colorPickerRef}
+          className="fixed z-50 bg-white border-[1.5px] border-rule rounded-lg shadow-lg p-3"
+          style={{ top: colorPicker.y, left: colorPicker.x }}
+        >
+          {colorPickerDayEvents.length > 1 ? (
+            <div className="text-xs text-mist max-w-[180px]">
+              This day has multiple entries — edit them in the list above.
+            </div>
+          ) : (
+            <>
+              <div className="text-[10px] font-mono uppercase tracking-widest text-mist mb-2">
+                {colorPickerDayEvents.length === 1 ? "Recolor this day" : "Color this day"}
+              </div>
+              <div className="flex items-center gap-1.5 mb-2">
+                {EVENT_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    onClick={() => handleQuickSetColor(c.value, c.name)}
+                    title={c.name}
+                    aria-label={c.name}
+                    className="w-6 h-6 rounded-full border-[1.5px] border-rule hover:scale-110 transition-transform"
+                    style={{ backgroundColor: c.value }}
+                  />
+                ))}
+              </div>
+              {colorPickerDayEvents.length === 1 && colorPickerDayEvents[0].color && (
+                <button
+                  onClick={() => handleQuickSetColor(null)}
+                  className="text-xs text-mist font-semibold hover:text-red"
+                >
+                  Clear color
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {completingTask && (
         <TaskCompleteModal

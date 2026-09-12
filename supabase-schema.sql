@@ -2118,3 +2118,15 @@ ALTER TABLE expenses ADD COLUMN IF NOT EXISTS employee_id UUID REFERENCES employ
 ALTER TABLE expenses DROP CONSTRAINT IF EXISTS expenses_source_check;
 ALTER TABLE expenses ADD CONSTRAINT expenses_source_check
   CHECK (source IN ('manual', 'task_labor', 'task_materials', 'application_fertilizer', 'application_pest', 'non_billable_labor'));
+
+-- ============================================
+-- CALENDAR EVENT COLOR TAGGING
+-- ============================================
+-- Lets an owner/superintendent right-click a day on the Live Status
+-- Calendar and tag it with a color (e.g. Robert's Red Team / Blue Team
+-- weekend rotation, or a one-off special-project highlight). Optional —
+-- existing events with no color fall back to the calendar's existing
+-- fixed amber/employee-color scheme. No RLS change needed; the existing
+-- owner/superintendent-only INSERT/UPDATE policies already cover writes
+-- to this column.
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS color TEXT;

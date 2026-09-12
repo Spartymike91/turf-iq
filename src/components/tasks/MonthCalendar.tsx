@@ -5,7 +5,21 @@ export interface CalendarEvent {
   title: string;
   start_date: string;
   end_date: string;
+  color: string | null;
 }
+
+// Small fixed palette for the right-click day-color tagger and the full
+// add/edit form's color swatch row — not user-customizable, deliberately
+// simple (Robert's Red Team / Blue Team weekend rotation, or a one-off
+// highlight, not a full color wheel).
+export const EVENT_COLORS: { name: string; value: string }[] = [
+  { name: "Red", value: "#dc2626" },
+  { name: "Blue", value: "#2563eb" },
+  { name: "Yellow", value: "#ca8a04" },
+  { name: "Green", value: "#16a34a" },
+  { name: "Purple", value: "#7c3aed" },
+  { name: "Orange", value: "#ea580c" },
+];
 
 interface EmployeeRef {
   id: string;
@@ -32,6 +46,7 @@ export default function MonthCalendar({
   employees,
   onPrevMonth,
   onNextMonth,
+  onDayContextMenu,
 }: {
   year: number;
   month: number; // 0-11
@@ -39,6 +54,7 @@ export default function MonthCalendar({
   employees: EmployeeRef[];
   onPrevMonth: () => void;
   onNextMonth: () => void;
+  onDayContextMenu?: (dateStr: string, x: number, y: number) => void;
 }) {
   const firstOfMonth = new Date(year, month, 1);
   const firstWeekday = firstOfMonth.getDay();
@@ -87,12 +103,22 @@ export default function MonthCalendar({
           const dateStr = toDateStr(d);
           const inMonth = d.getMonth() === month;
           const dayEvents = eventsForDate(dateStr);
+          const dayColor = dayEvents.find((e) => e.color)?.color ?? null;
           return (
             <div
               key={i}
+              onContextMenu={
+                onDayContextMenu
+                  ? (ev) => {
+                      ev.preventDefault();
+                      onDayContextMenu(dateStr, ev.clientX, ev.clientY);
+                    }
+                  : undefined
+              }
               className={`min-h-[72px] border-b border-r border-rule last:border-r-0 p-1 flex flex-col gap-0.5 ${
-                inMonth ? "bg-white" : "bg-chalk"
+                dayColor ? "" : inMonth ? "bg-white" : "bg-chalk"
               }`}
+              style={dayColor ? { backgroundColor: `${dayColor}14` } : undefined}
             >
               <div
                 className={`text-[10px] font-mono ${
@@ -107,7 +133,16 @@ export default function MonthCalendar({
               </div>
               {dayEvents.map((e) => {
                 if (e.event_type === "special_event") {
-                  return (
+                  return e.color ? (
+                    <div
+                      key={e.id}
+                      title={e.title}
+                      className="text-[9px] leading-tight px-1 py-0.5 rounded truncate"
+                      style={{ backgroundColor: `${e.color}22`, color: e.color, borderLeft: `2px solid ${e.color}` }}
+                    >
+                      {e.title}
+                    </div>
+                  ) : (
                     <div
                       key={e.id}
                       title={e.title}
@@ -118,7 +153,7 @@ export default function MonthCalendar({
                   );
                 }
                 const emp = employeeFor(e.employee_id);
-                const color = emp?.color ?? "#3b5bdb";
+                const color = e.color ?? emp?.color ?? "#3b5bdb";
                 return (
                   <div
                     key={e.id}
