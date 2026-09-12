@@ -781,10 +781,10 @@ export default function TaskStatusPage() {
                     <span className="text-mist font-mono w-32 shrink-0">
                       {e.start_date === e.end_date ? e.start_date : `${e.start_date} — ${e.end_date}`}
                     </span>
-                    {(emp || e.color) && (
+                    {emp && (
                       <span
                         className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: e.color ?? emp?.color ?? "#3b5bdb" }}
+                        style={{ backgroundColor: emp.color ?? "#3b5bdb" }}
                       />
                     )}
                     <span className="flex-1 text-ink font-medium">

@@ -104,6 +104,12 @@ export default function MonthCalendar({
           const inMonth = d.getMonth() === month;
           const dayEvents = eventsForDate(dateStr);
           const dayColor = dayEvents.find((e) => e.color)?.color ?? null;
+          // Colored events are a pure visual tag (Red Team / Blue Team, a
+          // highlighted special-project day) — the cell wash is the whole
+          // point, so their title doesn't also get its own in-cell badge.
+          // Still surfaced on hover via this title attribute, and always
+          // visible in the entries list below.
+          const coloredTitles = dayEvents.filter((e) => e.color).map((e) => e.title);
           return (
             <div
               key={i}
@@ -115,6 +121,7 @@ export default function MonthCalendar({
                     }
                   : undefined
               }
+              title={coloredTitles.length > 0 ? coloredTitles.join(", ") : undefined}
               className={`min-h-[72px] border-b border-r border-rule last:border-r-0 p-1 flex flex-col gap-0.5 ${
                 dayColor ? "" : inMonth ? "bg-white" : "bg-chalk"
               }`}
@@ -133,16 +140,8 @@ export default function MonthCalendar({
               </div>
               {dayEvents.map((e) => {
                 if (e.event_type === "special_event") {
-                  return e.color ? (
-                    <div
-                      key={e.id}
-                      title={e.title}
-                      className="text-[9px] leading-tight px-1 py-0.5 rounded truncate"
-                      style={{ backgroundColor: `${e.color}22`, color: e.color, borderLeft: `2px solid ${e.color}` }}
-                    >
-                      {e.title}
-                    </div>
-                  ) : (
+                  if (e.color) return null;
+                  return (
                     <div
                       key={e.id}
                       title={e.title}
