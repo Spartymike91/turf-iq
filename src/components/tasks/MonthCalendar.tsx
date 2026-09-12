@@ -6,6 +6,7 @@ export interface CalendarEvent {
   start_date: string;
   end_date: string;
   color: string | null;
+  is_quick_tag: boolean;
 }
 
 // Small fixed palette for the right-click day-color tagger and the full

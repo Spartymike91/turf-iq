@@ -2130,3 +2130,11 @@ ALTER TABLE expenses ADD CONSTRAINT expenses_source_check
 -- owner/superintendent-only INSERT/UPDATE policies already cover writes
 -- to this column.
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS color TEXT;
+
+-- A right-click quick-tag (color with no real title/details) is meant to
+-- be lightweight — it shouldn't clutter "This Month's Entries" alongside
+-- genuine special events and time off. is_quick_tag distinguishes the two
+-- so the entries list can filter quick tags out while the calendar grid
+-- (which reads every event regardless) still shows their color. Always
+-- false for anything created through the full Add/Edit form.
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS is_quick_tag BOOLEAN NOT NULL DEFAULT false;

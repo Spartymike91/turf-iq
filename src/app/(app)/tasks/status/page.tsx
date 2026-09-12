@@ -129,7 +129,7 @@ export default function TaskStatusPage() {
         supabase.from("course_members").select("id, role").eq("user_id", user.id).eq("course_id", context.courseId).maybeSingle(),
         supabase
           .from("calendar_events")
-          .select("id, employee_id, event_type, title, start_date, end_date, color")
+          .select("id, employee_id, event_type, title, start_date, end_date, color, is_quick_tag")
           .eq("course_id", context.courseId)
           .order("start_date", { ascending: true }),
         // At most one row per currently-clocked-in employee — cheap enough
@@ -333,6 +333,7 @@ export default function TaskStatusPage() {
           start_date: dateStr,
           end_date: dateStr,
           color,
+          is_quick_tag: true,
         })
         .select()
         .single();
@@ -341,9 +342,20 @@ export default function TaskStatusPage() {
       }
     } else if (colorPickerDayEvents.length === 1) {
       const target = colorPickerDayEvents[0];
-      const { data, error } = await supabase.from("calendar_events").update({ color }).eq("id", target.id).select().single();
-      if (!error && data) {
-        setCalendarEvents((prev) => prev.map((e) => (e.id === data.id ? data : e)));
+      // Clearing a quick tag's color leaves nothing worth keeping (no
+      // title, no details) — delete it outright rather than leaving an
+      // invisible, list-hidden husk of a row behind. A "real" event
+      // (made via the full form) keeps its color just nulled out.
+      if (target.is_quick_tag && color === null) {
+        const { error } = await supabase.from("calendar_events").delete().eq("id", target.id);
+        if (!error) {
+          setCalendarEvents((prev) => prev.filter((e) => e.id !== target.id));
+        }
+      } else {
+        const { data, error } = await supabase.from("calendar_events").update({ color }).eq("id", target.id).select().single();
+        if (!error && data) {
+          setCalendarEvents((prev) => prev.map((e) => (e.id === data.id ? data : e)));
+        }
       }
     }
     setColorPicker(null);
@@ -441,7 +453,10 @@ export default function TaskStatusPage() {
     const monthStart = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`;
     const monthEndDate = new Date(calendarYear, calendarMonth + 1, 0);
     const monthEnd = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(monthEndDate.getDate()).padStart(2, "0")}`;
-    return calendarEvents.filter((e) => e.start_date <= monthEnd && e.end_date >= monthStart);
+    // Quick color-tags (right-click, no real details) stay off this list —
+    // the whole point is a fast, disposable marker, not another row to
+    // manage alongside genuine special events and time off.
+    return calendarEvents.filter((e) => !e.is_quick_tag && e.start_date <= monthEnd && e.end_date >= monthStart);
   }, [calendarEvents, calendarYear, calendarMonth]);
 
   if (checking) {
