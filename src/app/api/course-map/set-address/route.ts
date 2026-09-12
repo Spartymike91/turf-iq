@@ -10,6 +10,36 @@ import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const USER_AGENT = "TurfIQ/1.0 (https://turfiq.club; contact: mikeconley7@gmail.com)";
 
+async function nominatimSearch(q: string): Promise<{ lat: string; lon: string } | null> {
+  const res = await fetch(`${NOMINATIM_URL}?format=json&limit=1&q=${encodeURIComponent(q)}`, {
+    headers: { "User-Agent": USER_AGENT },
+  });
+  if (!res.ok) return null;
+  const results = (await res.json()) as Array<{ lat: string; lon: string }>;
+  return results[0] ?? null;
+}
+
+// Nominatim's US coverage frequently has the "mailing city" (what USPS puts
+// on the ZIP, and what everyone actually types) diverge from the locality
+// OSM's place hierarchy has the street tagged under — common for
+// unincorporated communities that share a nearby city's ZIP code. When that
+// happens the full "street, city, state zip" string returns zero matches
+// even though the street resolves fine on its own. Retrying with just the
+// first (street) and last (state/zip) comma-separated segments — dropping
+// whatever's in between — reliably works around it, verified against a
+// real address that hit exactly this case (Bucknell Drive, Knoxville TN,
+// actually tagged under "Halls Crossroads" in OSM).
+async function geocodeAddress(address: string): Promise<{ lat: string; lon: string } | null> {
+  const direct = await nominatimSearch(address);
+  if (direct) return direct;
+
+  const segments = address.split(",").map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 3) return null;
+
+  await new Promise((resolve) => setTimeout(resolve, 1000)); // stay under Nominatim's 1 req/sec
+  return nominatimSearch(`${segments[0]}, ${segments[segments.length - 1]}`);
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -40,14 +70,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "address is required." }, { status: 400 });
   }
 
-  const geoRes = await fetch(`${NOMINATIM_URL}?format=json&limit=1&q=${encodeURIComponent(address)}`, {
-    headers: { "User-Agent": USER_AGENT },
-  });
-  if (!geoRes.ok) {
+  let match: { lat: string; lon: string } | null;
+  try {
+    match = await geocodeAddress(address);
+  } catch {
     return NextResponse.json({ error: "Geocoding service unavailable — try again shortly." }, { status: 502 });
   }
-  const results = (await geoRes.json()) as Array<{ lat: string; lon: string }>;
-  const match = results[0];
   if (!match) {
     return NextResponse.json({ error: "Couldn't find that address — try adding city and state." }, { status: 422 });
   }
