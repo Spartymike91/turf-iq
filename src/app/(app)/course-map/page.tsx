@@ -335,7 +335,13 @@ export default function CourseMapPage() {
       {popup && (
         <div
           ref={popupRef}
-          className="fixed z-50 bg-white border-[1.5px] border-rule rounded-lg shadow-lg p-3 w-64"
+          // Leaflet's own panes/controls use z-index up to 1000 internally
+          // (its zoom buttons and attribution sit at 1000) — z-50 was only
+          // ever safely above the rest of this app's UI, not above a
+          // Leaflet map. Once the popup could legitimately land anywhere
+          // over the map (after the vertical clamp fix), it needed a
+          // z-index clearly above Leaflet's own maximum to always win.
+          className="fixed z-[1500] bg-white border-[1.5px] border-rule rounded-lg shadow-lg p-3 w-64"
           style={{ top: popupTop, left: popupLeft }}
         >
           {popup.mode === "add" || editingNoteId ? (
