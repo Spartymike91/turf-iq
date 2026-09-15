@@ -97,7 +97,24 @@ export default function ChatNotificationsToggle() {
     }
   }
 
-  if (status === "unsupported") return null;
+  if (status === "unsupported") {
+    // On iPhone, Safari doesn't expose PushManager at all in a plain
+    // browser tab — only after the site's been added to the Home Screen at
+    // least once. Silently rendering nothing left an iOS user with zero
+    // clue why the button was missing (the "Add to Home Screen" hint below
+    // only ever fires for the off/denied states, which this device can
+    // never reach if PushManager isn't there to begin with). Everyone else
+    // genuinely unsupported (a desktop browser without Push, mainly) still
+    // gets nothing, same as before.
+    if (isIosNonStandalone()) {
+      return (
+        <div className="text-[11px] text-mist max-w-[220px] text-right">
+          On iPhone, add this site to your Home Screen first (Share → Add to Home Screen) for notifications to work.
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="flex flex-col items-end gap-1">
