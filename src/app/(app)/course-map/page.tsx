@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
@@ -28,6 +29,9 @@ type Popup =
   | { mode: "view"; noteId: string; x: number; y: number };
 
 export default function CourseMapPage() {
+  // Temporary, opt-in (?debug=1) on-screen event log passed down to
+  // CourseMapView — see the note on its `debug` prop for why this exists.
+  const debug = useSearchParams().get("debug") === "1";
   const [checking, setChecking] = useState(true);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<string | null>(null);
@@ -297,7 +301,14 @@ export default function CourseMapPage() {
       </div>
 
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden h-[520px] mb-4">
-        <CourseMapView center={center} notes={notes} canAdd={isManager} onMapClick={handleMapClick} onMarkerClick={handleMarkerClick} />
+        <CourseMapView
+          center={center}
+          notes={notes}
+          canAdd={isManager}
+          onMapClick={handleMapClick}
+          onMarkerClick={handleMarkerClick}
+          debug={debug}
+        />
       </div>
 
       {notes.length > 0 && (

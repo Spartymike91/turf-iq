@@ -48,12 +48,19 @@ export default function CourseMapView({
   canAdd,
   onMapClick,
   onMarkerClick,
+  debug,
 }: {
   center: { lat: number; lng: number };
   notes: CourseMapNote[];
   canAdd: boolean;
   onMapClick?: (lat: number, lng: number, clientX: number, clientY: number) => void;
   onMarkerClick: (noteId: string, clientX: number, clientY: number) => void;
+  // Temporary, opt-in (?debug=1) on-screen event log — added specifically
+  // to diagnose a real-iPhone-only "tap does nothing" report that
+  // couldn't be reproduced with any available testing tool (desktop
+  // Chrome, mobile viewport emulation). Safe to delete once that's
+  // resolved; nothing here runs unless debug is explicitly true.
+  debug?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LType.Map | undefined>(undefined);
@@ -62,6 +69,13 @@ export default function CourseMapView({
   const onMarkerClickRef = useRef(onMarkerClick);
   const canAddRef = useRef(canAdd);
   const [mapReady, setMapReady] = useState(false);
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+
+  function logDebug(msg: string) {
+    if (!debug) return;
+    const line = `${new Date().toLocaleTimeString("en-US", { hour12: false })} ${msg}`;
+    setDebugLog((prev) => [...prev.slice(-24), line]);
+  }
 
   useEffect(() => {
     onMapClickRef.current = onMapClick;
@@ -102,13 +116,33 @@ export default function CourseMapView({
 
       markersLayerRef.current = L.layerGroup().addTo(map);
 
+      // Raw DOM listeners, independent of Leaflet's own click handling —
+      // these fire (or don't) regardless of whether Leaflet successfully
+      // turns a touch into a synthesized click, which is exactly the
+      // ambiguity this debug mode exists to resolve.
+      if (debug && containerRef.current) {
+        const el = containerRef.current;
+        el.addEventListener("touchstart", (e) => logDebug(`touchstart (${e.touches.length} touch)`));
+        el.addEventListener("touchend", (e) => logDebug(`touchend (${e.changedTouches.length} touch)`));
+        el.addEventListener("touchcancel", () => logDebug("touchcancel"));
+        el.addEventListener("click", (e) => logDebug(`native click @ ${Math.round(e.clientX)},${Math.round(e.clientY)}`));
+      }
+
       map.on("click", (e: LType.LeafletMouseEvent) => {
+        logDebug(`leaflet click canAdd=${canAddRef.current} lat=${e.latlng.lat.toFixed(5)} lng=${e.latlng.lng.toFixed(5)}`);
         if (!canAddRef.current || !onMapClickRef.current) return;
         const screenPoint = screenPointFor(e.latlng);
-        if (!screenPoint) return;
+        if (!screenPoint) {
+          logDebug("screenPointFor returned null");
+          return;
+        }
+        logDebug(`opening popup @ ${Math.round(screenPoint.x)},${Math.round(screenPoint.y)}`);
         onMapClickRef.current(e.latlng.lat, e.latlng.lng, screenPoint.x, screenPoint.y);
       });
 
+      logDebug(
+        `map ready — touch=${"ontouchstart" in window} maxTouchPoints=${navigator.maxTouchPoints} viewport=${window.innerWidth}x${window.innerHeight}`
+      );
       setMapReady(true);
     });
 
@@ -132,6 +166,7 @@ export default function CourseMapView({
       notes.forEach((n) => {
         const marker = L.marker([n.lat, n.lng], { icon: createDotIcon(L, categoryColor(n.category)) });
         marker.on("click", (e: LType.LeafletMouseEvent) => {
+          logDebug(`marker click ${n.id}`);
           L.DomEvent.stopPropagation(e);
           const screenPoint = screenPointFor(e.latlng);
           if (!screenPoint) return;
@@ -142,5 +177,20 @@ export default function CourseMapView({
     });
   }, [notes, mapReady]);
 
-  return <div ref={containerRef} className={`w-full h-full rounded-[10px] ${canAdd ? "cursor-crosshair" : ""}`} />;
+  return (
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className={`w-full h-full rounded-[10px] ${canAdd ? "cursor-crosshair" : ""}`} />
+      {debug && (
+        <div className="absolute inset-x-0 bottom-0 z-[2000] max-h-[45%] overflow-y-auto bg-black/85 text-white text-[10px] font-mono p-2 leading-tight">
+          <div className="text-green-300 mb-1">
+            UA: {typeof navigator !== "undefined" ? navigator.userAgent : ""}
+          </div>
+          {debugLog.length === 0 && <div>waiting for events…</div>}
+          {debugLog.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
