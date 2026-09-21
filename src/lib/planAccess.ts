@@ -16,6 +16,8 @@ const ROUTE_TIER: { prefix: string; requiredTier: PlanTier }[] = [
   { prefix: "/labor", requiredTier: "complete" },
   { prefix: "/tasks", requiredTier: "complete" },
   { prefix: "/team", requiredTier: "complete" },
+  { prefix: "/chat", requiredTier: "complete" },
+  { prefix: "/course-map", requiredTier: "complete" },
 ];
 
 export function getRequiredTier(pathname: string): PlanTier | null {
@@ -31,6 +33,8 @@ export const MODULE_LABEL: Record<string, { icon: string; label: string }> = {
   "/labor": { icon: "👷", label: "Labor & Staffing" },
   "/tasks": { icon: "📋", label: "Task Management" },
   "/team": { icon: "👥", label: "Team & Roles" },
+  "/chat": { icon: "💬", label: "Team Chat" },
+  "/course-map": { icon: "🗺", label: "Course Map" },
 };
 
 export function getModuleLabel(pathname: string): { icon: string; label: string } | null {
