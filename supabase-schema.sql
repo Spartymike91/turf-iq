@@ -2190,3 +2190,26 @@ CREATE POLICY "Owners and supers can delete course map notes"
   ON course_map_notes FOR DELETE USING (
     EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent'))
   );
+
+-- Assistants can also drop/manage pins — same three write policies as
+-- above, just with 'assistant' added to the role list. Policy names kept
+-- identical (DROP + CREATE replaces the old body in place) rather than
+-- adding new policies, so there's only ever one write rule per action to
+-- reason about. Course address setup (set-address/route.ts) intentionally
+-- NOT extended to assistants — that's a one-time admin task, not the
+-- day-to-day pin-dropping this was asked for.
+DROP POLICY IF EXISTS "Owners and supers can insert course map notes" ON course_map_notes;
+CREATE POLICY "Owners and supers can insert course map notes"
+  ON course_map_notes FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can update course map notes" ON course_map_notes;
+CREATE POLICY "Owners and supers can update course map notes"
+  ON course_map_notes FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
+  );
+DROP POLICY IF EXISTS "Owners and supers can delete course map notes" ON course_map_notes;
+CREATE POLICY "Owners and supers can delete course map notes"
+  ON course_map_notes FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
+  );

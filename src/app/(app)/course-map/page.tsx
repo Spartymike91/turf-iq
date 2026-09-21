@@ -53,7 +53,7 @@ export default function CourseMapPage() {
   const [noteError, setNoteError] = useState<string | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
-  const isManager = myRole === "owner" || myRole === "superintendent";
+  const isManager = myRole === "owner" || myRole === "superintendent" || myRole === "assistant";
 
   useEffect(() => {
     async function load() {
