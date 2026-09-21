@@ -1,0 +1,12 @@
+{
+  "name": "Turf IQ — Golf Course Management",
+  "short_name": "Turf IQ",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f8f9f4",
+  "theme_color": "#1a3a2a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
