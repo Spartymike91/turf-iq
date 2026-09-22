@@ -13,9 +13,13 @@ const ROUTE_TIER: { prefix: string; requiredTier: PlanTier }[] = [
   { prefix: "/equipment", requiredTier: "superintendent" },
   { prefix: "/budget", requiredTier: "superintendent" },
   { prefix: "/inventory", requiredTier: "superintendent" },
+  // Team & Roles is the only way to invite anyone — Superintendent's plan
+  // copy promises "up to 3 team members," which was unreachable while this
+  // required Complete. Agronomist stays without it: that tier is capped at
+  // 1 member (the owner), so there's no one to invite yet.
+  { prefix: "/team", requiredTier: "superintendent" },
   { prefix: "/labor", requiredTier: "complete" },
   { prefix: "/tasks", requiredTier: "complete" },
-  { prefix: "/team", requiredTier: "complete" },
   { prefix: "/chat", requiredTier: "complete" },
   { prefix: "/course-map", requiredTier: "complete" },
 ];
