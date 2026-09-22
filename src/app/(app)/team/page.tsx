@@ -4,9 +4,9 @@ import { useState, useEffect, useMemo, Fragment } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
-import { ALL_MODULES, SUB_MODULES, ALL_MODULE_SLUGS } from "@/lib/planAccess";
+import { ALL_MODULES, SUB_MODULES, ALL_MODULE_SLUGS, getRequiredTier, hasModuleAccess } from "@/lib/planAccess";
 import { type Role, ALL_ROLES, JUNIOR_ROLES, ROLE_LABEL } from "@/lib/roles";
-import { PLAN_DISPLAY, PLAN_MEMBER_LIMIT, isPlanTier } from "@/lib/billing";
+import { PLAN_DISPLAY, PLAN_MEMBER_LIMIT, isPlanTier, type PlanTier } from "@/lib/billing";
 
 interface Member {
   id: string;
@@ -16,6 +16,65 @@ interface Member {
   full_name: string | null;
   allowed_modules: string[] | null;
   title: string | null;
+}
+
+// Shared by the invite form and the edit-access panel — a module the
+// course's own plan can't reach (AppShell's tier-lock wins regardless of
+// what's checked here) shows greyed out and disabled rather than a live
+// checkbox, since checking it used to silently promise access that was
+// never actually deliverable.
+function ModuleChecklist({
+  allowedModules,
+  onToggle,
+  planTier,
+}: {
+  allowedModules: string[];
+  onToggle: (slug: string) => void;
+  planTier: PlanTier | null;
+}) {
+  const modules = [...ALL_MODULES, ...SUB_MODULES];
+  const lockedTiers = new Set<PlanTier>();
+  for (const m of modules) {
+    const required = getRequiredTier(m.href);
+    if (required && !hasModuleAccess(planTier, m.href)) lockedTiers.add(required);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {modules.map((m) => {
+          const required = getRequiredTier(m.href);
+          const locked = !!required && !hasModuleAccess(planTier, m.href);
+          return (
+            <label
+              key={m.slug}
+              className={`flex items-center gap-1.5 text-xs select-none ${locked ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+            >
+              <input
+                type="checkbox"
+                checked={allowedModules.includes(m.slug)}
+                onChange={() => onToggle(m.slug)}
+                disabled={locked}
+              />
+              <span>
+                {m.icon} {m.label}
+              </span>
+              {locked && required && <span className="text-mist">({PLAN_DISPLAY[required].name}+)</span>}
+            </label>
+          );
+        })}
+      </div>
+      {lockedTiers.size > 0 && (
+        <div className="text-[11px] text-mist">
+          Greyed-out tabs aren&apos;t included in your current plan.{" "}
+          <a href="/course" className="text-green-mid font-semibold hover:text-green-dark">
+            Upgrade
+          </a>{" "}
+          to unlock them for new invites.
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function TeamPage() {
@@ -113,9 +172,10 @@ export default function TeamPage() {
 
   const canManage = isAdminView || myRole === "owner" || myRole === "superintendent";
   const assignableRoles = isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES;
-  // null = no plan on file (unrestricted, e.g. Robert's course) or an
-  // unlimited tier — either way, nothing to show a ceiling against.
-  const memberLimit = isPlanTier(planTier) ? PLAN_MEMBER_LIMIT[planTier] : null;
+  // null = no plan on file (unrestricted, e.g. Robert's course) — shared by
+  // the member-limit calc below and the module checklists' lock state.
+  const planTierTyped: PlanTier | null = isPlanTier(planTier) ? planTier : null;
+  const memberLimit = planTierTyped ? PLAN_MEMBER_LIMIT[planTierTyped] : null;
   const atMemberLimit = memberLimit !== null && members.length >= memberLimit;
 
   function canManageRow(m: Member) {
@@ -403,18 +463,7 @@ export default function TeamPage() {
                 <label className="text-[11px] font-semibold uppercase tracking-wide">
                   Visible Tabs <span className="text-mist font-normal normal-case">— unchecked tabs won&apos;t show for this person</span>
                 </label>
-                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                  {[...ALL_MODULES, ...SUB_MODULES].map((m) => (
-                    <label key={m.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={inviteAllowedModules.includes(m.slug)}
-                        onChange={() => toggleInviteModule(m.slug)}
-                      />
-                      <span>{m.icon} {m.label}</span>
-                    </label>
-                  ))}
-                </div>
+                <ModuleChecklist allowedModules={inviteAllowedModules} onToggle={toggleInviteModule} planTier={planTierTyped} />
               </div>
             )}
           </form>
@@ -513,18 +562,11 @@ export default function TeamPage() {
                               <div className="text-[11px] font-semibold uppercase tracking-wide text-mist">
                                 Visible tabs
                               </div>
-                              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                                {[...ALL_MODULES, ...SUB_MODULES].map((mod) => (
-                                  <label key={mod.slug} className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={editAccessModules.includes(mod.slug)}
-                                      onChange={() => toggleEditAccessModule(mod.slug)}
-                                    />
-                                    <span>{mod.icon} {mod.label}</span>
-                                  </label>
-                                ))}
-                              </div>
+                              <ModuleChecklist
+                                allowedModules={editAccessModules}
+                                onToggle={toggleEditAccessModule}
+                                planTier={planTierTyped}
+                              />
                             </div>
                           )}
                           <div>
