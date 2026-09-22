@@ -121,14 +121,16 @@ export default function AppHeader({
     setChatHasUnread(false);
   }
 
-  // Route changes close the mobile menu — it's a Link, not a full reload, so
-  // AppHeader stays mounted and the menu would otherwise stay open over the
-  // new page. Reset during render (React's documented pattern for this)
-  // rather than in an effect, to avoid an extra post-navigation render.
+  // Route changes close the mobile menu and account/course-switcher dropdown
+  // — Links are client-side nav, not a full reload, so AppHeader stays
+  // mounted and either menu would otherwise stay open over the new page.
+  // Reset during render (React's documented pattern for this) rather than
+  // in an effect, to avoid an extra post-navigation render.
   const [lastPathname, setLastPathname] = useState(pathname);
   if (pathname !== lastPathname) {
     setLastPathname(pathname);
     setMobileMenuOpen(false);
+    setAccountMenuOpen(false);
   }
 
   async function handleLogout() {
