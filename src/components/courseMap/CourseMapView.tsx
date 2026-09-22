@@ -106,7 +106,12 @@ export default function CourseMapView({
     import("leaflet").then((L) => {
       if (cancelled || !containerRef.current) return;
 
-      const map = L.map(containerRef.current, { center: [center.lat, center.lng], zoom: 17 });
+      // scrollWheelZoom: false matches RadarMap.tsx/SoilTempMap.tsx — without
+      // it, scrolling with the cursor anywhere over the map (which is most of
+      // the viewport) zooms the map instead of scrolling the page past it, so
+      // the notes list below becomes unreachable by the most natural scroll
+      // gesture. The +/- buttons remain for zooming.
+      const map = L.map(containerRef.current, { center: [center.lat, center.lng], zoom: 17, scrollWheelZoom: false });
       mapRef.current = map;
 
       L.tileLayer(
