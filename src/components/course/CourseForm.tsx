@@ -16,6 +16,21 @@ import {
   type GrassTypeArea,
 } from "@/lib/grassTypes";
 
+// courses.address is stored with city/state baked in (see ensureCityState
+// in set-address/route.ts) — the right shape for the Course Map page's
+// heading, which is the only field it has. But this form has its own City
+// and State inputs right below Street Address, so showing the same city/
+// state twice there reads as a bug. Strips a trailing ", City, State[,
+// ZIP]" for display/editing here only — the stored value (and the Course
+// Map heading) are untouched. Falls back to the full string when it
+// doesn't match, which is never worse than showing it unstripped.
+function stripCityState(address: string, city: string, state: string): string {
+  if (!city && !state) return address;
+  const escaped = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`,\\s*${escaped(city)}\\s*,\\s*${escaped(state)}(\\s+\\d{5}(-\\d{4})?)?\\s*$`, "i");
+  return address.replace(pattern, "").trim();
+}
+
 // Shared by /course (edit whichever course is currently selected) and
 // /course/new (always a blank creation form, for an owner adding an
 // additional course). forceCreate skips the "do I already have a course"
@@ -108,12 +123,15 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
 
       if (course) {
         const c = course as unknown as Record<string, unknown>;
+        const fetchedCity = (c.city as string) || "";
+        const fetchedState = (c.state as string) || "";
+        const streetAddress = stripCityState((c.address as string) || "", fetchedCity, fetchedState);
         setExistingCourse({
           id: c.id as string,
           name: c.name as string,
-          address: (c.address as string) || "",
-          city: (c.city as string) || "",
-          state: (c.state as string) || "",
+          address: streetAddress,
+          city: fetchedCity,
+          state: fetchedState,
           grass_type: (c.grass_type as string) || "",
           grass_type_greens: (c.grass_type_greens as string[]) || [],
           grass_type_tees: (c.grass_type_tees as string[]) || [],
@@ -128,9 +146,9 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           billing_waived_until: (c.billing_waived_until as string) || null,
         });
         setName(c.name as string);
-        setAddress((c.address as string) || "");
-        setCity((c.city as string) || "");
-        setState((c.state as string) || "");
+        setAddress(streetAddress);
+        setCity(fetchedCity);
+        setState(fetchedState);
         const legacy = (c.grass_type as string) || "";
         setGrassTypes({
           greens: resolveGrassTypes(c.grass_type_greens as string[], legacy),
