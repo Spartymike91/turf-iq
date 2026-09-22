@@ -141,7 +141,12 @@ export default function MonthCalendar({
               </div>
               {dayEvents.map((e) => {
                 if (e.event_type === "special_event") {
-                  if (e.color) return null;
+                  // Only a bare right-click color tag (a meaningless "Red"/
+                  // "Blue" placeholder title) skips the label — a real event
+                  // made via the full form still shows its title even if it
+                  // also happens to have a color (e.g. recolored in place by
+                  // right-clicking a day that had exactly one event on it).
+                  if (e.color && e.is_quick_tag) return null;
                   return (
                     <div
                       key={e.id}
