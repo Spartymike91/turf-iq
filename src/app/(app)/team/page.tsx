@@ -6,6 +6,7 @@ import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import StatChip from "@/components/ui/StatChip";
 import { ALL_MODULES, SUB_MODULES, ALL_MODULE_SLUGS } from "@/lib/planAccess";
 import { type Role, ALL_ROLES, JUNIOR_ROLES, ROLE_LABEL } from "@/lib/roles";
+import { PLAN_DISPLAY, PLAN_MEMBER_LIMIT, isPlanTier } from "@/lib/billing";
 
 interface Member {
   id: string;
@@ -20,6 +21,7 @@ interface Member {
 export default function TeamPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [courseName, setCourseName] = useState("");
+  const [planTier, setPlanTier] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [myRole, setMyRole] = useState<Role | null>(null);
   const [isAdminView, setIsAdminView] = useState(false);
@@ -68,7 +70,7 @@ export default function TeamPage() {
       // These three only depend on context.courseId/user.id, not on each
       // other — fetch concurrently.
       const [{ data: course }, membershipResult, { data: memberRows }] = await Promise.all([
-        supabase.from("courses").select("name").eq("id", context.courseId).single(),
+        supabase.from("courses").select("name, plan_tier").eq("id", context.courseId).single(),
         context.isAdminView
           ? Promise.resolve({ data: null as { role: string } | null })
           : supabase
@@ -80,6 +82,7 @@ export default function TeamPage() {
         supabase.from("course_members").select("id, user_id, role, allowed_modules, title").eq("course_id", context.courseId),
       ]);
       setCourseName(course?.name ?? "");
+      setPlanTier(course?.plan_tier ?? null);
       if (!context.isAdminView) {
         setMyRole((membershipResult.data?.role as Role) ?? null);
       }
@@ -110,6 +113,10 @@ export default function TeamPage() {
 
   const canManage = isAdminView || myRole === "owner" || myRole === "superintendent";
   const assignableRoles = isAdminView || myRole === "owner" ? ALL_ROLES : JUNIOR_ROLES;
+  // null = no plan on file (unrestricted, e.g. Robert's course) or an
+  // unlimited tier — either way, nothing to show a ceiling against.
+  const memberLimit = isPlanTier(planTier) ? PLAN_MEMBER_LIMIT[planTier] : null;
+  const atMemberLimit = memberLimit !== null && members.length >= memberLimit;
 
   function canManageRow(m: Member) {
     if (isAdminView || myRole === "owner") return true;
@@ -269,12 +276,35 @@ export default function TeamPage() {
         <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Team</div>
         <div className="font-serif text-2xl text-green-dark">Course Team</div>
         <div className="text-[13px] text-mist mt-1">
-          {courseName} · {members.length} member{members.length === 1 ? "" : "s"}
+          {courseName} ·{" "}
+          {memberLimit !== null ? (
+            <>
+              {members.length} of {memberLimit} member{memberLimit === 1 ? "" : "s"}
+              {atMemberLimit && isPlanTier(planTier) && (
+                <>
+                  {" "}
+                  —{" "}
+                  <a href="/course" className="text-green-mid font-semibold hover:text-green-dark">
+                    upgrade from {PLAN_DISPLAY[planTier].name} for more
+                  </a>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {members.length} member{members.length === 1 ? "" : "s"}
+            </>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatChip label="Total Members" value={String(members.length)} tag="Roster" tagColor="ok" />
+        <StatChip
+          label="Total Members"
+          value={memberLimit !== null ? `${members.length}/${memberLimit}` : String(members.length)}
+          tag="Roster"
+          tagColor={atMemberLimit ? "warn" : "ok"}
+        />
         <StatChip label="Owners" value={String(roleCounts.owner ?? 0)} valueColor="#3b5bdb" />
         <StatChip label="Superintendents" value={String(roleCounts.superintendent ?? 0)} />
         <StatChip

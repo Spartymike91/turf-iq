@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { sendEmail, inviteEmailHtml } from "@/lib/email";
 import { type Role, JUNIOR_ROLES } from "@/lib/roles";
+import { PLAN_DISPLAY, PLAN_MEMBER_LIMIT, isPlanTier } from "@/lib/billing";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -66,6 +67,30 @@ export async function POST(request: NextRequest) {
     }
   } else {
     return NextResponse.json({ error: "You don't have permission to invite members." }, { status: 403 });
+  }
+
+  // Plan-tier member cap. A course with no plan_tier on file (test/demo
+  // courses, or ones set up before billing existed) is unrestricted — same
+  // convention as hasModuleAccess in billing.ts, so this never affects a
+  // course like Robert's that isn't on a real plan.
+  const { data: courseRow } = await supabase.from("courses").select("plan_tier").eq("id", courseId).single();
+  const planTier = courseRow?.plan_tier;
+  if (isPlanTier(planTier)) {
+    const limit = PLAN_MEMBER_LIMIT[planTier];
+    if (limit !== null) {
+      const { count } = await supabase
+        .from("course_members")
+        .select("*", { count: "exact", head: true })
+        .eq("course_id", courseId);
+      if ((count ?? 0) >= limit) {
+        return NextResponse.json(
+          {
+            error: `Your ${PLAN_DISPLAY[planTier].name} plan is limited to ${limit} team member${limit === 1 ? "" : "s"}. Upgrade to add more.`,
+          },
+          { status: 403 }
+        );
+      }
+    }
   }
 
   let adminClient;

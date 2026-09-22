@@ -7,6 +7,15 @@ export const PLAN_DISPLAY: Record<PlanTier, { name: string; price: number }> = {
   complete: { name: "Complete", price: 599 },
 };
 
+// null = unlimited. Enforced in /api/team/invite — a course with no
+// plan_tier on file (test/demo courses, or ones set up before billing
+// existed) is unrestricted, same convention as hasModuleAccess below.
+export const PLAN_MEMBER_LIMIT: Record<PlanTier, number | null> = {
+  agronomist: 1,
+  superintendent: 3,
+  complete: null,
+};
+
 const TIER_PRICE_ENV: Record<PlanTier, string> = {
   agronomist: "STRIPE_PRICE_AGRONOMIST",
   superintendent: "STRIPE_PRICE_SUPERINTENDENT",
