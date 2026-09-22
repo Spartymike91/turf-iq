@@ -23,8 +23,10 @@ import {
 // regardless of what else the user already owns.
 export default function CourseForm({ forceCreate = false }: { forceCreate?: boolean }) {
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [addressError, setAddressError] = useState<string | null>(null);
   const [grassTypes, setGrassTypes] = useState<Record<GrassTypeArea, string[]>>({
     greens: [],
     tees: [],
@@ -38,6 +40,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
   const [existingCourse, setExistingCourse] = useState<{
     id: string;
     name: string;
+    address: string;
     city: string;
     state: string;
     grass_type: string;
@@ -108,6 +111,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
         setExistingCourse({
           id: c.id as string,
           name: c.name as string,
+          address: (c.address as string) || "",
           city: (c.city as string) || "",
           state: (c.state as string) || "",
           grass_type: (c.grass_type as string) || "",
@@ -124,6 +128,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           billing_waived_until: (c.billing_waived_until as string) || null,
         });
         setName(c.name as string);
+        setAddress((c.address as string) || "");
         setCity((c.city as string) || "");
         setState((c.state as string) || "");
         const legacy = (c.grass_type as string) || "";
@@ -142,9 +147,31 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     check();
   }, [forceCreate]);
 
+  // Geocodes and saves the street address via the same endpoint the Course
+  // Map page uses (ensureCityState + isPlausibleForCityState safety checks)
+  // rather than writing courses.address directly — that route is the only
+  // place in the app that knows how to turn an address into a trustworthy
+  // lat/lng. Returns the error message on failure, or null on success/skip.
+  async function saveAddress(): Promise<string | null> {
+    if (!address.trim()) return null;
+    try {
+      const res = await fetch("/api/course-map/set-address", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: address.trim() }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) return data?.error ?? "Could not verify that address.";
+      return null;
+    } catch {
+      return "Could not verify that address — try again.";
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setAddressError(null);
     const supabase = createClient();
     const {
       data: { user },
@@ -153,6 +180,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
 
     if (existingCourse) {
       const locationChanged = city !== existingCourse.city || state !== existingCourse.state;
+      const addressChanged = address.trim() !== existingCourse.address;
       await supabase
         .from("courses")
         .update({
@@ -170,6 +198,21 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           ...(locationChanged ? { latitude: null, longitude: null } : {}),
         })
         .eq("id", existingCourse.id);
+
+      // Re-geocode whenever the address text changed, or whenever city/state
+      // changed underneath an address that's still on file (the update above
+      // just nulled out lat/lng for that case) — either way the old coordinates
+      // can no longer be trusted. Blocks navigation on failure so the owner
+      // sees the error and can fix the address, rather than silently landing
+      // on the dashboard with a course that's still geocoded wrong.
+      if (addressChanged || (locationChanged && address.trim())) {
+        const error = await saveAddress();
+        if (error) {
+          setAddressError(error);
+          setLoading(false);
+          return;
+        }
+      }
     } else {
       // Pre-generate the id and skip .select() on this insert: RETURNING re-checks
       // the courses SELECT policy, which requires a course_members row that doesn't
@@ -211,6 +254,12 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ course_id: courseId }),
         });
+
+        // Best-effort — don't hold up course creation on a geocoding hiccup.
+        // If this fails silently, the Course Map page's own first-visit
+        // "enter your address" prompt still catches it later.
+        const error = await saveAddress();
+        if (error) console.error("Could not geocode address at course creation:", error);
 
         try {
           const res = await fetch("/api/billing/checkout", {
@@ -400,6 +449,24 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
             placeholder="e.g. Pebble Creek Golf Club"
             className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-wide">
+            Street Address
+          </label>
+          <div className="text-xs text-mist -mt-1 mb-1">
+            Used to center the Course Map&apos;s satellite view precisely on your course. Optional, but
+            city/state alone can only get an approximate location.
+          </div>
+          <input
+            type="text"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+            placeholder="61 Villa Road"
+            className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+          />
+          {addressError && <div className="text-xs text-red mt-1">{addressError}</div>}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
