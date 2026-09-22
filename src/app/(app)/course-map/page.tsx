@@ -289,7 +289,18 @@ export default function CourseMapPage() {
     : 0;
 
   return (
-    <>
+    // A single root div, not a bare Fragment — `main` in AppShell.tsx is
+    // `flex flex-col`, so multiple top-level siblings here become
+    // competing flex items with the default flex-shrink:1, and get
+    // silently compressed to fit main's viewport-bounded height instead of
+    // ever making main.scrollHeight exceed its clientHeight. That leaves
+    // `overflow-y-auto` on main with nothing to scroll, so the excess gets
+    // clipped by each section's own overflow-hidden with no way to reach
+    // it — confirmed live with 15 seeded notes, where the notes list's
+    // real content height (855px) was squeezed down to 323px. A single
+    // flex item doesn't compete with siblings this way, so it just grows
+    // main past the viewport like every other (single-root-div) page does.
+    <div>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Course Map</div>
@@ -430,6 +441,6 @@ export default function CourseMapPage() {
           ) : null}
         </div>
       )}
-    </>
+    </div>
   );
 }
