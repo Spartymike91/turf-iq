@@ -2213,3 +2213,33 @@ CREATE POLICY "Owners and supers can delete course map notes"
   ON course_map_notes FOR DELETE USING (
     EXISTS (SELECT 1 FROM course_members WHERE course_id = course_map_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
   );
+
+-- ============================================
+-- PLATFORM ADMIN READ ACCESS: COURSE MAP, CALENDAR, CHAT
+-- ============================================
+-- These three tables were the only ones left without the "Platform admins
+-- can view X" bypass most of the schema already has (see e.g. products,
+-- rainfall_daily_log above) — course_map_notes and calendar_events just
+-- came back empty in Admin View with no explanation, and Team Chat had its
+-- own explicit app-level block (src/app/(app)/chat/page.tsx) on top of
+-- missing RLS. Mike: admin should be able to see everything happening on a
+-- course to help debug problems and see feature usage — matches what's
+-- already been told to Robert. Read-only by design, same as every other
+-- "Platform admins can view X" policy here: no matching INSERT/UPDATE
+-- bypass, since an admin acting as a phantom course member (dropping a
+-- pin, posting a chat message as nobody) isn't what was asked for.
+DROP POLICY IF EXISTS "Platform admins can view course_map_notes" ON course_map_notes;
+CREATE POLICY "Platform admins can view course_map_notes"
+  ON course_map_notes FOR SELECT USING (public.is_platform_admin());
+
+DROP POLICY IF EXISTS "Platform admins can view calendar_events" ON calendar_events;
+CREATE POLICY "Platform admins can view calendar_events"
+  ON calendar_events FOR SELECT USING (public.is_platform_admin());
+
+DROP POLICY IF EXISTS "Platform admins can view chat_threads" ON chat_threads;
+CREATE POLICY "Platform admins can view chat_threads"
+  ON chat_threads FOR SELECT USING (public.is_platform_admin());
+
+DROP POLICY IF EXISTS "Platform admins can view chat_messages" ON chat_messages;
+CREATE POLICY "Platform admins can view chat_messages"
+  ON chat_messages FOR SELECT USING (public.is_platform_admin());

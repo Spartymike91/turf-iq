@@ -10,6 +10,12 @@ interface Roster {
   name: string;
 }
 
+interface AdminThread {
+  id: string;
+  kind: "general" | "dm";
+  label: string;
+}
+
 interface ChatMessage {
   id: string;
   thread_id: string;
@@ -27,6 +33,7 @@ export default function ChatPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [myCourseMemberId, setMyCourseMemberId] = useState<string | null>(null);
   const [roster, setRoster] = useState<Roster[]>([]);
+  const [adminThreads, setAdminThreads] = useState<AdminThread[]>([]);
   const [generalThreadId, setGeneralThreadId] = useState<string | null>(null);
   const [dmThreadByMember, setDmThreadByMember] = useState<Record<string, string>>({});
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -51,13 +58,11 @@ export default function ChatPage() {
       }
       setCourseId(context.courseId);
       setIsAdminView(context.isAdminView);
-      if (context.isAdminView) {
-        setChecking(false);
-        return;
-      }
 
       const [{ data: membership }, { data: members }] = await Promise.all([
-        supabase.from("course_members").select("id").eq("user_id", user.id).eq("course_id", context.courseId).single(),
+        context.isAdminView
+          ? Promise.resolve({ data: null })
+          : supabase.from("course_members").select("id").eq("user_id", user.id).eq("course_id", context.courseId).single(),
         supabase.from("course_members").select("id, user_id").eq("course_id", context.courseId),
       ]);
       setMyCourseMemberId(membership?.id ?? null);
@@ -67,14 +72,45 @@ export default function ChatPage() {
         ? await supabase.from("profiles").select("id, email, full_name").in("id", userIds)
         : { data: [] };
       const profileByUserId = new Map((profiles ?? []).map((p) => [p.id, p]));
+      const nameById = new Map(
+        (members ?? []).map((m) => {
+          const p = profileByUserId.get(m.user_id);
+          return [m.id, p?.full_name || p?.email || "Teammate"];
+        })
+      );
       const rosterList: Roster[] = (members ?? [])
         .filter((m) => m.id !== membership?.id)
-        .map((m) => {
-          const p = profileByUserId.get(m.user_id);
-          return { courseMemberId: m.id, name: p?.full_name || p?.email || "Teammate" };
-        })
+        .map((m) => ({ courseMemberId: m.id, name: nameById.get(m.id) ?? "Teammate" }))
         .sort((a, b) => a.name.localeCompare(b.name));
       setRoster(rosterList);
+
+      if (context.isAdminView) {
+        // Admins aren't a course_members row, so they can't get-or-create a
+        // thread the way a real member does (POST /api/team-chat/threads
+        // requires membership and explicitly 403s for admin view anyway) —
+        // list whatever already exists instead. Read-only: RLS grants this
+        // via is_platform_admin() (see supabase-schema.sql), no write policy.
+        const { data: threadRows } = await supabase
+          .from("chat_threads")
+          .select("id, kind, participant_1_id, participant_2_id, created_at")
+          .eq("course_id", context.courseId)
+          .order("created_at", { ascending: true });
+        const list: AdminThread[] = (threadRows ?? []).map((t) => ({
+          id: t.id,
+          kind: t.kind as "general" | "dm",
+          label:
+            t.kind === "general"
+              ? "General"
+              : `${nameById.get(t.participant_1_id) ?? "Teammate"} ↔ ${nameById.get(t.participant_2_id) ?? "Teammate"}`,
+        }));
+        setAdminThreads(list);
+        if (list.length > 0) {
+          setActiveThreadId(list[0].id);
+          setActiveLabel(list[0].label);
+        }
+        setChecking(false);
+        return;
+      }
 
       const res = await fetch("/api/team-chat/threads", {
         method: "POST",
@@ -213,16 +249,6 @@ export default function ChatPage() {
     );
   }
 
-  if (isAdminView) {
-    return (
-      <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-10 text-center">
-        <div className="text-4xl mb-3">💬</div>
-        <div className="font-serif text-xl text-green-dark mb-2">Chat isn&apos;t available in Admin View</div>
-        <div className="text-sm text-mist">Log in as a real course member to use team chat.</div>
-      </div>
-    );
-  }
-
   if (!courseId) {
     return (
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-6 text-center">
@@ -238,35 +264,62 @@ export default function ChatPage() {
         <div>
           <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Team Chat</div>
           <div className="font-serif text-2xl text-green-dark">{activeLabel}</div>
+          {isAdminView && (
+            <div className="text-[11px] text-mist font-mono mt-1">👁 Admin View — read only</div>
+          )}
         </div>
-        <ChatNotificationsToggle />
+        {!isAdminView && <ChatNotificationsToggle />}
       </div>
 
       <div className="flex-1 min-h-0 flex gap-3">
         <div className="w-48 shrink-0 bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden flex flex-col">
-          <button
-            onClick={openGeneral}
-            className={`text-left px-3.5 py-2.5 text-sm font-semibold border-b-[1.5px] border-rule transition-colors ${
-              activeThreadId === generalThreadId ? "bg-green-pale text-green-mid" : "text-ink hover:bg-chalk"
-            }`}
-          >
-            # General
-          </button>
-          <div className="px-3.5 pt-2.5 pb-1 text-[10px] font-mono uppercase tracking-widest text-mist">Direct Messages</div>
-          <div className="flex-1 overflow-y-auto">
-            {roster.map((m) => (
+          {isAdminView ? (
+            <div className="flex-1 overflow-y-auto">
+              {adminThreads.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    setActiveThreadId(t.id);
+                    setActiveLabel(t.label);
+                  }}
+                  className={`w-full text-left px-3.5 py-2 text-sm transition-colors ${
+                    activeThreadId === t.id ? "bg-green-pale text-green-mid font-semibold" : "text-ink hover:bg-chalk"
+                  }`}
+                >
+                  {t.kind === "general" ? "# General" : t.label}
+                </button>
+              ))}
+              {adminThreads.length === 0 && (
+                <div className="px-3.5 py-2 text-xs text-mist">No conversations yet on this course.</div>
+              )}
+            </div>
+          ) : (
+            <>
               <button
-                key={m.courseMemberId}
-                onClick={() => openDm(m)}
-                className={`w-full text-left px-3.5 py-2 text-sm transition-colors ${
-                  activeThreadId === dmThreadByMember[m.courseMemberId] ? "bg-green-pale text-green-mid font-semibold" : "text-ink hover:bg-chalk"
+                onClick={openGeneral}
+                className={`text-left px-3.5 py-2.5 text-sm font-semibold border-b-[1.5px] border-rule transition-colors ${
+                  activeThreadId === generalThreadId ? "bg-green-pale text-green-mid" : "text-ink hover:bg-chalk"
                 }`}
               >
-                {m.name}
+                # General
               </button>
-            ))}
-            {roster.length === 0 && <div className="px-3.5 py-2 text-xs text-mist">No other teammates yet.</div>}
-          </div>
+              <div className="px-3.5 pt-2.5 pb-1 text-[10px] font-mono uppercase tracking-widest text-mist">Direct Messages</div>
+              <div className="flex-1 overflow-y-auto">
+                {roster.map((m) => (
+                  <button
+                    key={m.courseMemberId}
+                    onClick={() => openDm(m)}
+                    className={`w-full text-left px-3.5 py-2 text-sm transition-colors ${
+                      activeThreadId === dmThreadByMember[m.courseMemberId] ? "bg-green-pale text-green-mid font-semibold" : "text-ink hover:bg-chalk"
+                    }`}
+                  >
+                    {m.name}
+                  </button>
+                ))}
+                {roster.length === 0 && <div className="px-3.5 py-2 text-xs text-mist">No other teammates yet.</div>}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex-1 min-w-0 bg-white border-[1.5px] border-rule rounded-[10px] flex flex-col overflow-hidden">
@@ -289,31 +342,37 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
           {error && <div className="px-4 pb-1 text-xs text-red">{error}</div>}
-          <form onSubmit={handleSend} className="flex items-end gap-2 p-3 border-t-[1.5px] border-rule">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value.slice(0, MAX_LEN))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend(e);
-                }
-              }}
-              placeholder={`Message ${activeLabel}`}
-              rows={1}
-              className="flex-1 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm resize-none"
-            />
-            <span className="text-[10px] text-mist font-mono shrink-0">
-              {draft.length}/{MAX_LEN}
-            </span>
-            <button
-              type="submit"
-              disabled={sending || !draft.trim()}
-              className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 shrink-0"
-            >
-              Send
-            </button>
-          </form>
+          {isAdminView ? (
+            <div className="px-4 py-3 border-t-[1.5px] border-rule text-xs text-mist">
+              Log in as a real course member to send messages.
+            </div>
+          ) : (
+            <form onSubmit={handleSend} className="flex items-end gap-2 p-3 border-t-[1.5px] border-rule">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value.slice(0, MAX_LEN))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend(e);
+                  }
+                }}
+                placeholder={`Message ${activeLabel}`}
+                rows={1}
+                className="flex-1 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm resize-none"
+              />
+              <span className="text-[10px] text-mist font-mono shrink-0">
+                {draft.length}/{MAX_LEN}
+              </span>
+              <button
+                type="submit"
+                disabled={sending || !draft.trim()}
+                className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 shrink-0"
+              >
+                Send
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
