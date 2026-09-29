@@ -59,7 +59,7 @@ export default function TaskIconPicker({
       </button>
       {open && (
         <div className="absolute z-[1000] top-full left-0 mt-1 w-64 bg-white border-[1.5px] border-rule rounded-lg shadow-lg p-2.5">
-          <div className="grid grid-cols-8 gap-1">
+          <div className="grid grid-cols-8 gap-1 max-h-56 overflow-y-auto">
             {TASK_ICON_OPTIONS.map((icon) => (
               <button
                 key={icon}

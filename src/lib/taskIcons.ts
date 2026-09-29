@@ -9,34 +9,42 @@
 // somewhere to reach beyond that original 10-icon set. Same fixed-palette
 // spirit as EVENT_COLORS/NOTE_CATEGORIES/GRASS_TYPES elsewhere in this app.
 export const TASK_ICON_OPTIONS: string[] = [
-  // Mowing / turf
-  "🌱", "🌾", "🌿", "🍃",
+  // Mowing / turf — no standard "lawn mower" emoji exists in Unicode as of
+  // this writing, so 🚜 (tractor, under Equipment/vehicles below) is the
+  // closest fit for mowing equipment specifically.
+  "🌱", "🌾", "🌿", "🍃", "🍀",
+  // Golf / play
+  "🏌️", "🕳️",
   // Bunkers / sand
   "🏖️", "🏜️",
   // Course setup / flags
-  "⛳", "🚩", "🎌",
+  "⛳", "🚩", "🎌", "🚧",
+  // Water features / hazards
+  "🌊", "⛲",
   // Irrigation / water
-  "💦", "💧", "🚿", "🌧️",
+  "💦", "💧", "🚿", "🌧️", "🚰",
   // Chemicals / spray
   "🧪", "⚗️",
   // Cultural practices
   "🌀", "✂️",
   // Equipment / vehicles
-  "🔧", "🛠️", "⚙️", "🔩", "🚜", "🚛",
+  "🔧", "🛠️", "⚙️", "🔩", "🚜", "🚛", "🛻", "🧰", "🪣", "⛽", "🔋",
   // Grounds / cleaning
-  "🍂", "🧹", "🗑️", "🧽",
+  "🍂", "🧹", "🗑️", "🧽", "♻️",
   // Trees / landscaping
   "🌳", "🌲", "🪴", "🌷", "🌻",
   // Weather
-  "☀️", "❄️", "🌪️", "⛈️",
+  "☀️", "❄️", "🌪️", "⛈️", "🌡️", "💨",
   // Repair / maintenance
-  "🩹", "🔨", "🪛",
-  // Pests
-  "🐛", "🐜", "🦗",
+  "🩹", "🔨", "🪛", "💡",
+  // Pests / wildlife
+  "🐛", "🐜", "🦗", "🐝", "🦆", "🐸", "🐿️",
   // Staff / labor
   "👷", "🧑‍🌾",
   // Buildings / facilities
   "🏠", "🚪",
+  // Navigation / location
+  "🗺️", "📍",
   // Time / schedule
   "⏰", "📅",
   // General
