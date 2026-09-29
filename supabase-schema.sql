@@ -2327,3 +2327,20 @@ ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS area_sqft NUMERIC;
 ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS rate_per_1000 NUMERIC;
 ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS area_sqft NUMERIC;
 ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS rate_per_1000 NUMERIC;
+
+-- ============================================
+-- FIX: TASK ICON NEVER SHOWS ANYWHERE A TASK IS ACTUALLY WORKED
+-- ============================================
+-- Robert's report ("I made an emoji, it shows a number instead") isn't a
+-- broken emoji picker — task_templates.icon already exists and the
+-- Task Library's own list already renders it fine. The real bug: it was
+-- never copied onto task_assignments when a task gets scheduled from a
+-- template, and Live Status / the Scheduler's task list never rendered it
+-- even when it existed — so the one thing visible on those screens was
+-- always the unrelated "Task N" ordinal badge (an intentional, separate
+-- feature — see the priority-as-ordinal migration above), which is
+-- exactly what Robert is describing as "a number instead of an emoji."
+-- Nullable and denormalized the same way `name`/`mow_direction` already
+-- are on this table: an ad-hoc task (no template) just has no icon,
+-- same as it has no mow direction unless one's picked.
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS icon TEXT;

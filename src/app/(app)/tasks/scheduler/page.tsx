@@ -15,6 +15,7 @@ interface TaskTemplate {
   category: string;
   estimated_duration: string | null;
   target_minutes: number | null;
+  icon: string | null;
 }
 
 interface Employee {
@@ -39,6 +40,7 @@ interface TaskAssignment {
   priority: number;
   mow_direction: MowDirection | null;
   cleanup_lap_direction: CleanupLapDirection | null;
+  icon: string | null;
   status: "not_started" | "in_progress" | "paused" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
@@ -95,7 +97,7 @@ export default function TaskSchedulerPage() {
       setCourseId(context.courseId);
 
       const [{ data: tpl }, { data: emp }, { data: assign }, { data: off }] = await Promise.all([
-        supabase.from("task_templates").select("id, name, category, estimated_duration, target_minutes").eq("course_id", context.courseId).order("name"),
+        supabase.from("task_templates").select("id, name, category, estimated_duration, target_minutes, icon").eq("course_id", context.courseId).order("name"),
         supabase.from("employees").select("id, name, is_active").eq("course_id", context.courseId).eq("is_active", true).order("name"),
         supabase.from("task_assignments").select("*").eq("course_id", context.courseId).order("scheduled_date", { ascending: false }),
         supabase
@@ -191,6 +193,7 @@ export default function TaskSchedulerPage() {
         priority: Number(addForm.priority) || 1,
         mow_direction: addForm.mow_direction || null,
         cleanup_lap_direction: addForm.cleanup_lap_direction || null,
+        icon: template?.icon ?? null,
         estimated_minutes: template?.target_minutes ?? parseEstimatedMinutes(template?.estimated_duration),
         notes: addForm.notes || null,
       })
@@ -473,6 +476,7 @@ export default function TaskSchedulerPage() {
                 <tr key={a.id} className="border-b border-rule last:border-0">
                   <td className="px-5 py-2.5 font-medium">
                     <span className="inline-flex items-center gap-1.5">
+                      {a.icon && <span>{a.icon}</span>}
                       {a.name}
                       <MowDirectionIcon direction={a.mow_direction} />
                       <CleanupLapDirectionIcon direction={a.cleanup_lap_direction} />

@@ -26,6 +26,7 @@ interface TaskAssignment {
   priority: number;
   mow_direction: MowDirection | null;
   cleanup_lap_direction: CleanupLapDirection | null;
+  icon: string | null;
   status: "not_started" | "in_progress" | "paused" | "complete";
   estimated_minutes: number | null;
   started_at: string | null;
@@ -619,6 +620,7 @@ export default function TaskStatusPage() {
                     <div className="flex items-center justify-between gap-1.5 mb-1">
                       <span className="font-semibold text-ink flex items-center gap-1.5">
                         <span className="text-mist font-mono">{i + 1}.</span>
+                        {t.icon && <span>{t.icon}</span>}
                         {t.name}
                         <MowDirectionIcon direction={t.mow_direction} />
                         <CleanupLapDirectionIcon direction={t.cleanup_lap_direction} />
@@ -722,7 +724,10 @@ export default function TaskStatusPage() {
                     day: "numeric",
                   })}
                 </span>
-                <span className="flex-1 text-ink">{t.name}</span>
+                <span className="flex-1 text-ink">
+                  {t.icon && <span className="mr-1">{t.icon}</span>}
+                  {t.name}
+                </span>
                 <span className="text-xs text-mist whitespace-nowrap">
                   {employees.find((e) => e.id === t.assigned_to)?.name ?? "Unassigned"}
                 </span>

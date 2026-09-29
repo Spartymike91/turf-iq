@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
+import TaskIconPicker from "@/components/tasks/TaskIconPicker";
 
 interface TaskTemplate {
   id: string;
@@ -180,7 +181,7 @@ export default function TaskLibraryPage() {
 
         {showAdd && (
           <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
-            <input required value={addForm.icon} onChange={(e) => setAddForm({ ...addForm, icon: e.target.value })} placeholder="🌱" className="w-12 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm text-center" />
+            <TaskIconPicker value={addForm.icon} onChange={(icon) => setAddForm({ ...addForm, icon })} />
             <input required value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })} placeholder="Mowing" className="w-28 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
             <input required value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="Mow greens" className="w-36 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
             <input value={addForm.frequency} onChange={(e) => setAddForm({ ...addForm, frequency: e.target.value })} placeholder="Daily" className="w-24 px-2 py-2 border-[1.5px] border-rule rounded-lg text-sm" />
@@ -228,7 +229,7 @@ export default function TaskLibraryPage() {
                 editingId === t.id ? (
                   <tr key={t.id} className="border-b border-rule last:border-0">
                     <td className="px-5 py-2.5">
-                      <input value={editForm.icon} onChange={(e) => setEditForm({ ...editForm, icon: e.target.value })} className="w-10 px-1 py-1 border-[1.5px] border-rule rounded text-sm text-center" />
+                      <TaskIconPicker value={editForm.icon} onChange={(icon) => setEditForm({ ...editForm, icon })} />
                     </td>
                     <td className="px-3 py-2.5">
                       <input value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })} className="w-24 px-2 py-1 border-[1.5px] border-rule rounded text-sm" />
