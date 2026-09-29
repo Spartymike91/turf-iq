@@ -19,8 +19,41 @@ interface Product {
   current_stock: number;
 }
 
-const emptyHeader = { area: "", applied_at: "", notes: "" };
-const emptyLine = { productId: "", customName: "", category: "other" as ProductCategory, target: "", rei_hours: "", quantity_used: "", cost: "", n_lbs_per_1000: "" };
+const emptyHeader = { area: "", applied_at: "", notes: "", area_sqft: "" };
+const emptyLine = {
+  productId: "",
+  customName: "",
+  category: "other" as ProductCategory,
+  target: "",
+  rei_hours: "",
+  quantity_used: "",
+  cost: "",
+  n_lbs_per_1000: "",
+  rate_per_1000: "",
+};
+
+// Robert's ask: rate (from the product label, "X per 1000 sq ft") x area
+// actually being treated -> the product amount, instead of doing the
+// math by hand. Returns "" (not "0") when there's not enough to compute,
+// so callers can tell "no calculation happened" from "the result is zero."
+function quantityFromRate(rate: string, sqft: string): string {
+  const r = parseFloat(rate);
+  const s = parseFloat(sqft);
+  if (Number.isNaN(r) || Number.isNaN(s) || s <= 0) return "";
+  return ((r / 1000) * s).toFixed(2);
+}
+
+// Same cost formula already used inline in updateLine, pulled out so the
+// header's area_sqft handler (which recomputes every line at once, not
+// just the one being edited) doesn't duplicate it.
+function withRecomputedCost(line: typeof emptyLine, products: Product[]): typeof emptyLine {
+  const product = products.find((p) => p.id === line.productId);
+  const qty = parseFloat(line.quantity_used);
+  if (product?.unit_cost != null && !Number.isNaN(qty)) {
+    return { ...line, cost: (Number(product.unit_cost) * qty).toFixed(2) };
+  }
+  return line;
+}
 
 function toLocalDatetimeInput(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -70,15 +103,30 @@ export default function LogApplicationForm() {
     setLines((prev) =>
       prev.map((l, i) => {
         if (i !== index) return l;
-        const next = { ...l, ...patch };
-        if ("productId" in patch || "quantity_used" in patch) {
-          const product = products.find((p) => p.id === next.productId);
-          const qty = parseFloat(next.quantity_used);
-          if (product?.unit_cost != null && !Number.isNaN(qty)) {
-            next.cost = (Number(product.unit_cost) * qty).toFixed(2);
-          }
+        let next = { ...l, ...patch };
+        if ("rate_per_1000" in patch) {
+          const calculated = quantityFromRate(next.rate_per_1000, header.area_sqft);
+          if (calculated) next.quantity_used = calculated;
+        }
+        if ("productId" in patch || "quantity_used" in patch || "rate_per_1000" in patch) {
+          next = withRecomputedCost(next, products);
         }
         return next;
+      })
+    );
+  }
+
+  // Area treated changes for the whole tank mix at once, so every line
+  // that has its own rate needs recomputing together — unlike updateLine,
+  // which only ever touches the one line being edited.
+  function handleAreaSqftChange(value: string) {
+    setHeader((prev) => ({ ...prev, area_sqft: value }));
+    setLines((prev) =>
+      prev.map((l) => {
+        if (!l.rate_per_1000) return l;
+        const calculated = quantityFromRate(l.rate_per_1000, value);
+        if (!calculated) return l;
+        return withRecomputedCost({ ...l, quantity_used: calculated }, products);
       })
     );
   }
@@ -140,6 +188,8 @@ export default function LogApplicationForm() {
           quantity_used: product && line.quantity_used ? parseFloat(line.quantity_used) : null,
           application_date: applicationDate,
           notes: header.notes || null,
+          area_sqft: header.area_sqft ? parseFloat(header.area_sqft) : null,
+          rate_per_1000: line.rate_per_1000 ? parseFloat(line.rate_per_1000) : null,
         }));
         const { data, error: insertError } = await supabase.from("fertilizer_applications").insert(rows).select();
         if (insertError) throw insertError;
@@ -169,6 +219,8 @@ export default function LogApplicationForm() {
           cost: line.cost ? parseFloat(line.cost) : null,
           quantity_used: product && line.quantity_used ? parseFloat(line.quantity_used) : null,
           notes: header.notes || null,
+          area_sqft: header.area_sqft ? parseFloat(header.area_sqft) : null,
+          rate_per_1000: line.rate_per_1000 ? parseFloat(line.rate_per_1000) : null,
         }));
         const { data, error: insertError } = await supabase.from("pest_applications").insert(rows).select();
         if (insertError) throw insertError;
@@ -290,6 +342,18 @@ export default function LogApplicationForm() {
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Area Sq Ft</label>
+              <input
+                type="number"
+                min="0"
+                value={header.area_sqft}
+                onChange={(e) => handleAreaSqftChange(e.target.value)}
+                placeholder="e.g. 5000"
+                title="How much of the area you're actually treating today — enter a rate per product line below to auto-calculate its amount"
+                className="w-28 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Applied At</label>
               <input
                 type="datetime-local"
@@ -383,6 +447,18 @@ export default function LogApplicationForm() {
                       onChange={(e) => updateLine(i, { n_lbs_per_1000: e.target.value })}
                       placeholder="N lbs/M"
                       className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
+                    />
+                  )}
+                  {linkedProduct && header.area_sqft && (
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={line.rate_per_1000}
+                      onChange={(e) => updateLine(i, { rate_per_1000: e.target.value })}
+                      placeholder={`${linkedProduct.unit}/M`}
+                      title={`Rate from the product label, in ${linkedProduct.unit} per 1000 sq ft — calculates the amount below from Area Sq Ft`}
+                      className="w-20 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                     />
                   )}
                   {linkedProduct && (

@@ -2300,3 +2300,30 @@ GRANT UPDATE (
 -- the existing owner/superintendent/assistant write policies already
 -- cover every column via a plain USING/WITH CHECK.
 ALTER TABLE course_map_notes ADD COLUMN IF NOT EXISTS shape_points JSONB;
+
+-- ============================================
+-- APPLICATION RATE CALCULATOR (SQ FT -> PRODUCT AMOUNT)
+-- ============================================
+-- Robert's ask: pick an area, type the square footage actually being
+-- treated that day (it varies — rarely the whole zone), enter the rate
+-- from the product label (e.g. "4 oz per 1000 sq ft"), and have the
+-- product amount calculate itself instead of doing the math by hand.
+-- A prior implementer already flagged this exact gap and deliberately
+-- deferred it (see the dropped products.n_pct field note above,
+-- "revisit only if course areas ever get a tracked square footage") —
+-- this is that revisit, but as a generic per-1000-sq-ft product rate
+-- rather than a nitrogen-percentage calculation, so it works the same way
+-- for every application category (fertilizer, pest, disease, PGR,
+-- wetting agent) instead of only fertilizer, and needs no new per-product
+-- setup data. Both nullable: area_sqft is the same value across every
+-- line in one tank-mix submission (matches how zone/area is already
+-- duplicated per row rather than normalized out); rate_per_1000 is
+-- per-line since each product has its own label rate. Neither is
+-- authoritative — quantity_used (already existed) is still what's
+-- actually saved and used everywhere else; these two are stored purely
+-- so the calculation behind a given quantity_used is visible later, not
+-- just the final number.
+ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS area_sqft NUMERIC;
+ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS rate_per_1000 NUMERIC;
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS area_sqft NUMERIC;
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS rate_per_1000 NUMERIC;
