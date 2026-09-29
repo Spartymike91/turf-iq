@@ -62,6 +62,11 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
   const [numHoles, setNumHoles] = useState("18");
   const [acres, setAcres] = useState("");
   const [loading, setLoading] = useState(false);
+  // A platform admin viewing this course without unlocking editing (PIN)
+  // hits an RLS policy that silently filters their UPDATE to zero rows —
+  // no error, just nothing written. Tracked so handleSubmit can name that
+  // specific cause instead of a generic "couldn't save" when it happens.
+  const [isAdminView, setIsAdminView] = useState(false);
   const [existingCourse, setExistingCourse] = useState<{
     id: string;
     name: string;
@@ -134,6 +139,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
       ]);
 
       setIsOwner(context.isAdminView || membership?.role === "owner");
+      setIsAdminView(context.isAdminView);
 
       if (course) {
         const c = course as unknown as Record<string, unknown>;
@@ -234,7 +240,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     if (existingCourse) {
       const locationChanged = city !== existingCourse.city || state !== existingCourse.state;
       const addressChanged = address.trim() !== existingCourse.address;
-      const { error: updateError } = await supabase
+      const { data: updateData, error: updateError } = await supabase
         .from("courses")
         .update({
           name,
@@ -254,7 +260,8 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           maintained_acres: parseFloat(acres) || null,
           ...(locationChanged ? { latitude: null, longitude: null } : {}),
         })
-        .eq("id", existingCourse.id);
+        .eq("id", existingCourse.id)
+        .select("id");
       // A silently-swallowed error here is exactly how Robert's grass-type
       // save went unnoticed for weeks (a missing column-level DB grant,
       // since fixed — see supabase-schema.sql) — the update failed every
@@ -263,6 +270,22 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
       // address error path below.
       if (updateError) {
         setProfileError(updateError.message);
+        setLoading(false);
+        return;
+      }
+      // A platform admin viewing this course without unlocking editing hits
+      // this same "looks fine, saved nothing" trap through a different door:
+      // the RLS policy for admin writes requires the PIN-elevated session,
+      // and a row an UPDATE's USING clause excludes just isn't touched — no
+      // error, `.update()` reports success, only the empty `.select()`
+      // RETURNING gives it away. `.select("id")` above exists solely to
+      // detect this; the row id itself is never used.
+      if (!updateData || updateData.length === 0) {
+        setProfileError(
+          isAdminView
+            ? "You're viewing this course in read-only Admin View — click \"Unlock editing\" above, then try saving again."
+            : "Your changes weren't saved — you may not have permission to edit this course."
+        );
         setLoading(false);
         return;
       }
