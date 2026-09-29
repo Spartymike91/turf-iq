@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
+import { actualMinutesFor } from "@/lib/taskDuration";
 
 function csvEscape(value: string | number): string {
   const str = String(value);
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
   const [{ data: tasks }, { data: employees }, { data: templates }, { data: nonBillableExpenses }, { data: payRates }] = await Promise.all([
     supabase
       .from("task_assignments")
-      .select("id, name, template_id, assigned_to, started_at, completed_at, paused_minutes, estimated_minutes")
+      .select("id, name, template_id, assigned_to, started_at, completed_at, paused_minutes, estimated_minutes, actual_minutes_override")
       .eq("course_id", courseId)
       .eq("status", "complete")
       .gte("completed_at", rangeStart)
@@ -79,10 +80,11 @@ export async function GET(request: NextRequest) {
   const rows = (tasks ?? [])
     .filter((t) => t.started_at && t.completed_at)
     .map((t) => {
-      const actualMinutes = Math.max(
-        0,
-        (new Date(t.completed_at!).getTime() - new Date(t.started_at!).getTime()) / 60000 - Number(t.paused_minutes ?? 0)
-      );
+      // actualMinutesFor respects a manual override (edited after the fact
+      // via /api/tasks/edit-time) — without this, a corrected task would
+      // still show its old, wrong duration here even though Live Status and
+      // the labor expense itself have already been fixed.
+      const actualMinutes = actualMinutesFor(t)!;
       const targetMinutes = t.estimated_minutes ?? null;
       const varianceMinutes = targetMinutes != null ? actualMinutes - targetMinutes : null;
       const variancePct = targetMinutes != null && targetMinutes > 0 ? ((actualMinutes - targetMinutes) / targetMinutes) * 100 : null;

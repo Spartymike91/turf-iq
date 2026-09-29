@@ -47,6 +47,22 @@ interface LaborReport {
   nonBillableTotalCost: number;
 }
 
+interface TaskTimeReportRow {
+  taskName: string;
+  count: number;
+  totalActualMinutes: number;
+  avgActualMinutes: number;
+  totalTargetMinutes: number | null;
+  avgTargetMinutes: number | null;
+}
+
+interface TaskTimeReport {
+  startDate: string;
+  endDate: string;
+  rows: TaskTimeReportRow[];
+  totals: { taskCount: number; totalActualMinutes: number };
+}
+
 function lastMonthRange() {
   const now = new Date();
   const firstOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -54,6 +70,15 @@ function lastMonthRange() {
   const lastMonthStart = new Date(lastMonthEnd.getFullYear(), lastMonthEnd.getMonth(), 1);
   const toStr = (d: Date) => d.toISOString().slice(0, 10);
   return { start: toStr(lastMonthStart), end: toStr(lastMonthEnd) };
+}
+
+// Task Time Report defaults to year-to-date rather than last month — Robert's
+// own framing was "at end of year be able to see they spent X hours mowing
+// fairways," an accumulating-all-year view, not a single-month snapshot.
+function yearToDateRange() {
+  const now = new Date();
+  const toStr = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: toStr(new Date(now.getFullYear(), 0, 1)), end: toStr(now) };
 }
 
 interface BudgetCategory {
@@ -124,7 +149,7 @@ function BudgetPageInner() {
   const [myRole, setMyRole] = useState<string | null>(null);
   const isManager = myRole === "owner" || myRole === "superintendent";
 
-  const [reportType, setReportType] = useState<"monthly" | "labor">("monthly");
+  const [reportType, setReportType] = useState<"monthly" | "labor" | "taskTime">("monthly");
   const [reportTypeMenuOpen, setReportTypeMenuOpen] = useState(false);
   const reportTypeMenuRef = useRef<HTMLDivElement>(null);
 
@@ -138,6 +163,11 @@ function BudgetPageInner() {
   const [laborReport, setLaborReport] = useState<LaborReport | null>(null);
   const [generatingLaborReport, setGeneratingLaborReport] = useState(false);
   const [laborReportError, setLaborReportError] = useState<string | null>(null);
+
+  const [taskTimeRange, setTaskTimeRange] = useState(yearToDateRange());
+  const [taskTimeReport, setTaskTimeReport] = useState<TaskTimeReport | null>(null);
+  const [generatingTaskTimeReport, setGeneratingTaskTimeReport] = useState(false);
+  const [taskTimeReportError, setTaskTimeReportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!reportTypeMenuOpen) return;
@@ -369,6 +399,25 @@ function BudgetPageInner() {
       setLaborReport(null);
     }
     setGeneratingLaborReport(false);
+  }
+
+  async function handleGenerateTaskTimeReport() {
+    setGeneratingTaskTimeReport(true);
+    setTaskTimeReportError(null);
+    try {
+      const res = await fetch(`/api/reports/task-time?start=${taskTimeRange.start}&end=${taskTimeRange.end}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setTaskTimeReportError(data.error ?? "Could not generate report.");
+        setTaskTimeReport(null);
+      } else {
+        setTaskTimeReport(data);
+      }
+    } catch {
+      setTaskTimeReportError("Could not generate report.");
+      setTaskTimeReport(null);
+    }
+    setGeneratingTaskTimeReport(false);
   }
 
   if (checking) {
@@ -773,12 +822,14 @@ function BudgetPageInner() {
         <div className="flex items-center justify-between px-5 py-4 border-b-[1.5px] border-rule no-print">
           <div>
             <div className="font-serif text-lg text-green-dark">
-              {reportType === "monthly" ? "Monthly Reports" : "Labor Report"}
+              {reportType === "monthly" ? "Monthly Reports" : reportType === "labor" ? "Labor Report" : "Task Time Report"}
             </div>
             <div className="text-[11px] text-mist mt-0.5">
               {reportType === "monthly"
                 ? "Auto-generates on the 1st of every month · or generate one now for any date range"
-                : "Target vs. actual duration and labor cost by employee, for any date range"}
+                : reportType === "labor"
+                  ? "Target vs. actual duration and labor cost by employee, for any date range"
+                  : "Average and total time per task, accumulated across a date range — where the hours actually go"}
             </div>
           </div>
           <div className="relative" ref={reportTypeMenuRef}>
@@ -813,6 +864,19 @@ function BudgetPageInner() {
                     }`}
                   >
                     👷 Labor Report
+                  </button>
+                )}
+                {isManager && (
+                  <button
+                    onClick={() => {
+                      setReportType("taskTime");
+                      setReportTypeMenuOpen(false);
+                    }}
+                    className={`w-full text-left px-3.5 py-2.5 text-sm hover:bg-chalk transition-colors border-t border-rule ${
+                      reportType === "taskTime" ? "text-green-dark font-semibold" : "text-ink"
+                    }`}
+                  >
+                    ⏱ Task Time Report
                   </button>
                 )}
               </div>
@@ -1109,6 +1173,102 @@ function BudgetPageInner() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {reportType === "taskTime" && (
+          <>
+            <div className="flex flex-wrap items-end gap-3 px-5 py-4 border-b-[1.5px] border-rule bg-chalk no-print">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">From</label>
+                <input
+                  type="date"
+                  value={taskTimeRange.start}
+                  onChange={(e) => setTaskTimeRange({ ...taskTimeRange, start: e.target.value })}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] font-semibold uppercase tracking-wide">To</label>
+                <input
+                  type="date"
+                  value={taskTimeRange.end}
+                  onChange={(e) => setTaskTimeRange({ ...taskTimeRange, end: e.target.value })}
+                  className="px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
+              </div>
+              <button
+                onClick={handleGenerateTaskTimeReport}
+                disabled={generatingTaskTimeReport}
+                className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+              >
+                {generatingTaskTimeReport ? "Generating..." : "Generate Report"}
+              </button>
+              {taskTimeReport && (
+                <a
+                  href={`/api/reports/task-time?start=${taskTimeRange.start}&end=${taskTimeRange.end}&format=csv`}
+                  className="px-4 py-2 border-[1.5px] border-rule rounded-lg text-sm font-semibold hover:border-green-mid transition-colors no-print"
+                >
+                  ⬇ Download CSV
+                </a>
+              )}
+            </div>
+
+            {taskTimeReportError && <div className="px-5 py-2 text-xs text-red bg-red/5 no-print">{taskTimeReportError}</div>}
+
+            {!taskTimeReport ? (
+              <div className="p-10 text-center">
+                <div className="text-4xl mb-3">⏱</div>
+                <div className="text-sm text-mist">Pick a date range and generate a report above.</div>
+              </div>
+            ) : (
+              <div className="p-5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+                  <StatChip
+                    label="Distinct Tasks"
+                    value={String(taskTimeReport.rows.length)}
+                    sub={`${taskTimeReport.startDate} – ${taskTimeReport.endDate}`}
+                  />
+                  <StatChip label="Completions" value={String(taskTimeReport.totals.taskCount)} sub="total, all tasks" />
+                  <StatChip
+                    label="Total Time"
+                    value={formatMinutes(taskTimeReport.totals.totalActualMinutes)}
+                    sub="worked duration"
+                  />
+                </div>
+
+                {taskTimeReport.rows.length === 0 ? (
+                  <div className="text-sm text-mist text-center py-6">No completed tasks in this date range.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-[10px] font-mono uppercase tracking-wide text-mist border-b border-rule">
+                          <th className="py-2 pr-3">Task</th>
+                          <th className="py-2 pr-3 text-right">Completions</th>
+                          <th className="py-2 pr-3 text-right">Avg Actual</th>
+                          <th className="py-2 pr-3 text-right">Total Actual</th>
+                          <th className="py-2 text-right">Avg Target</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {taskTimeReport.rows.map((r) => (
+                          <tr key={r.taskName} className="border-b border-rule last:border-0">
+                            <td className="py-2 pr-3">{r.taskName}</td>
+                            <td className="py-2 pr-3 text-right font-mono">{r.count}</td>
+                            <td className="py-2 pr-3 text-right font-mono">{formatMinutes(r.avgActualMinutes)}</td>
+                            <td className="py-2 pr-3 text-right font-mono font-semibold">{formatMinutes(r.totalActualMinutes)}</td>
+                            <td className="py-2 text-right font-mono text-mist">
+                              {r.avgTargetMinutes != null ? formatMinutes(r.avgTargetMinutes) : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </>
