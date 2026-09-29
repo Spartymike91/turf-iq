@@ -25,7 +25,7 @@ interface MemberRef {
 }
 
 type Popup =
-  | { mode: "add"; lat: number; lng: number; x: number; y: number }
+  | { mode: "add"; lat: number; lng: number; x: number; y: number; shapePoints?: [number, number][] }
   | { mode: "view"; noteId: string; x: number; y: number };
 
 export default function CourseMapPage() {
@@ -45,6 +45,7 @@ export default function CourseMapPage() {
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
 
+  const [drawMode, setDrawMode] = useState(false);
   const [popup, setPopup] = useState<Popup | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteCategory, setNoteCategory] = useState("general");
@@ -74,7 +75,7 @@ export default function CourseMapPage() {
         supabase.from("course_members").select("id, full_name").eq("course_id", context.courseId),
         supabase
           .from("course_map_notes")
-          .select("id, lat, lng, category, note, created_by, created_at")
+          .select("id, lat, lng, category, note, shape_points, created_by, created_at")
           .eq("course_id", context.courseId)
           .order("created_at", { ascending: false }),
       ]);
@@ -150,6 +151,25 @@ export default function CourseMapPage() {
     setNoteError(null);
   }
 
+  function handleStartDrawing() {
+    setPopup(null);
+    setEditingNoteId(null);
+    setDrawMode(true);
+  }
+
+  function handleDrawCancel() {
+    setDrawMode(false);
+  }
+
+  function handleShapeComplete(points: [number, number][], lat: number, lng: number, x: number, y: number) {
+    setDrawMode(false);
+    setPopup({ mode: "add", lat, lng, x, y, shapePoints: points });
+    setEditingNoteId(null);
+    setNoteCategory("general");
+    setNoteText("");
+    setNoteError(null);
+  }
+
   function handleMarkerClick(noteId: string, x: number, y: number) {
     setPopup({ mode: "view", noteId, x, y });
     setEditingNoteId(null);
@@ -177,6 +197,7 @@ export default function CourseMapPage() {
         category: noteCategory,
         note: noteText.trim(),
         created_by: myMemberId,
+        shape_points: popup.shapePoints ?? null,
       })
       .select()
       .single();
@@ -306,9 +327,22 @@ export default function CourseMapPage() {
           <div className="font-mono text-[10px] uppercase tracking-widest text-green-forest mb-1">Course Map</div>
           <div className="font-serif text-2xl text-green-dark">{courseAddress}</div>
           <div className="text-[13px] text-mist mt-1">
-            {isManager ? "Click anywhere on the map to drop a note." : "Click a pin to read its note."}
+            {drawMode
+              ? "Click the map to trace a zone — use Finish Shape or Cancel above when done."
+              : isManager
+                ? "Click anywhere on the map to drop a note."
+                : "Click a pin to read its note."}
           </div>
         </div>
+        {isManager && !drawMode && (
+          <button
+            type="button"
+            onClick={handleStartDrawing}
+            className="px-3.5 py-2 border-[1.5px] border-rule rounded-lg text-sm font-semibold hover:border-green-mid transition-colors"
+          >
+            ⬟ Draw Zone
+          </button>
+        )}
       </div>
 
       <div className="bg-white border-[1.5px] border-rule rounded-[10px] overflow-hidden h-[520px] mb-4">
@@ -316,8 +350,11 @@ export default function CourseMapPage() {
           center={center}
           notes={notes}
           canAdd={isManager}
+          drawMode={drawMode}
           onMapClick={handleMapClick}
           onMarkerClick={handleMarkerClick}
+          onShapeComplete={handleShapeComplete}
+          onDrawCancel={handleDrawCancel}
           debug={debug}
         />
       </div>
@@ -330,7 +367,17 @@ export default function CourseMapPage() {
           <div className="divide-y divide-rule">
             {notes.map((n) => (
               <div key={n.id} className="flex items-start gap-3 px-5 py-2.5 text-xs">
-                <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: categoryColor(n.category) }} />
+                {n.shape_points && n.shape_points.length >= 3 ? (
+                  <span
+                    className="shrink-0 mt-0.5 text-[10px]"
+                    style={{ color: categoryColor(n.category) }}
+                    title="Zone"
+                  >
+                    ⬟
+                  </span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: categoryColor(n.category) }} />
+                )}
                 <div className="flex-1">
                   <div className="text-ink font-medium">{n.note}</div>
                   <div className="text-mist mt-0.5">

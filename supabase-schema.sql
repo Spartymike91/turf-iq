@@ -2283,3 +2283,20 @@ ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS actual_minutes_override NU
 GRANT UPDATE (
   grass_type_greens, grass_type_tees, grass_type_fairways, grass_type_rough
 ) ON courses TO authenticated;
+
+-- ============================================
+-- COURSE MAP: DRAWABLE ZONE NOTES
+-- ============================================
+-- Robert's example: the current single-dot pin doesn't work for something
+-- like a "No Mowing" zone that covers a whole area, not a point. Adds an
+-- optional polygon alongside the existing point — nullable and additive,
+-- so every existing note (and every other part of this app) is completely
+-- unaffected. lat/lng stay NOT NULL and now hold the shape's centroid for
+-- a drawn note (used for popup positioning and list sorting), same as a
+-- pin's lat/lng always has. Points are [lat, lng] pairs, matching
+-- Leaflet's own L.polygon() input shape directly — no conversion needed
+-- on read. No RLS change needed: course_map_notes has no column-level
+-- grant restriction (unlike courses — see the grass-type fix above), and
+-- the existing owner/superintendent/assistant write policies already
+-- cover every column via a plain USING/WITH CHECK.
+ALTER TABLE course_map_notes ADD COLUMN IF NOT EXISTS shape_points JSONB;
