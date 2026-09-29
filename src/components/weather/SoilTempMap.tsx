@@ -179,15 +179,23 @@ export default function SoilTempMap({ lat, lon }: { lat: number; lon: number }) 
           </div>
         </div>
         {meta && (
-          <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/95 border border-rule rounded-md px-2 py-1 text-[10px] font-mono text-mist">
-            As of{" "}
-            {new Date(meta.validAt).toLocaleString("en-US", {
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-              timeZoneName: "short",
-            })}
+          <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/95 border border-rule rounded-md px-2 py-1 text-[10px] font-mono text-mist text-right">
+            <div>
+              As of{" "}
+              {new Date(meta.validAt).toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                timeZoneName: "short",
+              })}
+            </div>
+            {/* Matched to render_soil_temp.py's own cron (.github/workflows/soil-temp.yml,
+                every 6 hrs) and to GFS's own 4x/day publication cadence — the map already
+                updates more often than once a day, but the timestamp above only shows a
+                single snapshot, so someone glancing at it once has no way to tell that
+                without this line. */}
+            <div className="text-[9px] opacity-70">Updates every 6 hrs</div>
           </div>
         )}
       </div>
