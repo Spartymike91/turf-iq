@@ -219,7 +219,17 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) {
+      // A stale/expired session here previously left the button stuck on
+      // "Saving..." forever with zero feedback — indistinguishable from a
+      // silent failure, and refreshing to get unstuck looks exactly like
+      // "I entered this and it didn't save" even though nothing was ever
+      // attempted. Same error-surfacing precedent as the update/address
+      // failure paths below.
+      setProfileError("Your session expired — please refresh the page and sign in again before saving.");
+      setLoading(false);
+      return;
+    }
 
     if (existingCourse) {
       const locationChanged = city !== existingCourse.city || state !== existingCourse.state;
