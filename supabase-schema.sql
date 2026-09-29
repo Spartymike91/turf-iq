@@ -2261,3 +2261,25 @@ CREATE POLICY "Platform admins can view chat_messages"
 -- through the existing task_assignments API routes' service-role client,
 -- same as every other task action (start/pause/resume/complete).
 ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS actual_minutes_override NUMERIC;
+
+-- ============================================
+-- FIX: COURSE PROFILE GRASS-TYPE COLUMNS NEVER GRANTED
+-- ============================================
+-- Root cause of Robert's report ("I add Zoysiagrass, it looks like it
+-- saves, but it's back to just Bermudagrass when I go back"): the
+-- column-privilege hardening above (REVOKE UPDATE ON courses FROM
+-- authenticated; GRANT UPDATE (name, city, state, climate_zone,
+-- grass_type, num_holes, maintained_acres, annual_rounds, latitude,
+-- longitude, updated_at) ON courses TO authenticated;) was written before
+-- the per-area grass_type_greens/tees/fairways/rough columns existed, and
+-- was never updated when that later migration added them. Column-level
+-- UPDATE grants require every column in the SET clause to be individually
+-- granted — CourseForm.tsx's save always includes all four per-area
+-- columns, so the *entire* course-profile update has been silently
+-- rejected (a bare "permission denied for table courses" the app never
+-- checked, not an RLS rejection) for any save touching them, which in
+-- practice is nearly every real edit. Confirmed directly: signed in as a
+-- real owner and reproduced the exact failure before writing this fix.
+GRANT UPDATE (
+  grass_type_greens, grass_type_tees, grass_type_fairways, grass_type_rough
+) ON courses TO authenticated;

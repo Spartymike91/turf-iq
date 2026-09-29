@@ -42,6 +42,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [addressError, setAddressError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [grassTypes, setGrassTypes] = useState<Record<GrassTypeArea, string[]>>({
     greens: [],
     tees: [],
@@ -190,6 +191,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     e.preventDefault();
     setLoading(true);
     setAddressError(null);
+    setProfileError(null);
     const supabase = createClient();
     const {
       data: { user },
@@ -199,7 +201,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     if (existingCourse) {
       const locationChanged = city !== existingCourse.city || state !== existingCourse.state;
       const addressChanged = address.trim() !== existingCourse.address;
-      await supabase
+      const { error: updateError } = await supabase
         .from("courses")
         .update({
           name,
@@ -216,6 +218,17 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           ...(locationChanged ? { latitude: null, longitude: null } : {}),
         })
         .eq("id", existingCourse.id);
+      // A silently-swallowed error here is exactly how Robert's grass-type
+      // save went unnoticed for weeks (a missing column-level DB grant,
+      // since fixed — see supabase-schema.sql) — the update failed every
+      // time, but nothing checked, so the page just navigated away as if
+      // it had worked. Block navigation and show it instead, same as the
+      // address error path below.
+      if (updateError) {
+        setProfileError(updateError.message);
+        setLoading(false);
+        return;
+      }
 
       // Re-geocode whenever the address text changed, or whenever city/state
       // changed underneath an address that's still on file (the update above
@@ -645,6 +658,12 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
         {checkoutError && (
           <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-3 py-2 text-xs text-red">
             {checkoutError}
+          </div>
+        )}
+
+        {profileError && (
+          <div className="bg-red/5 border-[1.5px] border-red/40 rounded-lg px-3 py-2 text-xs text-red">
+            Couldn&apos;t save: {profileError}
           </div>
         )}
 
