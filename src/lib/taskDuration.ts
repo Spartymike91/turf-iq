@@ -13,6 +13,28 @@ export function parseEstimatedMinutes(text: string | null | undefined): number |
   return Math.round(unit.startsWith("h") ? value * 60 : value);
 }
 
+// Single source of truth for "how long did this task actually take" —
+// an owner/superintendent/assistant's manual override always wins (see
+// task_assignments.actual_minutes_override in supabase-schema.sql), since
+// it exists specifically to correct a bad computed value (forgotten
+// Complete click, etc.). Falls back to the raw timestamp math only when
+// no override is set, and returns null when there's not enough data to
+// compute anything (task never actually started/completed).
+export function actualMinutesFor(assignment: {
+  actual_minutes_override?: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  paused_minutes: number | null;
+}): number | null {
+  if (assignment.actual_minutes_override != null) return Number(assignment.actual_minutes_override);
+  if (!assignment.started_at || !assignment.completed_at) return null;
+  return Math.max(
+    0,
+    (new Date(assignment.completed_at).getTime() - new Date(assignment.started_at).getTime()) / 60000 -
+      Number(assignment.paused_minutes ?? 0)
+  );
+}
+
 export function formatMinutes(minutes: number): string {
   const rounded = Math.round(minutes);
   const hours = Math.floor(rounded / 60);

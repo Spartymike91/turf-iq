@@ -3,8 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { canManageAssignment } from "@/lib/taskPermissions";
+import { upsertTaskLaborExpense } from "@/lib/taskLabor";
 
-const LABOR_CATEGORY = "Labor";
 const MATERIALS_CATEGORY = "Materials & Supplies";
 
 async function findOrCreateCategory(
@@ -93,6 +93,17 @@ export async function POST(request: NextRequest) {
       ? Math.max(0, (completedAt.getTime() - new Date(assignment.paused_at).getTime()) / 60000)
       : 0);
 
+  // A manual override (see taskDuration.ts's actualMinutesFor) always wins
+  // over the raw timestamp math — set proactively before Complete is even
+  // clicked (e.g. the crew forgot to pause during a delay), it should still
+  // be respected here rather than silently discarded.
+  const actualMinutes =
+    assignment.actual_minutes_override != null
+      ? Number(assignment.actual_minutes_override)
+      : assignment.started_at
+        ? Math.max(0, (completedAt.getTime() - new Date(assignment.started_at).getTime()) / 60000 - finalPausedMinutes)
+        : null;
+
   const { data: updated, error: updateError } = await adminClient
     .from("task_assignments")
     .update({
@@ -112,59 +123,16 @@ export async function POST(request: NextRequest) {
   const fiscalYear = completedAt.getFullYear();
   const todayStr = completedAt.toISOString().slice(0, 10);
 
-  let laborExpense = null;
   let materialsExpense = null;
 
-  // Labor cost: only computable if the task was actually started (we need a
-  // real elapsed duration) and is assigned to an employee with a pay rate on
-  // file. Silently skipped otherwise rather than guessing.
-  if (assignment.started_at && assignment.assigned_to) {
-    const { data: existingLabor } = await adminClient
-      .from("expenses")
-      .select("id")
-      .eq("task_assignment_id", assignment_id)
-      .eq("source", "task_labor")
-      .maybeSingle();
-
-    if (!existingLabor) {
-      const { data: employee } = await adminClient
-        .from("employees")
-        .select("name")
-        .eq("id", assignment.assigned_to)
-        .maybeSingle();
-      const { data: rateRow } = await adminClient
-        .from("employee_pay_rates")
-        .select("hourly_rate")
-        .eq("employee_id", assignment.assigned_to)
-        .maybeSingle();
-
-      if (employee && rateRow) {
-        const actualMinutes = Math.max(
-          0,
-          (completedAt.getTime() - new Date(assignment.started_at).getTime()) / 60000 - finalPausedMinutes
-        );
-        const laborCost = Math.round((actualMinutes / 60) * Number(rateRow.hourly_rate) * 100) / 100;
-
-        if (laborCost > 0) {
-          const categoryId = await findOrCreateCategory(adminClient, courseId, LABOR_CATEGORY, fiscalYear);
-          const { data: inserted, error: insertError } = await adminClient
-            .from("expenses")
-            .insert({
-              course_id: courseId,
-              category_id: categoryId,
-              amount: laborCost,
-              description: `${employee.name} — ${assignment.name} (${Math.round(actualMinutes)} min)`,
-              expense_date: todayStr,
-              task_assignment_id: assignment_id,
-              source: "task_labor",
-            })
-            .select()
-            .single();
-          if (!insertError) laborExpense = inserted;
-        }
-      }
-    }
-  }
+  // Labor cost: only computable if we have a real duration (either the
+  // override, or an actual elapsed start time) and an assigned employee
+  // with a pay rate on file — upsertTaskLaborExpense silently no-ops
+  // otherwise rather than guessing.
+  const laborExpense =
+    actualMinutes != null
+      ? await upsertTaskLaborExpense(adminClient, courseId, updated, actualMinutes, todayStr)
+      : null;
 
   if (materials_cost && materials_cost > 0) {
     const { data: existingMaterials } = await adminClient

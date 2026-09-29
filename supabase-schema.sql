@@ -2243,3 +2243,21 @@ CREATE POLICY "Platform admins can view chat_threads"
 DROP POLICY IF EXISTS "Platform admins can view chat_messages" ON chat_messages;
 CREATE POLICY "Platform admins can view chat_messages"
   ON chat_messages FOR SELECT USING (public.is_platform_admin());
+
+-- ============================================
+-- MANUAL TASK TIME OVERRIDE
+-- ============================================
+-- Robert's real example: crew forgets to hit Complete, task sits
+-- in_progress for hours, and the (completed_at - started_at - paused)
+-- calculation then reports something absurd like 24 hours for mowing
+-- greens — which was already flowing straight into the task's labor
+-- expense and would eventually feed accumulated per-task-type reporting.
+-- Rather than let owners/supers/assistants edit the raw started_at/
+-- completed_at timestamps (fiddly across day boundaries, and destroys the
+-- actual audit trail of when the crew really clicked Start/Complete), this
+-- is a single override that simply takes precedence over the computed
+-- value everywhere duration is used, when set. NULL (the default) means
+-- "trust the timestamps," same as today. No RLS policy needed — writes go
+-- through the existing task_assignments API routes' service-role client,
+-- same as every other task action (start/pause/resume/complete).
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS actual_minutes_override NUMERIC;

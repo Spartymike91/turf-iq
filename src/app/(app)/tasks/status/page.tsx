@@ -10,7 +10,7 @@ import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon"
 import type { CleanupLapDirection } from "@/lib/cleanupLapDirections";
 import type { WeatherResult } from "@/lib/weather";
 import MonthCalendar, { type CalendarEvent, EVENT_COLORS } from "@/components/tasks/MonthCalendar";
-import { formatMinutes } from "@/lib/taskDuration";
+import { formatMinutes, actualMinutesFor, parseEstimatedMinutes } from "@/lib/taskDuration";
 
 interface Employee {
   id: string;
@@ -32,6 +32,7 @@ interface TaskAssignment {
   completed_at: string | null;
   paused_at: string | null;
   paused_minutes: number | null;
+  actual_minutes_override: number | null;
   quality_rating: number | null;
   scheduled_date: string;
 }
@@ -62,6 +63,10 @@ export default function TaskStatusPage() {
   const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null);
 
   const [completingTask, setCompletingTask] = useState<TaskAssignment | null>(null);
+  const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
+  const [timeEditValue, setTimeEditValue] = useState("");
+  const [timeEditError, setTimeEditError] = useState<string | null>(null);
+  const [timeEditSaving, setTimeEditSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [upcoming, setUpcoming] = useState<TaskAssignment[]>([]);
   const [openEntries, setOpenEntries] = useState<TimeEntry[]>([]);
@@ -198,6 +203,11 @@ export default function TaskStatusPage() {
   }
 
   const isManager = myRole === "owner" || myRole === "superintendent";
+  // Wider than isManager on purpose — Robert asked for himself (owner) and
+  // Nick (assistant on his real course) to be able to correct task time,
+  // not the whole crew, and specifically not the person the time belongs to
+  // (see canEditTaskTime in taskPermissions.ts for why that's not reused).
+  const canEditTime = myRole === "owner" || myRole === "superintendent" || myRole === "assistant";
   const myOpenEntry = myEmployeeId ? openEntries.find((e) => e.employee_id === myEmployeeId) ?? null : null;
 
   async function handleClockToggle() {
@@ -422,6 +432,48 @@ export default function TaskStatusPage() {
     }
   }
 
+  function startEditTime(task: TaskAssignment) {
+    setEditingTimeId(task.id);
+    setTimeEditValue(task.actual_minutes_override != null ? String(task.actual_minutes_override) : "");
+    setTimeEditError(null);
+  }
+
+  // Reuses the same free-text parser as the task template's own estimated
+  // duration field ("45", "1.5 hr", "3 hr") — same input style Robert's
+  // already used to, rather than inventing a new format for this one field.
+  // An empty value clears the override and falls back to the raw
+  // start/pause/complete timestamps.
+  async function handleSaveTimeEdit(task: TaskAssignment) {
+    const trimmed = timeEditValue.trim();
+    let minutes: number | null = null;
+    if (trimmed !== "") {
+      minutes = parseEstimatedMinutes(trimmed);
+      if (minutes == null) {
+        setTimeEditError('Enter a number of minutes, or something like "1.5 hr".');
+        return;
+      }
+    }
+    setTimeEditSaving(true);
+    setTimeEditError(null);
+    try {
+      const res = await fetch("/api/tasks/edit-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_id: task.id, actual_minutes: minutes }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTimeEditError(data.error || "Couldn't save that.");
+      } else {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? data.assignment : t)));
+        setEditingTimeId(null);
+      }
+    } catch {
+      setTimeEditError("Couldn't save that.");
+    }
+    setTimeEditSaving(false);
+  }
+
   // Group today's tasks by crew member — each employee gets a card listing
   // their jobs in order, rather than one global board split by status.
   // Tasks with no assignee collect into a trailing "Unassigned" card.
@@ -585,19 +637,46 @@ export default function TaskStatusPage() {
                         {new Date(t.paused_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
                       </div>
                     )}
-                    {t.status === "complete" && t.started_at && t.completed_at && (
+                    {actualMinutesFor(t) != null && (
                       <div className="text-[10px] text-mist mb-1">
                         {t.estimated_minutes != null && `Target: ${formatMinutes(t.estimated_minutes)} · `}
-                        Actual:{" "}
-                        {formatMinutes(
-                          Math.max(
-                            0,
-                            (new Date(t.completed_at).getTime() - new Date(t.started_at).getTime()) / 60000 -
-                              Number(t.paused_minutes ?? 0)
-                          )
-                        )}
+                        Actual: {formatMinutes(actualMinutesFor(t)!)}
+                        {t.actual_minutes_override != null && <span className="italic"> (edited)</span>}
                       </div>
                     )}
+                    {canEditTime &&
+                      (editingTimeId === t.id ? (
+                        <div className="flex flex-col gap-1 mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={timeEditValue}
+                              onChange={(e) => setTimeEditValue(e.target.value)}
+                              placeholder='e.g. 45 or "1.5 hr"'
+                              autoFocus
+                              className="w-28 px-1.5 py-0.5 border-[1.5px] border-rule rounded text-[10px]"
+                            />
+                            <button
+                              disabled={timeEditSaving}
+                              onClick={() => handleSaveTimeEdit(t)}
+                              className="text-green-mid font-semibold hover:text-green-dark disabled:opacity-50"
+                            >
+                              Save
+                            </button>
+                            <button onClick={() => setEditingTimeId(null)} className="text-mist font-semibold hover:text-ink">
+                              Cancel
+                            </button>
+                          </div>
+                          {timeEditError && <div className="text-red">{timeEditError}</div>}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => startEditTime(t)}
+                          className="text-mist font-semibold hover:text-ink block mb-1"
+                        >
+                          Edit time
+                        </button>
+                      ))}
                     {canManage(t) && (
                       <>
                         {t.status === "not_started" && (
