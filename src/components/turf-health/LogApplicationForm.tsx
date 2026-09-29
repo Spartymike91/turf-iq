@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import { COURSE_AREAS } from "@/lib/areas";
+import { GRASS_TYPE_AREAS, GRASS_TYPE_AREA_LABEL, type GrassTypeArea } from "@/lib/grassTypes";
 import { recordApplicationExpense } from "@/lib/applicationExpenses";
 import { PRODUCT_CATEGORIES, CATEGORY_LABEL, CATEGORY_TO_BUDGET_NAME, type ProductCategory } from "@/lib/pestCategorization";
 import QuantityInput from "@/components/ui/QuantityInput";
@@ -65,9 +66,17 @@ function resolveCategory(line: typeof emptyLine, products: Product[]): ProductCa
   return product ? product.category : line.category;
 }
 
+// Course Setup's area labels (Greens/Tees/Fairways/Rough) match the first
+// four COURSE_AREAS entries exactly — reverse GRASS_TYPE_AREA_LABEL so an
+// Area selection here can look up the matching stored sq ft, if any.
+const AREA_LABEL_TO_GRASS_TYPE_AREA: Partial<Record<string, GrassTypeArea>> = Object.fromEntries(
+  GRASS_TYPE_AREAS.map((area) => [GRASS_TYPE_AREA_LABEL[area], area])
+);
+
 export default function LogApplicationForm() {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [courseSqft, setCourseSqft] = useState<Partial<Record<GrassTypeArea, number>>>({});
   const [open, setOpen] = useState(false);
   const [header, setHeader] = useState(emptyHeader);
   const [lines, setLines] = useState([{ ...emptyLine }]);
@@ -82,14 +91,29 @@ export default function LogApplicationForm() {
       if (!context) return;
       setCourseId(context.courseId);
 
-      const { data: prods } = await supabase
-        .from("products")
-        .select("id, name, category, unit, unit_cost, current_stock")
-        .eq("course_id", context.courseId)
-        .eq("is_active", true)
-        .order("category")
-        .order("name");
+      const [{ data: prods }, { data: course }] = await Promise.all([
+        supabase
+          .from("products")
+          .select("id, name, category, unit, unit_cost, current_stock")
+          .eq("course_id", context.courseId)
+          .eq("is_active", true)
+          .order("category")
+          .order("name"),
+        supabase
+          .from("courses")
+          .select("sqft_greens, sqft_tees, sqft_fairways, sqft_rough")
+          .eq("id", context.courseId)
+          .single(),
+      ]);
       setProducts(prods ?? []);
+      if (course) {
+        setCourseSqft({
+          greens: course.sqft_greens ?? undefined,
+          tees: course.sqft_tees ?? undefined,
+          fairways: course.sqft_fairways ?? undefined,
+          rough: course.sqft_rough ?? undefined,
+        });
+      }
     }
     load();
   }, []);
@@ -129,6 +153,19 @@ export default function LogApplicationForm() {
         return withRecomputedCost({ ...l, quantity_used: calculated }, products);
       })
     );
+  }
+
+  // Area picked changes -> auto-fill Area Sq Ft from Course Setup's stored
+  // per-area size, same as a manual area_sqft edit would (reuses
+  // handleAreaSqftChange's own recompute so any already-entered rates
+  // recalculate too). Only overwrites area_sqft when we actually have a
+  // stored value for that area — picking "Bunkers" or a custom area with
+  // no sq ft on file leaves whatever the user already typed alone.
+  function handleAreaChange(area: string) {
+    setHeader((prev) => ({ ...prev, area }));
+    const key = AREA_LABEL_TO_GRASS_TYPE_AREA[area];
+    const stored = key ? courseSqft[key] : undefined;
+    if (stored != null) handleAreaSqftChange(String(stored));
   }
 
   function addLine() {
@@ -328,7 +365,7 @@ export default function LogApplicationForm() {
               <select
                 required
                 value={header.area}
-                onChange={(e) => setHeader({ ...header, area: e.target.value })}
+                onChange={(e) => handleAreaChange(e.target.value)}
                 className="w-36 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
               >
                 <option value="" disabled>

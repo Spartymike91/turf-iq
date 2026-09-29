@@ -49,6 +49,15 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     fairways: [],
     rough: [],
   });
+  // Same per-area shape as grassTypes above. Stored as text in state (like
+  // acres/numHoles) so an empty field can stay empty instead of coercing to
+  // "0"; parsed to a number only on save.
+  const [sqft, setSqft] = useState<Record<GrassTypeArea, string>>({
+    greens: "",
+    tees: "",
+    fairways: "",
+    rough: "",
+  });
   const [climateZone, setClimateZone] = useState("warm-humid");
   const [numHoles, setNumHoles] = useState("18");
   const [acres, setAcres] = useState("");
@@ -64,6 +73,10 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
     grass_type_tees: string[];
     grass_type_fairways: string[];
     grass_type_rough: string[];
+    sqft_greens: number | null;
+    sqft_tees: number | null;
+    sqft_fairways: number | null;
+    sqft_rough: number | null;
     climate_zone: string;
     num_holes: number;
     maintained_acres: number;
@@ -138,6 +151,10 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           grass_type_tees: (c.grass_type_tees as string[]) || [],
           grass_type_fairways: (c.grass_type_fairways as string[]) || [],
           grass_type_rough: (c.grass_type_rough as string[]) || [],
+          sqft_greens: (c.sqft_greens as number) ?? null,
+          sqft_tees: (c.sqft_tees as number) ?? null,
+          sqft_fairways: (c.sqft_fairways as number) ?? null,
+          sqft_rough: (c.sqft_rough as number) ?? null,
           climate_zone: (c.climate_zone as string) || "",
           num_holes: (c.num_holes as number) || 18,
           maintained_acres: (c.maintained_acres as number) || 0,
@@ -156,6 +173,12 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           tees: resolveGrassTypes(c.grass_type_tees as string[], legacy),
           fairways: resolveGrassTypes(c.grass_type_fairways as string[], legacy),
           rough: resolveGrassTypes(c.grass_type_rough as string[], legacy),
+        });
+        setSqft({
+          greens: c.sqft_greens != null ? String(c.sqft_greens) : "",
+          tees: c.sqft_tees != null ? String(c.sqft_tees) : "",
+          fairways: c.sqft_fairways != null ? String(c.sqft_fairways) : "",
+          rough: c.sqft_rough != null ? String(c.sqft_rough) : "",
         });
         setClimateZone((c.climate_zone as string) || "warm-humid");
         setNumHoles(String((c.num_holes as number) || 18));
@@ -212,6 +235,10 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           grass_type_tees: grassTypes.tees.length > 0 ? grassTypes.tees : null,
           grass_type_fairways: grassTypes.fairways.length > 0 ? grassTypes.fairways : null,
           grass_type_rough: grassTypes.rough.length > 0 ? grassTypes.rough : null,
+          sqft_greens: parseFloat(sqft.greens) || null,
+          sqft_tees: parseFloat(sqft.tees) || null,
+          sqft_fairways: parseFloat(sqft.fairways) || null,
+          sqft_rough: parseFloat(sqft.rough) || null,
           climate_zone: climateZone,
           num_holes: parseInt(numHoles),
           maintained_acres: parseFloat(acres) || null,
@@ -259,6 +286,10 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
         grass_type_tees: grassTypes.tees.length > 0 ? grassTypes.tees : null,
         grass_type_fairways: grassTypes.fairways.length > 0 ? grassTypes.fairways : null,
         grass_type_rough: grassTypes.rough.length > 0 ? grassTypes.rough : null,
+        sqft_greens: parseFloat(sqft.greens) || null,
+        sqft_tees: parseFloat(sqft.tees) || null,
+        sqft_fairways: parseFloat(sqft.fairways) || null,
+        sqft_rough: parseFloat(sqft.rough) || null,
         climate_zone: climateZone,
         num_holes: parseInt(numHoles),
         maintained_acres: parseFloat(acres) || null,
@@ -626,6 +657,32 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
                     );
                   })}
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-wide">Square Footage by Area</label>
+          <div className="text-xs text-mist -mt-1 mb-1">
+            Optional, but once these are on file, Log Application auto-fills the area size for you when
+            you pick that area — no more re-typing the same number every time.
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {GRASS_TYPE_AREAS.map((area) => (
+              <div key={area} className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-mono uppercase tracking-wide text-mist">
+                  {GRASS_TYPE_AREA_LABEL[area]} Sq Ft
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={sqft[area]}
+                  onChange={(e) => setSqft({ ...sqft, [area]: e.target.value })}
+                  placeholder="e.g. 120000"
+                  className="px-3 py-2.5 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid"
+                />
               </div>
             ))}
           </div>

@@ -2344,3 +2344,30 @@ ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS rate_per_1000 NUMERIC;
 -- are on this table: an ad-hoc task (no template) just has no icon,
 -- same as it has no mow direction unless one's picked.
 ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS icon TEXT;
+
+-- ============================================
+-- PER-AREA SQUARE FOOTAGE (COURSE SETUP)
+-- ============================================
+-- Robert's #7, explicitly deferred by him at the time ("not now, but for
+-- future courses") — Mike wants it built now rather than revisiting this
+-- later. Same per-area shape as grass_type_greens/tees/fairways/rough:
+-- Greens/Tees/Fairways/Rough, nullable, no default. Also the payoff for
+-- #6's sq-ft-to-product-rate calculator (LogApplicationForm.tsx) - once a
+-- course has these on file, picking that area there pre-fills Area Sq Ft
+-- automatically instead of Robert re-typing the same number every time he
+-- logs an application, without removing his ability to override it for a
+-- partial-area treatment.
+--
+-- IMPORTANT, learned the hard way earlier this session (see the grass-type
+-- GRANT fix above): courses has a column-level UPDATE grant
+-- (REVOKE UPDATE ON courses FROM authenticated; GRANT UPDATE (...) ON
+-- courses TO authenticated) that silently blocks the *entire* update
+-- whenever it's missing even one column in the SET clause. Any new
+-- courses column CourseForm.tsx needs to write MUST be added to that
+-- grant list, or this reintroduces the exact "looks like it saved but
+-- didn't" bug that #3 was.
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_greens NUMERIC;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_tees NUMERIC;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_fairways NUMERIC;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_rough NUMERIC;
+GRANT UPDATE (sqft_greens, sqft_tees, sqft_fairways, sqft_rough) ON courses TO authenticated;
