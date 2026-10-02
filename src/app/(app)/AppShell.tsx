@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import AppHeader from "@/components/layout/AppHeader";
 import AgronomistPanel from "@/components/agronomist/AgronomistPanel";
@@ -8,6 +8,7 @@ import AgronomistFab from "@/components/agronomist/AgronomistFab";
 import { hasModuleAccess, getModuleLabel, getRequiredTier, hasModulePermission, findRestrictableModule } from "@/lib/planAccess";
 import { PLAN_DISPLAY, type PlanTier } from "@/lib/billing";
 import type { UserCourseSummary } from "@/lib/supabase/course-context";
+import { setViewOnlyMode } from "@/lib/supabase/client";
 
 export default function AppShell({
   courseName,
@@ -38,6 +39,14 @@ export default function AppShell({
   const [locking, setLocking] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
+
+  // Tells the browser Supabase client to fail writes fast with a clear message
+  // while Admin View is locked, instead of letting RLS silently drop them.
+  const viewOnly = !!isAdminView && !isEditElevated;
+  useEffect(() => {
+    setViewOnlyMode(viewOnly);
+    return () => setViewOnlyMode(false);
+  }, [viewOnly]);
 
   // Admin View (a platform admin inspecting a different customer's course for
   // support) always gets full access, regardless of that course's tier. A
