@@ -328,50 +328,66 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
         maintained_acres: parseFloat(acres) || null,
       });
 
-      if (!courseError) {
-        await supabase.from("course_members").insert({
-          course_id: courseId,
-          user_id: user.id,
-          role: "owner",
-        });
+      // Previously a failed course insert fell straight through to the
+      // dashboard redirect below with no message at all.
+      if (courseError) {
+        setProfileError(courseError.message);
+        setLoading(false);
+        return;
+      }
 
-        await supabase.from("task_templates").insert(
-          DEFAULT_TASK_LIBRARY.map((task) => ({ ...task, course_id: courseId }))
-        );
+      const { error: memberError } = await supabase.from("course_members").insert({
+        course_id: courseId,
+        user_id: user.id,
+        role: "owner",
+      });
+      // Without this row the new course is invisible to its own creator
+      // (every read is gated on membership), so this one must block.
+      if (memberError) {
+        setProfileError(`Your course was created but we couldn't add you as its owner: ${memberError.message}`);
+        setLoading(false);
+        return;
+      }
 
-        // Makes the newly-created course "current" so the redirect below (or
-        // the return trip from Stripe) lands on the course just made, not
-        // whichever course happens to be oldest — essential for an owner
-        // adding an additional course via /course/new; a no-op in effect for
-        // a brand-new user's very first course (it's the only course either way).
-        await fetch("/api/course/switch", {
+      // Non-fatal: the course works without the starter task library, so
+      // don't block signup on it — same best-effort treatment as geocoding below.
+      const { error: templatesError } = await supabase.from("task_templates").insert(
+        DEFAULT_TASK_LIBRARY.map((task) => ({ ...task, course_id: courseId }))
+      );
+      if (templatesError) console.error("Could not seed default task templates:", templatesError);
+
+      // Makes the newly-created course "current" so the redirect below (or
+      // the return trip from Stripe) lands on the course just made, not
+      // whichever course happens to be oldest — essential for an owner
+      // adding an additional course via /course/new; a no-op in effect for
+      // a brand-new user's very first course (it's the only course either way).
+      await fetch("/api/course/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ course_id: courseId }),
+      });
+
+      // Best-effort — don't hold up course creation on a geocoding hiccup.
+      // If this fails silently, the Course Map page's own first-visit
+      // "enter your address" prompt still catches it later.
+      const error = await saveAddress();
+      if (error) console.error("Could not geocode address at course creation:", error);
+
+      try {
+        const res = await fetch("/api/billing/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ course_id: courseId }),
+          body: JSON.stringify({ tier }),
         });
-
-        // Best-effort — don't hold up course creation on a geocoding hiccup.
-        // If this fails silently, the Course Map page's own first-visit
-        // "enter your address" prompt still catches it later.
-        const error = await saveAddress();
-        if (error) console.error("Could not geocode address at course creation:", error);
-
-        try {
-          const res = await fetch("/api/billing/checkout", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tier }),
-          });
-          const data = await res.json();
-          if (res.ok && data.url) {
-            window.location.href = data.url;
-            return;
-          }
-          console.error("Could not start checkout:", data.error);
-          setCheckoutError(data.error ?? "Could not start billing. You can set this up later.");
-        } catch (err) {
-          console.error("Checkout request failed:", err);
+        const data = await res.json();
+        if (res.ok && data.url) {
+          window.location.href = data.url;
+          return;
         }
+        console.error("Could not start checkout:", data.error);
+        setCheckoutError(data.error ?? "Could not start billing. You can set this up later.");
+      } catch (err) {
+        console.error("Checkout request failed:", err);
       }
     }
 
