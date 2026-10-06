@@ -33,6 +33,16 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const IMAGE_URL = `${SUPABASE_URL}/storage/v1/object/public/soil-temp/latest.png`;
 const META_URL = `${SUPABASE_URL}/storage/v1/object/public/soil-temp/latest.json`;
 
+function formatStamp(iso: string) {
+  return new Date(iso).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+}
+
 interface SoilTempMeta {
   validAt: string;
   generatedAt: string;
@@ -180,21 +190,12 @@ export default function SoilTempMap({ lat, lon }: { lat: number; lon: number }) 
         </div>
         {meta && (
           <div className="absolute top-2.5 right-2.5 z-[1000] bg-white/95 border border-rule rounded-md px-2 py-1 text-[10px] font-mono text-mist text-right">
-            <div>
-              As of{" "}
-              {new Date(meta.validAt).toLocaleString("en-US", {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-                timeZoneName: "short",
-              })}
-            </div>
-            {/* Matched to render_soil_temp.py's own cron (.github/workflows/soil-temp.yml,
-                every 6 hrs) and to GFS's own 4x/day publication cadence — the map already
-                updates more often than once a day, but the timestamp above only shows a
-                single snapshot, so someone glancing at it once has no way to tell that
-                without this line. */}
+            <div>Model data as of {formatStamp(meta.validAt)}</div>
+            <div>Refreshed {formatStamp(meta.generatedAt)}</div>
+            {/* Two timestamps on purpose: validAt is when NOAA's model run was produced,
+                which always lags 6-10 hrs behind wall-clock (a run isn't posted until
+                ~4 hrs after its nominal time), while generatedAt is when our job last
+                pulled it. Showing only validAt made a healthy 6-hourly refresh look stalled. */}
             <div className="text-[9px] opacity-70">Updates every 6 hrs</div>
           </div>
         )}
