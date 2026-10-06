@@ -56,7 +56,9 @@ export function hasModuleAccess(courseTier: PlanTier | null, pathname: string): 
   return TIER_RANK[courseTier] >= TIER_RANK[required];
 }
 
-// The full set of restrictable nav tabs. Shared by AppHeader (rendering) and
+// The full set of restrictable nav tabs, ordered left-to-right by plan tier
+// (Agronomist, then Superintendent, then Complete) so the upgrade boundary
+// is visible in the nav. Shared by AppHeader (rendering) and
 // the per-crew permission checklist on the Team page (invite + edit access) —
 // keeping one canonical list avoids the two drifting apart.
 export const ALL_MODULES: { slug: string; href: string; icon: string; label: string }[] = [
@@ -66,9 +68,9 @@ export const ALL_MODULES: { slug: string; href: string; icon: string; label: str
   { slug: "equipment", href: "/equipment", icon: "🔧", label: "Equipment" },
   { slug: "inventory", href: "/inventory", icon: "📦", label: "Inventory" },
   { slug: "budget", href: "/budget", icon: "📊", label: "Budget" },
+  { slug: "team", href: "/team", icon: "👥", label: "Team" },
   { slug: "labor", href: "/labor", icon: "👷", label: "Labor" },
   { slug: "tasks", href: "/tasks", icon: "📋", label: "Tasks" },
-  { slug: "team", href: "/team", icon: "👥", label: "Team" },
   { slug: "chat", href: "/chat", icon: "💬", label: "Chat" },
   { slug: "course-map", href: "/course-map", icon: "🗺", label: "Course Map" },
 ];
