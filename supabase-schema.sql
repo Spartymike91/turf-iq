@@ -2371,3 +2371,18 @@ ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_tees NUMERIC;
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_fairways NUMERIC;
 ALTER TABLE courses ADD COLUMN IF NOT EXISTS sqft_rough NUMERIC;
 GRANT UPDATE (sqft_greens, sqft_tees, sqft_fairways, sqft_rough) ON courses TO authenticated;
+
+-- ============================================
+-- REAPPLICATION COUNTDOWN (GDD-BASED)
+-- ============================================
+-- Robert's #9: after any application, show how many days until it's due
+-- again, counted in growing degree days (base 50F, matching the app's
+-- existing gdd_daily_log) rather than calendar days. The superintendent
+-- sets the target per product, and since timing differs by area it's stored
+-- on each application row too — products.reapply_gdd is only the default
+-- that prefills it when logging. All three nullable: an application with no
+-- target simply doesn't appear in the countdown. No RLS or GRANT change
+-- needed — none of these tables have column-level grants (only courses does).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS reapply_gdd NUMERIC;
+ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS reapply_gdd NUMERIC;
+ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS reapply_gdd NUMERIC;

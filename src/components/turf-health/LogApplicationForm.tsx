@@ -18,6 +18,7 @@ interface Product {
   unit: string;
   unit_cost: number | null;
   current_stock: number;
+  reapply_gdd: number | null;
 }
 
 const emptyHeader = { area: "", applied_at: "", notes: "", area_sqft: "" };
@@ -31,6 +32,7 @@ const emptyLine = {
   cost: "",
   n_lbs_per_1000: "",
   rate_per_1000: "",
+  reapply_gdd: "",
 };
 
 // Robert's ask: rate (from the product label, "X per 1000 sq ft") x area
@@ -73,7 +75,7 @@ const AREA_LABEL_TO_GRASS_TYPE_AREA: Partial<Record<string, GrassTypeArea>> = Ob
   GRASS_TYPE_AREAS.map((area) => [GRASS_TYPE_AREA_LABEL[area], area])
 );
 
-export default function LogApplicationForm() {
+export default function LogApplicationForm({ onLogged }: { onLogged?: () => void }) {
   const [courseId, setCourseId] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [courseSqft, setCourseSqft] = useState<Partial<Record<GrassTypeArea, number>>>({});
@@ -94,7 +96,7 @@ export default function LogApplicationForm() {
       const [{ data: prods }, { data: course }] = await Promise.all([
         supabase
           .from("products")
-          .select("id, name, category, unit, unit_cost, current_stock")
+          .select("id, name, category, unit, unit_cost, current_stock, reapply_gdd")
           .eq("course_id", context.courseId)
           .eq("is_active", true)
           .order("category")
@@ -128,6 +130,10 @@ export default function LogApplicationForm() {
       prev.map((l, i) => {
         if (i !== index) return l;
         let next = { ...l, ...patch };
+        if ("productId" in patch) {
+          const picked = products.find((p) => p.id === patch.productId);
+          next.reapply_gdd = picked?.reapply_gdd != null ? String(picked.reapply_gdd) : "";
+        }
         if ("rate_per_1000" in patch) {
           const calculated = quantityFromRate(next.rate_per_1000, header.area_sqft);
           if (calculated) next.quantity_used = calculated;
@@ -227,6 +233,7 @@ export default function LogApplicationForm() {
           notes: header.notes || null,
           area_sqft: header.area_sqft ? parseFloat(header.area_sqft) : null,
           rate_per_1000: line.rate_per_1000 ? parseFloat(line.rate_per_1000) : null,
+          reapply_gdd: line.reapply_gdd ? parseFloat(line.reapply_gdd) : null,
         }));
         const { data, error: insertError } = await supabase.from("fertilizer_applications").insert(rows).select();
         if (insertError) throw insertError;
@@ -258,6 +265,7 @@ export default function LogApplicationForm() {
           notes: header.notes || null,
           area_sqft: header.area_sqft ? parseFloat(header.area_sqft) : null,
           rate_per_1000: line.rate_per_1000 ? parseFloat(line.rate_per_1000) : null,
+          reapply_gdd: line.reapply_gdd ? parseFloat(line.reapply_gdd) : null,
         }));
         const { data, error: insertError } = await supabase.from("pest_applications").insert(rows).select();
         if (insertError) throw insertError;
@@ -319,6 +327,7 @@ export default function LogApplicationForm() {
       setHeader(emptyHeader);
       setLines([{ ...emptyLine }]);
       setOpen(false);
+      onLogged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to log application.");
     }
@@ -512,6 +521,16 @@ export default function LogApplicationForm() {
                     onChange={(v) => updateLine(i, { cost: v })}
                     compact
                     className="w-24"
+                  />
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    value={line.reapply_gdd}
+                    onChange={(e) => updateLine(i, { reapply_gdd: e.target.value })}
+                    placeholder="Reapply GDD"
+                    title="Growing degree days (base 50°F) until this is due again for this area — starts the reapplication countdown. Leave blank for none."
+                    className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs outline-none focus:border-green-mid"
                   />
                   {lines.length > 1 && (
                     <button

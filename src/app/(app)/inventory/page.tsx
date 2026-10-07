@@ -19,6 +19,7 @@ interface Product {
   unit_cost: number | null;
   current_stock: number;
   reorder_threshold: number | null;
+  reapply_gdd: number | null;
   notes: string | null;
   is_active: boolean;
 }
@@ -32,6 +33,7 @@ const emptyForm = {
   unit_cost: "",
   current_stock: "",
   reorder_threshold: "",
+  reapply_gdd: "",
   notes: "",
 };
 
@@ -120,6 +122,7 @@ export default function InventoryPage() {
         unit_cost: addForm.unit_cost ? parseFloat(addForm.unit_cost) : null,
         current_stock: addForm.current_stock ? parseFloat(addForm.current_stock) : 0,
         reorder_threshold: addForm.reorder_threshold ? parseFloat(addForm.reorder_threshold) : null,
+        reapply_gdd: addForm.reapply_gdd ? parseFloat(addForm.reapply_gdd) : null,
         notes: addForm.notes || null,
       })
       .select()
@@ -143,6 +146,7 @@ export default function InventoryPage() {
       unit_cost: p.unit_cost != null ? String(p.unit_cost) : "",
       current_stock: String(p.current_stock),
       reorder_threshold: p.reorder_threshold != null ? String(p.reorder_threshold) : "",
+      reapply_gdd: p.reapply_gdd != null ? String(p.reapply_gdd) : "",
       notes: p.notes ?? "",
     });
   }
@@ -161,6 +165,7 @@ export default function InventoryPage() {
         unit_cost: editForm.unit_cost ? parseFloat(editForm.unit_cost) : null,
         current_stock: editForm.current_stock ? parseFloat(editForm.current_stock) : 0,
         reorder_threshold: editForm.reorder_threshold ? parseFloat(editForm.reorder_threshold) : null,
+        reapply_gdd: editForm.reapply_gdd ? parseFloat(editForm.reapply_gdd) : null,
         notes: editForm.notes || null,
       })
       .eq("id", id)
@@ -345,6 +350,19 @@ export default function InventoryPage() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-semibold uppercase tracking-wide">Reapply At (GDD)</label>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                value={addForm.reapply_gdd}
+                onChange={(e) => setAddForm({ ...addForm, reapply_gdd: e.target.value })}
+                placeholder="Optional"
+                title="Growing degree days (base 50°F) after an application before this product is due again — pre-fills Log Application and drives the reapplication countdown"
+                className="w-28 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm outline-none focus:border-green-mid focus:ring-2 focus:ring-green-mid/10"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Notes</label>
               <input
                 type="text"
@@ -442,6 +460,16 @@ export default function InventoryPage() {
                                 onChange={(e) => setEditForm({ ...editForm, reorder_threshold: e.target.value })}
                                 className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
                                 placeholder="Reorder at"
+                              />
+                              <input
+                                type="number"
+                                step="1"
+                                min="0"
+                                value={editForm.reapply_gdd}
+                                onChange={(e) => setEditForm({ ...editForm, reapply_gdd: e.target.value })}
+                                className="w-24 px-2 py-1.5 border-[1.5px] border-rule rounded text-xs"
+                                placeholder="Reapply GDD"
+                                title="Growing degree days (base 50°F) before this product is due again"
                               />
                               <button
                                 onClick={() => handleSaveEdit(p.id)}

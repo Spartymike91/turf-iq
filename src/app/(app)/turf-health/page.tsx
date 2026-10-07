@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import FertilitySection from "@/components/turf-health/FertilitySection";
 import WeedSection from "@/components/turf-health/WeedSection";
@@ -9,6 +9,7 @@ import DiseaseRiskSection from "@/components/turf-health/DiseaseRiskSection";
 import GrowthRegulatorSection from "@/components/turf-health/GrowthRegulatorSection";
 import WettingAgentSection from "@/components/turf-health/WettingAgentSection";
 import LogApplicationForm from "@/components/turf-health/LogApplicationForm";
+import ReapplicationCountdown from "@/components/turf-health/ReapplicationCountdown";
 
 const SUB_TABS = [
   { slug: "fertility", label: "Fertility", icon: "🌱" },
@@ -30,6 +31,7 @@ function TurfHealthContent() {
   const searchParams = useSearchParams();
   const fromUrl = searchParams.get("tab");
   const activeTab: SubTab = isSubTab(fromUrl) ? fromUrl : "fertility";
+  const [countdownReload, setCountdownReload] = useState(0);
 
   function selectTab(slug: SubTab) {
     router.replace(`/turf-health?tab=${slug}`, { scroll: false });
@@ -44,7 +46,9 @@ function TurfHealthContent() {
         <div className="font-serif text-2xl text-green-dark">Fertility, Weed, Insects, Disease Risk, Growth Regulators</div>
       </div>
 
-      <LogApplicationForm />
+      <LogApplicationForm onLogged={() => setCountdownReload((n) => n + 1)} />
+
+      <ReapplicationCountdown reloadToken={countdownReload} />
 
       <div className="flex gap-1 bg-white border-[1.5px] border-rule rounded-lg p-1 self-start">
         {SUB_TABS.map((tab) => (
