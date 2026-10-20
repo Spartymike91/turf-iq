@@ -18,6 +18,7 @@ import io
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -88,10 +89,26 @@ def fetch_grib(cycle: datetime) -> Optional[bytes]:
         "&var_TSOIL=on&lev_0-0.1_m_below_ground=on"
         f"&subregion=&toplat={TOP_LAT}&leftlon={LEFT_LON}&rightlon={RIGHT_LON}&bottomlat={BOTTOM_LAT}"
     )
-    resp = requests.get(url, timeout=30)
-    if resp.status_code != 200 or len(resp.content) < 1000:
-        return None
-    return resp.content
+    # NOMADS is flaky from shared CI runners (timeouts, resets, 429/5xx). A bare
+    # requests.get() raised straight out of main() on the first hiccup and failed
+    # the whole run, instead of retrying or falling back to an older cycle the
+    # way the caller is built to. Retry only on transient trouble; a 404 just
+    # means the cycle isn't posted yet, so give up on it immediately.
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, timeout=30)
+        except requests.RequestException as exc:
+            print(f"GFS fetch error for {cycle.isoformat()} (attempt {attempt + 1}/3): {exc}", file=sys.stderr)
+            time.sleep(5 * (attempt + 1))
+            continue
+        if resp.status_code in (429, 500, 502, 503, 504):
+            print(f"GFS fetch HTTP {resp.status_code} for {cycle.isoformat()} (attempt {attempt + 1}/3)", file=sys.stderr)
+            time.sleep(5 * (attempt + 1))
+            continue
+        if resp.status_code != 200 or len(resp.content) < 1000:
+            return None
+        return resp.content
+    return None
 
 
 def render_png(grib_bytes: bytes) -> bytes:
