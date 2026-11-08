@@ -3,8 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 
 // WMO weather interpretation codes -> plain words (Open-Meteo's `weather_code`).
-function describeCode(code: number | null): string | null {
+function describeCode(code: number | null, precipIn: number | null): string | null {
   if (code == null) return null;
+  // The daily code reports the day's most significant weather, which can be a
+  // brief shower with nothing measurable (printed "Rain" beside "0.00 in").
+  const wet = (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95;
+  if (wet && precipIn != null && precipIn < 0.01) return code >= 95 ? "Storms nearby, no rain measured" : "Passing showers, none measured";
   if (code === 0) return "Clear";
   if (code <= 2) return "Mostly clear";
   if (code === 3) return "Overcast";
@@ -79,7 +83,7 @@ export async function GET(request: NextRequest) {
       lowF: pick("temperature_2m_min") != null ? Math.round(pick("temperature_2m_min") as number) : null,
       precipIn: pick("precipitation_sum"),
       windMaxMph: pick("wind_speed_10m_max") != null ? Math.round(pick("wind_speed_10m_max") as number) : null,
-      conditions: describeCode(pick("weather_code")),
+      conditions: describeCode(pick("weather_code"), pick("precipitation_sum")),
     });
   } catch {
     return NextResponse.json({ available: false, reason: "provider_error" });

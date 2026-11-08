@@ -281,9 +281,15 @@ export default function DailyLogPage() {
     setSaving(false);
   }
 
+  // Not every course uses the time clock, so fall back to who had tasks that day.
+  const assignedNames = [...new Set(tasks.filter((t) => t.who !== "Unassigned").map((t) => t.who))];
   const isToday = date === todayLocal();
   const wx = weather;
-  const rainValue = stats.rain ?? (wx?.available ? wx.precipIn ?? null : null);
+  // Prefer the weather service's full-day total: it's the same source as the
+  // "conditions" shown beside it. The app's stored rainfall log is built from a
+  // different hourly feed and was 0.00 on days the archive shows 0.15-0.38 in
+  // (Sep 18-23), which printed "Rain" next to "0.00 in".
+  const rainValue = wx?.available && wx.precipIn != null ? wx.precipIn : stats.rain;
 
   return (
     <div className="daily-log-root flex flex-col gap-4 max-w-4xl w-full mx-auto">
@@ -326,7 +332,7 @@ export default function DailyLogPage() {
           <div className="flex flex-wrap gap-x-8 gap-y-2">
             <div><span className="text-mist text-xs">High / Low</span><div className="font-semibold">{wx.highF}° / {wx.lowF ?? "—"}°F</div></div>
             <div><span className="text-mist text-xs">Conditions</span><div className="font-semibold">{wx.conditions ?? "—"}</div></div>
-            <div><span className="text-mist text-xs">Rain</span><div className="font-semibold">{rainValue != null ? `${rainValue.toFixed(2)} in` : "—"}</div></div>
+            <div><span className="text-mist text-xs">Rain (est.)</span><div className="font-semibold">{rainValue != null ? `${rainValue.toFixed(2)} in` : "—"}</div></div>
             <div><span className="text-mist text-xs">Peak wind</span><div className="font-semibold">{wx.windMaxMph != null ? `${wx.windMaxMph} mph` : "—"}</div></div>
             <div><span className="text-mist text-xs">GDD (base 50°F)</span><div className="font-semibold">{stats.gdd != null ? stats.gdd.toFixed(1) : "—"}</div></div>
           </div>
@@ -380,7 +386,7 @@ export default function DailyLogPage() {
           <table className="w-full text-sm">
             <tbody>
               {crew.map((c, i) => (
-                <tr key={i} className="border-b border-rule/60 last:border-0">
+                <tr key={i} className="border-b border-rule/60 last:border-0 break-inside-avoid">
                   <td className="py-1.5 font-medium">{c.name}</td>
                   <td className="py-1.5 text-mist">{time(c.inAt)} – {c.outAt ? time(c.outAt) : "still clocked in"}</td>
                   <td className="py-1.5 text-right font-mono text-xs">{c.hours != null ? `${c.hours.toFixed(1)} h` : ""}</td>
@@ -388,6 +394,9 @@ export default function DailyLogPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {crew.length === 0 && assignedNames.length > 0 && (
+          <div className="mt-2 text-xs text-mist">Assigned work this day: {assignedNames.join(", ")}</div>
         )}
         {timeOff.length > 0 && <div className="mt-2 text-xs text-mist">Time off: {timeOff.join("; ")}</div>}
         {events.length > 0 && <div className="mt-1 text-xs text-mist">Special events: {events.join("; ")}</div>}
@@ -401,7 +410,7 @@ export default function DailyLogPage() {
             {tasks.map((t) => {
               const mins = actualMinutesFor(t);
               return (
-                <li key={t.id} className="py-1.5 border-b border-rule/60 last:border-0">
+                <li key={t.id} className="py-1.5 border-b border-rule/60 last:border-0 break-inside-avoid">
                   <div className="flex flex-wrap items-baseline gap-x-3">
                     <span className="font-medium">{t.icon ? `${t.icon} ` : ""}{t.name}</span>
                     <span className="text-xs text-mist">{t.who}</span>
@@ -424,7 +433,7 @@ export default function DailyLogPage() {
           <table className="w-full text-sm">
             <tbody>
               {apps.map((a) => (
-                <tr key={a.key} className="border-b border-rule/60 last:border-0 align-top">
+                <tr key={a.key} className="border-b border-rule/60 last:border-0 align-top break-inside-avoid">
                   <td className="py-1.5 pr-3 font-medium">{a.area}</td>
                   <td className="py-1.5 pr-3">
                     {a.product}
