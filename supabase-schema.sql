@@ -2432,3 +2432,14 @@ CREATE POLICY "Managers can delete daily log notes"
 DROP POLICY IF EXISTS "Platform admins can view daily_log_notes" ON daily_log_notes;
 CREATE POLICY "Platform admins can view daily_log_notes"
   ON daily_log_notes FOR SELECT USING (public.is_platform_admin());
+
+-- ============================================
+-- TASK ASSIGNMENT PUSH NOTIFICATIONS
+-- ============================================
+-- Robert's request: tell an employee on their phone when a task is assigned
+-- to them. Tasks scheduled for today push right away; tasks for a future
+-- date wait for a morning job. This column is the dedupe: the day (the task's
+-- scheduled_date) a push was last sent for, so the morning job skips tasks
+-- already announced and an edit that moves a task to a later date can clear
+-- it. Written only by server routes (service role), so no RLS/GRANT change.
+ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS notified_for_date DATE;

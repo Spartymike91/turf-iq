@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
 import TaskCompleteModal from "@/components/tasks/TaskCompleteModal";
+import TaskDetailModal from "@/components/tasks/TaskDetailModal";
+import ChatNotificationsToggle from "@/components/chat/ChatNotificationsToggle";
 import MowDirectionIcon from "@/components/tasks/MowDirectionIcon";
 import type { MowDirection } from "@/lib/mowDirections";
 import CleanupLapDirectionIcon from "@/components/tasks/CleanupLapDirectionIcon";
@@ -36,6 +38,7 @@ interface TaskAssignment {
   actual_minutes_override: number | null;
   quality_rating: number | null;
   scheduled_date: string;
+  notes: string | null;
 }
 
 interface TimeEntry {
@@ -73,6 +76,7 @@ export default function TaskStatusPage() {
   const [openEntries, setOpenEntries] = useState<TimeEntry[]>([]);
   const [clockLoading, setClockLoading] = useState(false);
   const [clockError, setClockError] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const now = new Date();
@@ -148,6 +152,9 @@ export default function TaskStatusPage() {
       setMyEmployeeId((emp ?? []).find((e) => e.course_member_id === membership?.id)?.id ?? null);
       setCalendarEvents(calEvents ?? []);
       setOpenEntries(openTimeEntries ?? []);
+      // A task notification deep-links here as /tasks/status?task=<id>.
+      const wanted = new URLSearchParams(window.location.search).get("task");
+      if (wanted) setDetailId(wanted);
       setChecking(false);
     }
     load();
@@ -203,6 +210,7 @@ export default function TaskStatusPage() {
     return myRole === "owner" || myRole === "superintendent" || task.assigned_to === myEmployeeId;
   }
 
+  const detailTask = detailId ? [...tasks, ...upcoming].find((t) => t.id === detailId) ?? null : null;
   const isManager = myRole === "owner" || myRole === "superintendent";
   // Wider than isManager on purpose — Robert asked for himself (owner) and
   // Nick (assistant on his real course) to be able to correct task time,
@@ -211,22 +219,22 @@ export default function TaskStatusPage() {
   const canEditTime = myRole === "owner" || myRole === "superintendent" || myRole === "assistant";
   const myOpenEntry = myEmployeeId ? openEntries.find((e) => e.employee_id === myEmployeeId) ?? null : null;
 
-  async function handleClockToggle() {
+  async function handleClock(action: "clock_in" | "clock_out") {
     setClockLoading(true);
     setClockError(null);
     try {
       const res = await fetch("/api/time-clock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: myOpenEntry ? "clock_out" : "clock_in" }),
+        body: JSON.stringify({ action }),
       });
       const data = await res.json();
       if (!res.ok) {
         setClockError(data.error || "Something went wrong.");
-      } else if (myOpenEntry) {
-        setOpenEntries((prev) => prev.filter((e) => e.id !== myOpenEntry.id));
+      } else if (action === "clock_out") {
+        setOpenEntries((prev) => prev.filter((e) => e.employee_id !== myEmployeeId));
       } else {
-        setOpenEntries((prev) => [...prev, data.entry]);
+        setOpenEntries((prev) => [...prev.filter((e) => e.employee_id !== myEmployeeId), data.entry]);
       }
     } catch {
       setClockError("Something went wrong.");
@@ -495,12 +503,12 @@ export default function TaskStatusPage() {
         name: employees.find((e) => e.id === employeeId)?.name ?? "Unknown",
         tasks: [...employeeTasks].sort((a, b) => a.priority - b.priority),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => (a.employeeId === myEmployeeId ? -1 : b.employeeId === myEmployeeId ? 1 : a.name.localeCompare(b.name)));
     if (unassigned.length > 0) {
       cards.push({ employeeId: "unassigned", name: "Unassigned", tasks: [...unassigned].sort((a, b) => a.priority - b.priority) });
     }
     return cards;
-  }, [tasks, employees]);
+  }, [tasks, employees, myEmployeeId]);
 
   const eventsInView = useMemo(() => {
     const monthStart = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`;
@@ -560,29 +568,37 @@ export default function TaskStatusPage() {
             {tasks.filter((t) => t.status === "complete").length} of {tasks.length} complete
           </div>
         </div>
-        {myEmployeeId && (
-          <div className="flex flex-col items-end gap-1">
-            {clockError && <div className="text-[11px] text-red">{clockError}</div>}
-            <div className="flex items-center gap-2">
-              {myOpenEntry && (
-                <span className="text-xs text-mist">
-                  🟢 Clocked in since{" "}
-                  {new Date(myOpenEntry.clock_in).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                </span>
-              )}
-              <button
-                onClick={handleClockToggle}
-                disabled={clockLoading}
-                className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 ${
-                  myOpenEntry ? "border-[1.5px] border-rule text-ink hover:border-red hover:text-red" : "bg-green-mid text-white hover:bg-green-dark"
-                }`}
-              >
-                {clockLoading ? "..." : myOpenEntry ? "Clock Out" : "Clock In"}
-              </button>
+      </div>
+
+      {myEmployeeId && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-4 flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[160px]">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-mist">Time clock</div>
+            <div className={`text-lg font-semibold ${myOpenEntry ? "text-green-dark" : "text-ink"}`}>
+              {myOpenEntry
+                ? `🟢 Clocked in since ${new Date(myOpenEntry.clock_in).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+                : "Not clocked in"}
             </div>
           </div>
-        )}
-      </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleClock("clock_in")}
+              disabled={clockLoading || !!myOpenEntry}
+              className="px-5 py-3 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-40"
+            >
+              Clock in
+            </button>
+            <button
+              onClick={() => handleClock("clock_out")}
+              disabled={clockLoading || !myOpenEntry}
+              className="px-5 py-3 border-[1.5px] border-rule text-ink text-sm font-semibold rounded-lg hover:border-green-mid transition-colors disabled:opacity-40"
+            >
+              Clock out
+            </button>
+          </div>
+          {clockError && <div className="w-full text-xs text-red">{clockError}</div>}
+        </div>
+      )}
 
       {weather && isViewingToday && (
         <div className="bg-white border-[1.5px] border-rule rounded-[10px] p-4 flex items-center gap-4">
@@ -618,13 +634,13 @@ export default function TaskStatusPage() {
                 {card.tasks.map((t, i) => (
                   <div key={t.id} className="border-[1.5px] border-rule rounded-lg p-2.5 text-xs">
                     <div className="flex items-center justify-between gap-1.5 mb-1">
-                      <span className="font-semibold text-ink flex items-center gap-1.5">
+                      <button onClick={() => setDetailId(t.id)} className="font-semibold text-ink flex items-center gap-1.5 text-left">
                         <span className="text-mist font-mono">{i + 1}.</span>
                         {t.icon && <span>{t.icon}</span>}
                         {t.name}
                         <MowDirectionIcon direction={t.mow_direction} />
                         <CleanupLapDirectionIcon direction={t.cleanup_lap_direction} />
-                      </span>
+                      </button>
                       <span
                         className={`text-[8px] font-bold px-1 py-0.5 rounded font-mono shrink-0 ${
                           t.status === "paused" ? "bg-amber-100 text-amber-900" : "bg-chalk text-mist"
@@ -955,6 +971,29 @@ export default function TaskStatusPage() {
             </>
           )}
         </div>
+      )}
+
+      {myEmployeeId && (
+        <div className="bg-white border-[1.5px] border-rule rounded-[10px] px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-mist max-w-[320px]">Get a phone notification when a task is assigned to you or changes.</div>
+          <ChatNotificationsToggle />
+        </div>
+      )}
+
+      {detailTask && (
+        <TaskDetailModal
+          task={detailTask}
+          assigneeName={employees.find((e) => e.id === detailTask.assigned_to)?.name ?? "Unassigned"}
+          canAct={tasks.some((t) => t.id === detailTask.id) && canManage(detailTask)}
+          onClose={() => setDetailId(null)}
+          onAction={(action) =>
+            action === "start" ? advanceStatus(detailTask) : action === "pause" ? handlePause(detailTask) : handleResume(detailTask)
+          }
+          onFinish={() => {
+            setDetailId(null);
+            openCompleteDialog(detailTask);
+          }}
+        />
       )}
 
       {completingTask && (

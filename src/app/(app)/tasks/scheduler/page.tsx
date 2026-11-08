@@ -82,6 +82,7 @@ export default function TaskSchedulerPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [addForm, setAddForm] = useState(emptyForm);
   const [suggestMetric, setSuggestMetric] = useState<"speed" | "quality">("speed");
 
@@ -182,6 +183,46 @@ export default function TaskSchedulerPage() {
     setSaving(true);
     setError(null);
     const supabase = createClient();
+
+    if (editingId) {
+      const existing = assignments.find((a) => a.id === editingId);
+      const templateChanged = (addForm.template_id || null) !== (existing?.template_id ?? null);
+      const { data: updated, error: updateError } = await supabase
+        .from("task_assignments")
+        .update({
+          template_id: addForm.template_id || null,
+          name,
+          assigned_to: addForm.assigned_to || null,
+          scheduled_date: addForm.scheduled_date,
+          priority: Number(addForm.priority) || 1,
+          mow_direction: addForm.mow_direction || null,
+          cleanup_lap_direction: addForm.cleanup_lap_direction || null,
+          notes: addForm.notes || null,
+          ...(templateChanged
+            ? {
+                icon: template?.icon ?? null,
+                estimated_minutes: template?.target_minutes ?? parseEstimatedMinutes(template?.estimated_duration),
+              }
+            : {}),
+        })
+        .eq("id", editingId)
+        .select()
+        .single();
+      if (updateError) {
+        setError(
+          updateError.message.includes("row-level security policy")
+            ? "You don't have permission to edit tasks. Ask an owner, superintendent, or assistant for access."
+            : updateError.message
+        );
+      } else if (updated) {
+        setAssignments((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+        notifyAssignee(updated.id, "updated");
+        closeForm();
+      }
+      setSaving(false);
+      return;
+    }
+
     const { data, error: insertError } = await supabase
       .from("task_assignments")
       .insert({
@@ -208,10 +249,42 @@ export default function TaskSchedulerPage() {
       );
     } else if (data) {
       setAssignments((prev) => [data, ...prev]);
+      notifyAssignee(data.id, "assigned");
       setAddForm({ ...emptyForm, scheduled_date: addForm.scheduled_date });
       setShowAdd(false);
     }
     setSaving(false);
+  }
+
+  // Fire-and-forget: the push is a courtesy, the save already succeeded.
+  function notifyAssignee(id: string, kind: "assigned" | "updated") {
+    fetch("/api/tasks/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assignment_id: id, kind }),
+    }).catch(() => {});
+  }
+
+  function closeForm() {
+    setShowAdd(false);
+    setEditingId(null);
+    setAddForm(emptyForm);
+  }
+
+  function startEdit(a: TaskAssignment) {
+    setEditingId(a.id);
+    setAddForm({
+      template_id: a.template_id ?? "",
+      name: a.template_id ? "" : a.name,
+      assigned_to: a.assigned_to ?? "",
+      scheduled_date: a.scheduled_date,
+      priority: String(a.priority),
+      mow_direction: a.mow_direction ?? "",
+      cleanup_lap_direction: a.cleanup_lap_direction ?? "",
+      notes: a.notes ?? "",
+    });
+    setShowAdd(true);
+    setError(null);
   }
 
   async function handleDelete(id: string) {
@@ -268,7 +341,7 @@ export default function TaskSchedulerPage() {
             />
           </div>
           <button
-            onClick={() => setShowAdd((v) => !v)}
+            onClick={() => (showAdd ? closeForm() : setShowAdd(true))}
             className="px-3.5 py-1.5 bg-green-mid text-white text-xs font-semibold rounded-lg hover:bg-green-dark transition-colors"
           >
             {showAdd ? "Cancel" : "+ Schedule Task"}
@@ -277,6 +350,11 @@ export default function TaskSchedulerPage() {
 
         {showAdd && (
           <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2 px-5 py-4 border-b-[1.5px] border-rule bg-chalk">
+            {editingId && (
+              <div className="w-full text-xs text-mist">
+                Editing a task — the assigned employee gets a new notification when you save.
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold uppercase tracking-wide">Template</label>
               <select
@@ -392,7 +470,7 @@ export default function TaskSchedulerPage() {
               />
             </div>
             <button type="submit" disabled={saving} className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50">
-              {saving ? "Saving..." : "Save"}
+              {saving ? "Saving..." : editingId ? "Save changes" : "Save"}
             </button>
 
             {addForm.template_id && (
@@ -490,6 +568,11 @@ export default function TaskSchedulerPage() {
                   </td>
                   <td className="px-3 py-2.5 text-mist">{a.status.replace("_", " ")}</td>
                   <td className="px-5 py-2.5 text-right">
+                    {a.status !== "complete" && (
+                      <button onClick={() => startEdit(a)} className="text-mist text-xs font-semibold hover:text-green-mid mr-3">
+                        Edit
+                      </button>
+                    )}
                     <button onClick={() => handleDelete(a.id)} className="text-mist text-xs font-semibold hover:text-red">
                       Delete
                     </button>
