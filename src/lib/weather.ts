@@ -602,6 +602,47 @@ async function fetchTrailing24hRainfallIn(lat: number, lon: number): Promise<num
 }
 
 /**
+ * Daily rainfall (inches) from NOAA's MRMS gauge-corrected radar analysis,
+ * served point-by-point by Iowa State's IEM reanalysis (US coverage, no key).
+ * Replaces Open-Meteo as the source for rainfall_daily_log: checked against
+ * three airport rain gauges for all of 2026 (27.4 in), MRMS read 28.6 in while
+ * the app's stored history read 33.2 in, and Open-Meteo's feeds missed real
+ * storms (0.13 in stored / 0.06 in archive vs 0.24-0.30 in gauged on Sep 24)
+ * while inventing drizzle on dry days (0.28 in vs ~0 on Sep 21). Only complete
+ * days exist (nothing for today). Returns an empty map on any failure so
+ * callers fall back to their previous source.
+ */
+async function fetchMrmsDailyRainfallIn(
+  lat: number,
+  lon: number,
+  startDate: string,
+  endDate: string
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (endDate < startDate) return out;
+  try {
+    const res = await fetch(
+      `https://mesonet.agron.iastate.edu/iemre/multiday/${startDate}/${endDate}/${lat}/${lon}/json`,
+      { signal: AbortSignal.timeout(10000) }
+    );
+    if (!res.ok) return out;
+    const data = await res.json();
+    for (const r of (data?.data ?? []) as Array<{ date?: string; mrms_precip_in?: number | null }>) {
+      if (r.date && typeof r.mrms_precip_in === "number" && r.mrms_precip_in >= 0) {
+        out.set(r.date, Math.round(r.mrms_precip_in * 100) / 100);
+      }
+    }
+  } catch {
+    // fall through with whatever was collected (nothing)
+  }
+  return out;
+}
+
+function dayBefore(dateStr: string): string {
+  return new Date(Date.parse(dateStr) - 86400000).toISOString().slice(0, 10);
+}
+
+/**
  * Actual daily rainfall backfill/refresh via Open-Meteo's forecast API
  * (`past_days`) — used instead of the NWS station observations already
  * fetched above because point-station METAR precipitation fields are
@@ -648,6 +689,18 @@ async function refreshRecentRainfall(
     log_date: date,
     rainfall_in: Math.round((mmVal / 25.4) * 100) / 100,
   }));
+
+  // Completed days come from MRMS (see fetchMrmsDailyRainfallIn); today keeps the
+  // hourly figure above since MRMS has no partial-day total. If MRMS is down the
+  // hourly values stand, exactly as before.
+  const byDate = new Map(rows.map((r) => [r.log_date, r]));
+  const windowStart = new Date(Date.parse(todayStr) - 10 * 86400000).toISOString().slice(0, 10);
+  const mrms = await fetchMrmsDailyRainfallIn(lat, lon, windowStart, dayBefore(todayStr));
+  for (const [date, inches] of mrms) {
+    const row = byDate.get(date);
+    if (row) row.rainfall_in = inches;
+    else rows.push({ course_id: courseId, log_date: date, rainfall_in: inches });
+  }
 
   if (rows.length) {
     await supabase.from("rainfall_daily_log").upsert(rows, { onConflict: "course_id,log_date" });
@@ -721,6 +774,21 @@ async function ensureRainfallYearBackfilled(
 
   const cutoff = `${now.getFullYear()}-01-06`;
   if (earliestThisYear?.log_date && earliestThisYear.log_date <= cutoff) return;
+
+  // Preferred: MRMS through yesterday. Fallback (service down): the old archive path.
+  const yesterday = dayBefore(now.toISOString().slice(0, 10));
+  if (yesterday >= yearStart) {
+    const mrms = await fetchMrmsDailyRainfallIn(lat, lon, yearStart, yesterday);
+    if (mrms.size > 0) {
+      const mrmsRows = Array.from(mrms.entries()).map(([date, inches]) => ({
+        course_id: courseId,
+        log_date: date,
+        rainfall_in: inches,
+      }));
+      await supabase.from("rainfall_daily_log").upsert(mrmsRows, { onConflict: "course_id,log_date" });
+      return;
+    }
+  }
 
   const archiveEnd = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   if (archiveEnd < yearStart) return;
