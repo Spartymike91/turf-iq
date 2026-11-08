@@ -64,6 +64,7 @@ export function hasModuleAccess(courseTier: PlanTier | null, pathname: string): 
 export const ALL_MODULES: { slug: string; href: string; icon: string; label: string }[] = [
   { slug: "weather", href: "/weather", icon: "🌤", label: "Weather" },
   { slug: "turf-health", href: "/turf-health", icon: "🌱", label: "Turf Health" },
+  { slug: "daily-log", href: "/daily-log", icon: "📓", label: "Daily Log" },
   { slug: "irrigation", href: "/irrigation", icon: "💧", label: "Irrigation" },
   { slug: "equipment", href: "/equipment", icon: "🔧", label: "Equipment" },
   { slug: "inventory", href: "/inventory", icon: "📦", label: "Inventory" },

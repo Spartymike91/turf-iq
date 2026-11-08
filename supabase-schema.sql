@@ -2386,3 +2386,49 @@ GRANT UPDATE (sqft_greens, sqft_tees, sqft_fairways, sqft_rough) ON courses TO a
 ALTER TABLE products ADD COLUMN IF NOT EXISTS reapply_gdd NUMERIC;
 ALTER TABLE fertilizer_applications ADD COLUMN IF NOT EXISTS reapply_gdd NUMERIC;
 ALTER TABLE pest_applications ADD COLUMN IF NOT EXISTS reapply_gdd NUMERIC;
+
+-- ============================================
+-- DAILY LOG (superintendent's daily notes)
+-- ============================================
+-- The Daily Log page assembles a past day from data the app already keeps
+-- (tasks, clock times, applications, irrigation, equipment work, calendar
+-- items, rainfall/GDD/disease logs). The one thing it can't derive is what
+-- the superintendent would have written in the paper daily logbook, so that
+-- free-text note lives here: one row per course per day. Same permissions as
+-- course_map_notes — every member can read, owner/superintendent/assistant
+-- can write. Platform admins get read access per the admin-read-access rule
+-- for any new course-scoped table (writes stay behind the PIN-unlock policy
+-- pattern, i.e. no admin write policy here at all).
+CREATE TABLE IF NOT EXISTS daily_log_notes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID REFERENCES courses(id) ON DELETE CASCADE NOT NULL,
+  log_date DATE NOT NULL,
+  note TEXT NOT NULL,
+  updated_by UUID REFERENCES course_members(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(course_id, log_date)
+);
+ALTER TABLE daily_log_notes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Members can view daily log notes" ON daily_log_notes;
+CREATE POLICY "Members can view daily log notes"
+  ON daily_log_notes FOR SELECT USING (public.is_course_member(course_id));
+DROP POLICY IF EXISTS "Managers can insert daily log notes" ON daily_log_notes;
+CREATE POLICY "Managers can insert daily log notes"
+  ON daily_log_notes FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = daily_log_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
+  );
+DROP POLICY IF EXISTS "Managers can update daily log notes" ON daily_log_notes;
+CREATE POLICY "Managers can update daily log notes"
+  ON daily_log_notes FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = daily_log_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
+  );
+DROP POLICY IF EXISTS "Managers can delete daily log notes" ON daily_log_notes;
+CREATE POLICY "Managers can delete daily log notes"
+  ON daily_log_notes FOR DELETE USING (
+    EXISTS (SELECT 1 FROM course_members WHERE course_id = daily_log_notes.course_id AND user_id = auth.uid() AND role IN ('owner', 'superintendent', 'assistant'))
+  );
+DROP POLICY IF EXISTS "Platform admins can view daily_log_notes" ON daily_log_notes;
+CREATE POLICY "Platform admins can view daily_log_notes"
+  ON daily_log_notes FOR SELECT USING (public.is_platform_admin());
