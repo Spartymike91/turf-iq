@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
@@ -19,7 +20,7 @@ interface TimeEntry {
   clock_out: string | null;
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localDateStr();
 
 function formatDuration(ms: number) {
   const hours = Math.floor(ms / (1000 * 60 * 60));

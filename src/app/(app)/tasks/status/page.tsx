@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
@@ -54,7 +55,7 @@ const STATUS_LABEL: Record<TaskAssignment["status"], string> = {
   complete: "Complete",
 };
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localDateStr();
 
 export default function TaskStatusPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);

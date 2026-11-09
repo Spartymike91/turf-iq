@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import TaskCompleteModal from "@/components/tasks/TaskCompleteModal";
@@ -20,7 +21,7 @@ interface OpenEntry {
   clock_in: string;
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localDateStr();
 const clockTime = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
 // Crew and crew leads land here instead of the full manager dashboard —

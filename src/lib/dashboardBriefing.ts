@@ -3,6 +3,7 @@ import { getWeatherForCourse, type WeatherResult } from "@/lib/weather";
 import { getCrabgrassStatus, getWhiteGrubStatus, getAbwStatus, isCoolSeasonGrass } from "@/lib/pestModels";
 import { resolveGrassTypes } from "@/lib/grassTypes";
 import { getDueStatus } from "@/lib/equipmentModels";
+import { localToday } from "@/lib/taskNotify";
 
 export interface TaskToday {
   id: string;
@@ -52,7 +53,9 @@ export async function fetchDashboardData(
   courseId: string,
   course: CourseRow
 ): Promise<DashboardData> {
-  const today = new Date().toISOString().slice(0, 10);
+  // Eastern date, same as task notifications — the server runs in UTC, whose date
+  // is already "tomorrow" every evening.
+  const today = localToday();
 
   const [weather, { data: pestApps }, { data: tasksTodayRaw }, { data: equipmentList }] = await Promise.all([
     getWeatherForCourse(supabase, {

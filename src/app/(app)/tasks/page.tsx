@@ -1,5 +1,6 @@
 "use client";
 
+import { localDateStr } from "@/lib/localDate";
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { resolveCourseIdClient } from "@/lib/supabase/course-context";
@@ -25,7 +26,7 @@ interface TaskAssignment {
   status: "not_started" | "in_progress" | "paused" | "complete";
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localDateStr();
 
 export default function TasksDashboardPage() {
   const [courseId, setCourseId] = useState<string | null>(null);
