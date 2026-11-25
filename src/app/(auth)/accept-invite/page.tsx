@@ -3,6 +3,8 @@
 import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { recordAcceptance } from "@/lib/recordAcceptance";
+import AgreeCheckbox from "@/components/legal/AgreeCheckbox";
 
 export default function AcceptInvitePage() {
   return (
@@ -15,6 +17,7 @@ export default function AcceptInvitePage() {
 function AcceptInviteForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -82,6 +85,7 @@ function AcceptInviteForm() {
       return;
     }
 
+    await recordAcceptance("invite");
     router.push("/dashboard");
     router.refresh();
   }
@@ -146,9 +150,10 @@ function AcceptInviteForm() {
             placeholder="••••••••"
           />
         </div>
+        <AgreeCheckbox checked={agreed} onChange={setAgreed} />
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !agreed}
           className="mt-2 px-4 py-3 bg-green-mid text-white font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? "Setting password..." : "Set Password & Continue"}

@@ -4,6 +4,8 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { recordAcceptance } from "@/lib/recordAcceptance";
+import AgreeCheckbox from "@/components/legal/AgreeCheckbox";
 
 export default function SignupPage() {
   return (
@@ -44,6 +46,7 @@ function SignupForm() {
       return;
     }
 
+    await recordAcceptance("signup");
     router.push(tier ? `/course?tier=${tier}` : "/course");
     router.refresh();
   }
@@ -105,26 +108,7 @@ function SignupForm() {
           />
           <span className="text-xs text-mist">Minimum 6 characters</span>
         </div>
-        <label className="flex items-start gap-2 text-xs text-mist">
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(e) => setAgreed(e.target.checked)}
-            required
-            className="mt-0.5"
-          />
-          <span>
-            I agree to the{" "}
-            <Link href="/terms" target="_blank" className="text-green-mid font-semibold hover:underline">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy" target="_blank" className="text-green-mid font-semibold hover:underline">
-              Privacy Policy
-            </Link>
-            .
-          </span>
-        </label>
+        <AgreeCheckbox checked={agreed} onChange={setAgreed} />
         <button
           type="submit"
           disabled={loading || !agreed}

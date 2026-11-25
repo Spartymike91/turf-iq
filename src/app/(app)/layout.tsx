@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPlatformAdminSession } from "@/lib/supabase/platform-admin";
 import { resolveCourseIdServer } from "@/lib/supabase/course-context.server";
 import { isPlanTier, type PlanTier } from "@/lib/billing";
+import { ASK_EXISTING_USERS, PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal";
 import AppShell from "./AppShell";
 
 export default async function AppLayout({
@@ -43,6 +44,18 @@ export default async function AppLayout({
   // real gate on the data itself), but it shouldn't drive the UI for a
   // non-admin who happened to have it set.
   const isAdminView = !!context?.isAdminView && isPlatformAdmin;
+
+  if (ASK_EXISTING_USERS && !isAdminView) {
+    const { data: acceptance, error } = await supabase
+      .from("terms_acceptances")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("terms_version", TERMS_VERSION)
+      .eq("privacy_version", PRIVACY_VERSION)
+      .maybeSingle();
+    // A failed lookup must not lock everyone out of the app.
+    if (!acceptance && !error) redirect("/accept-terms");
+  }
 
   let courseName: string | undefined;
   let planTier: PlanTier | null = null;

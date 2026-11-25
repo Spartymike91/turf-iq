@@ -2443,3 +2443,36 @@ CREATE POLICY "Platform admins can view daily_log_notes"
 -- already announced and an edit that moves a task to a later date can clear
 -- it. Written only by server routes (service role), so no RLS/GRANT change.
 ALTER TABLE task_assignments ADD COLUMN IF NOT EXISTS notified_for_date DATE;
+
+-- ============================================
+-- TERMS / PRIVACY ACCEPTANCE RECORDS
+-- ============================================
+-- Proof of who agreed to which version of the Terms and Privacy Policy, and
+-- when. No foreign keys on purpose: a record must survive the user or course
+-- being deleted. Rows are written only by the server (service role); there
+-- are deliberately no insert/update/delete policies, so users can't alter them.
+CREATE TABLE IF NOT EXISTS terms_acceptances (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  email TEXT NOT NULL,
+  full_name TEXT,
+  course_id UUID,
+  course_name TEXT,
+  role TEXT,
+  terms_version TEXT NOT NULL,
+  privacy_version TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('signup', 'invite', 'prompt')),
+  accepted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ip_address TEXT,
+  user_agent TEXT,
+  UNIQUE (user_id, terms_version, privacy_version)
+);
+ALTER TABLE terms_acceptances ENABLE ROW LEVEL SECURITY;
+GRANT SELECT ON terms_acceptances TO authenticated;
+GRANT ALL ON terms_acceptances TO service_role;
+DROP POLICY IF EXISTS "Users can view own acceptances" ON terms_acceptances;
+CREATE POLICY "Users can view own acceptances"
+  ON terms_acceptances FOR SELECT USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Platform admins can view terms_acceptances" ON terms_acceptances;
+CREATE POLICY "Platform admins can view terms_acceptances"
+  ON terms_acceptances FOR SELECT USING (public.is_platform_admin());

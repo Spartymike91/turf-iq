@@ -30,6 +30,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           <Link href="/admin/errors" className="text-[11px] text-white/60 hover:text-white/90">
             Errors
           </Link>
+          <Link href="/admin/acceptances" className="text-[11px] text-white/60 hover:text-white/90">
+            Acceptances
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <Link href="/dashboard" className="text-[11px] text-white/60 hover:text-white/90">
