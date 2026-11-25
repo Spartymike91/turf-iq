@@ -99,6 +99,8 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
   const [billingError, setBillingError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportNeedsPin, setExportNeedsPin] = useState(false);
+  const [exportPin, setExportPin] = useState("");
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -441,6 +443,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
       const res = await fetch("/api/export");
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        if (data?.needsPin) setExportNeedsPin(true);
         setExportError(data?.error ?? "Could not export data.");
         setExporting(false);
         return;
@@ -448,7 +451,7 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="(.+)"/);
-      const filename = match?.[1] ?? "turfiq-export.json";
+      const filename = match?.[1] ?? "turfiq-export.xlsx";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -459,6 +462,26 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
       setExportError("Could not export data.");
     }
     setExporting(false);
+  }
+
+  async function handleExportUnlock(e: React.FormEvent) {
+    e.preventDefault();
+    setExporting(true);
+    setExportError(null);
+    const res = await fetch("/api/account/sensitive-pin/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin: exportPin }),
+    }).catch(() => null);
+    setExportPin("");
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => null);
+      setExportError(data?.error ?? "Could not unlock.");
+      setExporting(false);
+      return;
+    }
+    setExportNeedsPin(false);
+    await handleExportData();
   }
 
   if (checking) {
@@ -791,8 +814,9 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
           <div className="font-serif text-lg text-green-dark mb-3">Data &amp; Privacy</div>
           <div className="flex items-center justify-between">
             <div className="text-sm text-mist max-w-sm">
-              Download a full export of your course&apos;s data — profile, team, tasks, expenses,
-              equipment, applications, and reports.
+              Download your course&apos;s data as an Excel spreadsheet — team, tasks, time, budget,
+              inventory, applications, equipment, weather logs, notes, and team chat. One-on-one
+              messages are not included.
             </div>
             <button
               type="button"
@@ -804,6 +828,31 @@ export default function CourseForm({ forceCreate = false }: { forceCreate?: bool
             </button>
           </div>
           {exportError && <div className="text-xs text-red mt-2">{exportError}</div>}
+          {exportNeedsPin && (
+            <form onSubmit={handleExportUnlock} className="flex items-center gap-2 mt-2">
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={exportPin}
+                onChange={(e) => setExportPin(e.target.value.replace(/\D/g, ""))}
+                placeholder="4-digit PIN"
+                aria-label="4-digit PIN"
+                className="w-32 px-3 py-2 border-[1.5px] border-rule rounded-lg text-sm text-center outline-none focus:border-green-mid"
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={exporting || exportPin.length !== 4}
+                className="px-4 py-2 bg-green-mid text-white text-sm font-semibold rounded-lg hover:bg-green-dark transition-colors disabled:opacity-50"
+              >
+                Unlock &amp; export
+              </button>
+              <Link href="/labor" className="text-xs text-green-mid font-semibold hover:underline">
+                No PIN yet? Set one up
+              </Link>
+            </form>
+          )}
           <div className="text-xs text-mist mt-4 pt-3 border-t border-rule">
             See our{" "}
             <Link href="/terms" target="_blank" className="text-green-mid font-semibold hover:underline">
